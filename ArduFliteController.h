@@ -30,15 +30,29 @@ public:
     //  - measuredQ: current orientation from the IMU
     //  - dt: timestep
     //  - rollOut, pitchOut, yawOut: the final control signals in [-1..+1]
-    void update(const FliteQuaternion &measuredQ, float dt,
-                float &rollOut, float &pitchOut, float &yawOut)
+    void update(const FliteQuaternion &measuredQ, float dt, float &rollOut, float &pitchOut, float &yawOut)
     {
+        if (dt < 1e-3f) dt = 1e-3f;  // Force a minimum timestep
+
         // qError = desiredQ * inverse(measuredQ)
-        FliteQuaternion qError = desiredQ * measuredQ.inverse();
+        FliteQuaternion measuredNormalized = measuredQ;
+        float normSq = measuredNormalized.normSq(); // assume you have this method
+        if (normSq < 1e-6f) {
+            // The measured quaternion is invalid; use identity (or skip this update)
+            measuredNormalized = FliteQuaternion(1, 0, 0, 0);
+        }
+        FliteQuaternion qError = desiredQ * measuredNormalized.inverse();
 
         // Axis-angle form
         float rx, ry, rz, angle;
         qError.toAxisAngle(rx, ry, rz, angle);
+
+        if (angle > M_PI) {
+          angle = 2.0f*M_PI - angle;
+          rx = -rx;
+          ry = -ry;
+          rz = -rz;
+        }
 
         // We can interpret angle as the magnitude of the orientation error,
         // and (rx, ry, rz) as the unit axis in the body frame.

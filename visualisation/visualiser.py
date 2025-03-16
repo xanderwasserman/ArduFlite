@@ -33,24 +33,85 @@ def quaternion_to_euler(w, x, y, z):
     return roll, pitch, yaw
 
 # -------------------------------------------------
-# Draw a simple wireframe aircraft in our aerospace
-# coordinate system (no flips):
-#   x-axis: front (nose at +0.5)
-#   y-axis: right (wings extend along ±y)
-#   z-axis: down (vertical stabilizer extends down)
+# Draw an improved 3D wireframe aircraft model.
+# Coordinate system: x (forward), y (right), z (down)
+#
+# The fuselage is built using several elliptical cross-sections
+# along the x-axis (from tail to nose). The wings, horizontal
+# stabilizer, and vertical fin (fin extends in -z) are added.
 # -------------------------------------------------
 def draw_aircraft_wireframe():
-    glColor3f(1, 1, 1)  # white
-    glBegin(GL_LINES)
-    # Fuselage: from tail to nose along x-axis
-    glVertex3f(-0.5, 0, 0)
-    glVertex3f(0.5, 0, 0)
-    # Wings: extend left (-y) to right (+y)
-    glVertex3f(0, -0.5, 0)
-    glVertex3f(0, 0.5, 0)
-    # Vertical stabilizer: at tail, extending downward (positive z)
-    glVertex3f(-0.5, 0, 0)
-    glVertex3f(-0.5, 0, -0.3)
+    glColor3f(1, 1, 1)  # white color for the aircraft
+
+    # Parameters for fuselage cross-sections:
+    xs = [-1.0, -0.5, 0.0, 0.5, 1.0]       # x positions (tail to nose)
+    rys = [0.03, 0.05, 0.1, 0.1, 0.02]        # half-width in y at each section
+    rzs = [0.03, 0.05, 0.1, 0.1, 0.02]        # half-height in z at each section
+    num_segments = 16                       # number of segments for each ellipse
+
+    cross_sections = []  # will hold lists of (x,y,z) points for each cross-section
+
+    # Generate elliptical cross-sections in the y-z plane for each x.
+    for i, x in enumerate(xs):
+        section = []
+        r_y = rys[i]
+        r_z = rzs[i]
+        for j in range(num_segments):
+            angle = 2 * math.pi * j / num_segments
+            y = r_y * math.cos(angle)
+            z = r_z * math.sin(angle)
+            section.append((x, y, z))
+        cross_sections.append(section)
+
+    # Draw each cross-section as a line loop.
+    for section in cross_sections:
+        glBegin(GL_LINE_LOOP)
+        for pt in section:
+            glVertex3f(*pt)
+        glEnd()
+
+    # Connect corresponding points between adjacent cross-sections.
+    for i in range(len(cross_sections) - 1):
+        sec1 = cross_sections[i]
+        sec2 = cross_sections[i+1]
+        glBegin(GL_LINES)
+        for j in range(num_segments):
+            glVertex3f(*sec1[j])
+            glVertex3f(*sec2[j])
+        glEnd()
+
+    # ---- Add wings ----
+    # Wings attach roughly at mid-fuselage (x ~ 0). Adjust these vertices as needed.
+    glColor3f(1, 1, 1)
+    # Left wing (extends toward negative y)
+    glBegin(GL_LINE_LOOP)
+    glVertex3f(0.0, 0.0, 0.0)       # attachment at fuselage center
+    glVertex3f(0.0, -1.2, 0.0)      # wing tip
+    glVertex3f(0.2, -1.2, 0.0)      # chord thickness
+    glVertex3f(0.2, 0.0, 0.0)       # back to fuselage
+    glEnd()
+    # Right wing (extends toward positive y)
+    glBegin(GL_LINE_LOOP)
+    glVertex3f(0.0, 0.0, 0.0)
+    glVertex3f(0.0, 1.2, 0.0)
+    glVertex3f(0.2, 1.2, 0.0)
+    glVertex3f(0.2, 0.0, 0.0)
+    glEnd()
+
+    # ---- Horizontal Stabilizer (tail) ----
+    glBegin(GL_LINE_LOOP)
+    glVertex3f(-1.0, -0.4, 0.0)
+    glVertex3f(-0.8, -0.4, 0.0)
+    glVertex3f(-0.8, 0.4, 0.0)
+    glVertex3f(-1.0, 0.4, 0.0)
+    glEnd()
+
+    # ---- Vertical Fin (tail) ----
+    # Note: The fin extends in the -z direction (tail is fixed to -z).
+    glBegin(GL_LINE_LOOP)
+    glVertex3f(-1.0, 0.0, 0.0)     # base at fuselage
+    glVertex3f(-1.0, 0.0, -0.6)    # tip (extending in -z)
+    glVertex3f(-0.7, 0.0, 0.0)     # other base point
     glEnd()
 
 # -------------------------------------------------

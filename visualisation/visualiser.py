@@ -9,69 +9,99 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 
 # -------------------------------------------------
-# Helper function to convert a quaternion to Euler.
-# Euler angles in this order: roll (X), pitch (Y), yaw (Z).
+# Convert a quaternion to Euler angles (roll, pitch, yaw).
+# Our aerospace frame now uses:
+#   Roll:  rotation about x-axis (forward)
+#   Pitch: rotation about y-axis (right)
+#   Yaw:   rotation about z-axis (down)
 # -------------------------------------------------
 def quaternion_to_euler(w, x, y, z):
-    """
-    Convert quaternion (w, x, y, z) to Euler angles (roll, pitch, yaw).
-    Returns angles in radians.
-    """
-    # Roll (x-axis rotation)
     sinr_cosp = 2.0 * (w * x + y * z)
     cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
     roll = math.atan2(sinr_cosp, cosr_cosp)
 
-    # Pitch (y-axis rotation)
     sinp = 2.0 * (w * y - z * x)
     if abs(sinp) >= 1:
-        # Use 90 degrees if out of range
         pitch = math.copysign(math.pi / 2, sinp)
     else:
         pitch = math.asin(sinp)
 
-    # Yaw (z-axis rotation)
     siny_cosp = 2.0 * (w * z + x * y)
     cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
     yaw = math.atan2(siny_cosp, cosy_cosp)
 
-    return (roll, pitch, yaw)
+    return roll, pitch, yaw
 
 # -------------------------------------------------
-# Draw a simple wireframe aircraft shape.
-# We'll draw a rough shape with a nose, tail, wings.
+# Draw a simple wireframe aircraft in our aerospace
+# coordinate system (no flips):
+#   x-axis: front (nose at +0.5)
+#   y-axis: right (wings extend along ±y)
+#   z-axis: down (vertical stabilizer extends down)
 # -------------------------------------------------
 def draw_aircraft_wireframe():
+    glColor3f(1, 1, 1)  # white
     glBegin(GL_LINES)
-
-    # Fuselage
-    glVertex3f(0.0, 0.0, 0.5)   # Nose
-    glVertex3f(0.0, 0.0, -0.5)  # Tail
-
-    # Wings
-    glVertex3f(-0.5, 0.0, 0.0)
-    glVertex3f(0.5, 0.0, 0.0)
-
-    # Vertical stabilizer
-    glVertex3f(0.0, 0.0, -0.5)
-    glVertex3f(0.0, 0.3, -0.5)
-
+    # Fuselage: from tail to nose along x-axis
+    glVertex3f(-0.5, 0, 0)
+    glVertex3f(0.5, 0, 0)
+    # Wings: extend left (-y) to right (+y)
+    glVertex3f(0, -0.5, 0)
+    glVertex3f(0, 0.5, 0)
+    # Vertical stabilizer: at tail, extending downward (positive z)
+    glVertex3f(-0.5, 0, 0)
+    glVertex3f(-0.5, 0, -0.3)
     glEnd()
 
 # -------------------------------------------------
-# Main function:
-#  - Initialize Pygame & OpenGL
-#  - Open serial port
-#  - Read and parse quaternions
-#  - Convert to orientation & display
+# Draw fixed coordinate axes at the world origin.
+# According to our desired system:
+#   X (red): forward
+#   Y (green): right
+#   Z (blue): down
+# -------------------------------------------------
+def draw_axes():
+    glBegin(GL_LINES)
+    # X axis (red): forward
+    glColor3f(1, 0, 0)
+    glVertex3f(0, 0, 0)
+    glVertex3f(1, 0, 0)
+    # Y axis (green): right
+    glColor3f(0, 1, 0)
+    glVertex3f(0, 0, 0)
+    glVertex3f(0, 1, 0)
+    # Z axis (blue): down
+    glColor3f(0, 0, 1)
+    glVertex3f(0, 0, 0)
+    glVertex3f(0, 0, 1)
+    glEnd()
+
+# -------------------------------------------------
+# Draw a ground grid in the horizontal (x-y) plane at z=0.
+# With perspective, the grid recedes toward the horizon.
+# -------------------------------------------------
+def draw_grid():
+    glColor3f(0.3, 0.3, 0.3)  # dark gray
+    glBegin(GL_LINES)
+    grid_size = 10
+    spacing = 0.5  # adjust grid spacing as needed
+    for i in range(-grid_size, grid_size + 1):
+        # Vertical grid lines (constant x)
+        glVertex3f(i * spacing, -grid_size * spacing, 0)
+        glVertex3f(i * spacing, grid_size * spacing, 0)
+        # Horizontal grid lines (constant y)
+        glVertex3f(-grid_size * spacing, i * spacing, 0)
+        glVertex3f(grid_size * spacing, i * spacing, 0)
+    glEnd()
+
+# -------------------------------------------------
+# Main function: sets up serial communication,
+# initializes Pygame & OpenGL, and renders the scene.
 # -------------------------------------------------
 def main():
-    # ------------------------------
     # 1) Set up your serial device
-    # Adjust PORT and BAUDRATE as needed.
-    # ------------------------------
-    PORT = "COM4"       # e.g. "COM3" on Windows or "/dev/ttyUSB0" on Linux
-    BAUDRATE = 115200    # Ensure that matches your microcontroller
+    PORT = "COM4"       # Adjust as needed (e.g., "COM3" on Windows or "/dev/ttyUSB0" on Linux)
+    BAUDRATE = 115200   # Must match your microcontroller settings
     try:
         ser = serial.Serial(PORT, BAUDRATE, timeout=1)
         print(f"Opened serial port: {PORT} at {BAUDRATE}")
@@ -79,77 +109,80 @@ def main():
         print(f"Error opening serial port: {e}")
         sys.exit(1)
 
-    # ------------------------------
     # 2) Initialize Pygame and create an OpenGL-capable window
-    # ------------------------------
     pygame.init()
     display = (800, 600)
     pygame.display.set_mode(display, DOUBLEBUF | OPENGL)
-    pygame.display.set_caption("Real-time Aircraft Orientation")
-
-    # ------------------------------
-    # 3) Setup basic OpenGL perspective and other settings
-    # ------------------------------
+    pygame.display.set_caption("Aircraft Orientation with 3D Ground")
+    
+    # 3) Set up perspective projection.
     glMatrixMode(GL_PROJECTION)
     gluPerspective(45, (display[0] / display[1]), 0.1, 50.0)
     glMatrixMode(GL_MODELVIEW)
-
     glEnable(GL_DEPTH_TEST)
-    glTranslatef(0.0, 0.0, -3.0)  # Move back so we can see the aircraft
 
     clock = pygame.time.Clock()
 
-    # ------------------------------
-    # Main loop
-    # ------------------------------
     running = True
     while running:
-        # Handle pygame events (e.g. close window)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
-        # 3a) Read serial line for quaternion data
-        #     Expected format: "qw,qx,qy,qz"
+        # Read serial data (expected format: "qw,qx,qy,qz")
         line = ser.readline().decode('utf-8').strip()
         if line:
             try:
                 qw, qx, qy, qz = map(float, line.split(','))
             except ValueError:
-                # If there's a parsing error, skip this line
-                continue
+                continue  # skip malformed lines
 
-            # 3b) Convert quaternion to Euler angles (radians)
+            # Convert quaternion to Euler angles (radians)
             roll, pitch, yaw = quaternion_to_euler(qw, qx, qy, qz)
-
-            # 3c) Clear screen & depth buffer
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-
-            # Reset transformations
-            glLoadIdentity()
-            glTranslatef(0.0, 0.0, -3.0)
-
-            # Convert from radians to degrees for glRotatef
             roll_deg = math.degrees(roll)
             pitch_deg = math.degrees(pitch)
             yaw_deg = math.degrees(yaw)
 
-            # Adjust yaw by 180° and invert the x-axis rotation (pitch)
-            glRotatef(yaw_deg +180, 0,-1, 0)   # Yaw: add 180°
-            glRotatef(pitch_deg, -1, 0, 0)       # Pitch: invert x-axis (same as using -pitch_deg with a positive axis)
-            glRotatef(roll_deg, 0, 0, 1)         # Roll remains the same
-            # 3d) Draw the aircraft wireframe
+            # Clear screen and set up the camera.
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+            glLoadIdentity()
+            # Position the camera behind the aircraft along -x.
+            # With our desired system (x: forward, y: right, z: down),
+            # place the camera at (-5, 0, -2) so that the aircraft (at the origin)
+            # is in front. The up vector is set to (0,0,-1) because in our system,
+            # "up" is opposite to down.
+            gluLookAt(-5, 0, -2,   0, 0, 0,   0, 0, -1)
+
+            # -------------------------------------------------
+            # Draw the fixed ground grid (world space) in the x-y plane (z=0).
+            # -------------------------------------------------
+            glPushMatrix()
+            draw_grid()
+            glPopMatrix()
+
+            # Optionally, draw fixed coordinate axes.
+            glPushMatrix()
+            # draw_axes()
+            glPopMatrix()
+
+            # -------------------------------------------------
+            # Draw the aircraft.
+            # Apply rotations in the order:
+            #   yaw (about z), pitch (about y), then roll (about x).
+            # This assumes our quaternion-to-Euler conversion matches our aerospace convention.
+            # No additional scaling is applied since our aircraft model is already defined with:
+            #   x: forward, y: right, z: down.
+            # -------------------------------------------------
+            glPushMatrix()
+            glRotatef(yaw_deg, 0, 0, 1)    # yaw about z (down)
+            glRotatef(pitch_deg, 0, 1, 0)  # pitch about y (right)
+            glRotatef(roll_deg, 1, 0, 0)   # roll about x (forward)
             draw_aircraft_wireframe()
+            glPopMatrix()
 
-            # Swap buffers to update the display
             pygame.display.flip()
-
-        # Limit to ~50 fps (matching ~50 Hz from microcontroller)
         clock.tick(50)
 
-    # ------------------------------
-    # Cleanup
-    # ------------------------------
     ser.close()
     pygame.quit()
     sys.exit(0)

@@ -62,9 +62,11 @@ public:
         // angle = 2 * acos(w)
         outAngle = 2.0f * acosf(qnorm.w);
         float s = sqrtf(1.0f - qnorm.w*qnorm.w);
-        if (s < 1e-4) {
+        if (s < 1e-4f) {
             // axis is arbitrary if angle is small
-            rx = 1.0f; ry = 0.0f; rz = 0.0f;
+            rx = 1.0f; 
+            ry = 0.0f; 
+            rz = 0.0f;
         } else {
             rx = qnorm.x / s;
             ry = qnorm.y / s;

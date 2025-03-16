@@ -40,10 +40,10 @@ public:
     void writeCommands(float rollCmd, float pitchCmd, float yawCmd) {
         // Pitch & yaw: just map to [0..180] for a typical servo
         int pitchDeg = mapFloatToInt(pitchCmd, -1.0f, 1.0f, -45, 45);
-        pitchDeg   = 90 + pitchDeg;
+        pitchDeg   = 90 - pitchDeg;
 
         int yawDeg   = mapFloatToInt(yawCmd,   -1.0f, 1.0f, -45, 45);
-        yawDeg   = 90 + yawDeg;
+        yawDeg   = 90 - yawDeg;
 
         pitchServo.write(pitchDeg);
         yawServo.write(yawDeg);

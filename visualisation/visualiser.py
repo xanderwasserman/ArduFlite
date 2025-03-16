@@ -45,8 +45,8 @@ def draw_aircraft_wireframe():
 
     # Parameters for fuselage cross-sections:
     xs = [-1.0, -0.5, 0.0, 0.5, 1.0]       # x positions (tail to nose)
-    rys = [0.03, 0.05, 0.1, 0.1, 0.02]        # half-width in y at each section
-    rzs = [0.03, 0.05, 0.1, 0.1, 0.02]        # half-height in z at each section
+    rys = [0.03, 0.05, 0.1, 0.1, 0.02]       # half-width in y at each section
+    rzs = [0.03, 0.05, 0.1, 0.1, 0.02]       # half-height in z at each section
     num_segments = 16                       # number of segments for each ellipse
 
     cross_sections = []  # will hold lists of (x,y,z) points for each cross-section
@@ -81,7 +81,7 @@ def draw_aircraft_wireframe():
         glEnd()
 
     # ---- Add wings ----
-    # Wings attach roughly at mid-fuselage (x ~ 0). Adjust these vertices as needed.
+    # Wings attach roughly at mid-fuselage (x ~ 0).
     glColor3f(1, 1, 1)
     # Left wing (extends toward negative y)
     glBegin(GL_LINE_LOOP)
@@ -142,10 +142,10 @@ def draw_axes():
 # With perspective, the grid recedes toward the horizon.
 # -------------------------------------------------
 def draw_grid():
-    glColor3f(0.3, 0.3, 0.3)  # dark gray
+    glColor3f(0.3, 0.3, 0.3)  # dark gray for the grid
     glBegin(GL_LINES)
     grid_size = 10
-    spacing = 0.5  # adjust grid spacing as needed
+    spacing = 0.5  # adjust grid spacing as desired
     for i in range(-grid_size, grid_size + 1):
         # Vertical grid lines (constant x)
         glVertex3f(i * spacing, -grid_size * spacing, 0)
@@ -158,10 +158,14 @@ def draw_grid():
 # -------------------------------------------------
 # Main function: sets up serial communication,
 # initializes Pygame & OpenGL, and renders the scene.
+#
+# The serial reading section now reads all available lines,
+# discarding older data so that only the latest reading is used.
+# This ensures the update is independent of the controller's frequency.
 # -------------------------------------------------
 def main():
     # 1) Set up your serial device
-    PORT = "COM4"       # Adjust as needed (e.g., "COM3" on Windows or "/dev/ttyUSB0" on Linux)
+    PORT = "COM4"       # Adjust as needed (e.g., "COM3" or "/dev/ttyUSB0")
     BAUDRATE = 115200   # Must match your microcontroller settings
     try:
         ser = serial.Serial(PORT, BAUDRATE, timeout=1)
@@ -174,7 +178,7 @@ def main():
     pygame.init()
     display = (800, 600)
     pygame.display.set_mode(display, DOUBLEBUF | OPENGL)
-    pygame.display.set_caption("Aircraft Orientation with 3D Ground")
+    pygame.display.set_caption("Enhanced Aircraft Orientation with 3D Ground")
     
     # 3) Set up perspective projection.
     glMatrixMode(GL_PROJECTION)
@@ -190,8 +194,11 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
-        # Read serial data (expected format: "qw,qx,qy,qz")
-        line = ser.readline().decode('utf-8').strip()
+        # --- Read all available serial data and use the latest line ---
+        line = None
+        while ser.inWaiting() > 0:
+            line = ser.readline().decode('utf-8').strip()
+
         if line:
             try:
                 qw, qx, qy, qz = map(float, line.split(','))
@@ -210,39 +217,31 @@ def main():
             # Position the camera behind the aircraft along -x.
             # With our desired system (x: forward, y: right, z: down),
             # place the camera at (-5, 0, -2) so that the aircraft (at the origin)
-            # is in front. The up vector is set to (0,0,-1) because in our system,
-            # "up" is opposite to down.
+            # is in front. The up vector is set to (0,0,-1) because "up" is opposite to down.
             gluLookAt(-5, 0, -2,   0, 0, 0,   0, 0, -1)
 
-            # -------------------------------------------------
             # Draw the fixed ground grid (world space) in the x-y plane (z=0).
-            # -------------------------------------------------
             glPushMatrix()
             draw_grid()
             glPopMatrix()
 
             # Optionally, draw fixed coordinate axes.
             glPushMatrix()
-            # draw_axes()
+            # draw_axes()  # Uncomment to see axes.
             glPopMatrix()
 
-            # -------------------------------------------------
             # Draw the aircraft.
             # Apply rotations in the order:
             #   yaw (about z), pitch (about y), then roll (about x).
-            # This assumes our quaternion-to-Euler conversion matches our aerospace convention.
-            # No additional scaling is applied since our aircraft model is already defined with:
-            #   x: forward, y: right, z: down.
-            # -------------------------------------------------
             glPushMatrix()
             glRotatef(yaw_deg, 0, 0, 1)    # yaw about z (down)
-            glRotatef(pitch_deg, 0, 1, 0)  # pitch about y (right)
-            glRotatef(roll_deg, 1, 0, 0)   # roll about x (forward)
+            glRotatef(pitch_deg, 0, 1, 0)   # pitch about y (right)
+            glRotatef(roll_deg, 1, 0, 0)    # roll about x (forward)
             draw_aircraft_wireframe()
             glPopMatrix()
 
             pygame.display.flip()
-        clock.tick(50)
+        clock.tick(60)
 
     ser.close()
     pygame.quit()

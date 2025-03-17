@@ -48,18 +48,7 @@ void setup() {
     while (1);
   }
 
-  // get the current quaternion from the IMU
-  // Let the IMU filter settle for a few updates
-  for (int i=0; i<10; i++) {
-    myIMU.update(0.01f); // or real dt if you prefer
-    delay(10);
-  }
-  FliteQuaternion firstQ(
-    myIMU.getQw(), 
-    myIMU.getQx(), 
-    myIMU.getQy(), 
-    myIMU.getQz()
-    );
+  FliteQuaternion firstQ(1, 0, 0, 0);
 
   myController.setDesiredOrientation(firstQ);
 

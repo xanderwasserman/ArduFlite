@@ -108,7 +108,7 @@ bool ArduFliteIMU::selfCalibrate() {
     Serial.println(avgGz, 3);
 
     // Decide desired final orientation:
-    // We want final ax ~ 0, ay ~ 0, az ~ -1 (for "Z down" at rest),
+    // We want final ax ~ 0, ay ~ 0, az ~ 1 (for "Z down" at rest),
     // and gyro readings all near 0.
     ArduFliteIMUOffsets newOfs;
     // For X and Y: offset = avg (since desired is 0)
@@ -186,9 +186,14 @@ void ArduFliteIMU::initMadgwickFilter()
     // Begin the filter with an initial sample frequency (2 Hz in this example)
     filter.begin(FILTER_UPDATE_RATE_HZ); 
 
-    // Run a number of update iterations to let the filter settle.
-    // Adjust the iteration count as needed for your application.
+    // Run a number of update iterations to let the filter settle..
+    unsigned long lastMicros = 0;
     for (int i = 0; i < 2000; i++) {
+      // Calculate delta time
+      unsigned long currentMicros = micros();
+      float dt = (currentMicros - lastMicros) / 1000000.0f;
+      lastMicros = currentMicros;
+
       IMU.update();
       IMU.getAccel(&accelData);
       IMU.getGyro(&gyroData);
@@ -204,7 +209,7 @@ void ArduFliteIMU::initMadgwickFilter()
 
       applyOrientation();
 
-      filter.updateIMU(gyroX, gyroY, gyroZ, accelX, accelY, accelZ);
+      filter.updateIMU(gyroX, gyroY, gyroZ, accelX, accelY, accelZ, dt);
   }
   Serial.println("Madgwick filter warm-up complete.");
 }
@@ -217,14 +222,14 @@ void ArduFliteIMU::applyOrientation() {
     //pass
 
 #elif (IMU_ORIENTATION == ORIENTATION_SENSOR_FLIPPED_YZ)
-    // accelY = -accelY;
-    // gyroY = -gyroY;
-
     // accelX = -accelX;
-    // gyroX = -gyroX;
+    gyroX = -gyroX;
+    
+    accelY = -accelY;
+    gyroY = -gyroY;
 
     // accelZ = -accelZ;
-    // gyroZ = -gyroZ;
+    gyroZ = -gyroZ;
 #else
     #error "Unknown IMU_ORIENTATION selected!"
 #endif

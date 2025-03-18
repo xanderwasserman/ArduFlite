@@ -3,7 +3,7 @@
 #define ARDU_FLITE_CONTROLLER_H
 
 #include "FliteQuaternion.h"
-#include "PID.h"
+#include "pid.h"
 
 class ArduFliteController {
 public:

@@ -5,7 +5,7 @@
 #include "src/telemetry/ArduFliteTelemetry.h"
 #include "src/telemetry/TelemetryData.h"
 
-class ArduFliteQSerialTelemetry : public IArduFliteTelemetry {
+class ArduFliteQSerialTelemetry : public ArduFliteTelemetry {
     public:
         ArduFliteQSerialTelemetry(float frequencyHz = 10.0f);
     

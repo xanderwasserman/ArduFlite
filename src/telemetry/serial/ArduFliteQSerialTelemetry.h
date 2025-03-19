@@ -1,0 +1,22 @@
+// ArduFliteQSerialTelemetry.h
+#pragma once
+
+#include <Arduino.h>
+#include "IArduFliteTelemetry.h"
+#include "TelemetryData.h"
+
+class ArduFliteQSerialTelemetry : public IArduFliteTelemetry {
+    public:
+        ArduFliteQSerialTelemetry(float frequencyHz = 10.0f);
+    
+        void begin() override;
+        void publish(const TelemetryData& data) override;
+    
+    private:
+        static void telemetryTask(void* pvParameters);
+    
+        float             intervalMs;
+        TelemetryData     pendingData;
+        SemaphoreHandle_t telemetryMutex;
+    };
+    

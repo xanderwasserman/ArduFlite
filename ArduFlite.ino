@@ -1,18 +1,10 @@
 #include <Arduino.h>
-#include <WiFi.h>
-#include <WiFiManager.h>
-#include <PubSubClient.h>
 #include "src/utils/HoldButton.h"
 #include "src/utils/HoldButtonManager.h"
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/controller/ArduFliteController.h"
 #include "src/actuators/ServoManager.h"
-#include "src/telemetry/ArduFliteMqttTelemetry.h"
-#include "src/telemetry/TelemetryData.h"
-
-#define MQTT_SERVER "192.168.100.14" // Your MQTT broker IP address
-#define MQTT_PORT 1883
-#define MQTT_TOPIC "arduflite/telemetry"
+#include "src/telemetry/ArduFliteTelemetry.h"
 
 #define PRINT_EVERY_N_UPDATES 50
 
@@ -25,16 +17,12 @@
 #define CALIB_BUTTON_PIN 27
 #define CALIB_HOLD_TIME 3000
 
-WiFiClient espClient;
-PubSubClient mqttClient(espClient);
-// 10 Hz telemetry frequency
-ArduFliteMqttTelemetry telemetry(mqttClient, 10.0f); 
-extern SemaphoreHandle_t telemetryMutex;
-extern TelemetryData telemetryData;
+TelemetryData telemetryData;
+ArduFliteMqttTelemetry telemetry(10.0f); // 10 Hz telemetry frequency
+// ArduFliteQSerialTelemetry telemetry(10.0f);
 
 ArduFliteIMU myIMU;
 ArduFliteController myController;
-
 ServoManager servoMgr(LEFT_AIL_PIN, RIGHT_AIL_PIN, PITCH_PIN, YAW_PIN);
 
 // Callback for calibrate button
@@ -45,20 +33,6 @@ void onCalibrateHold() {
 
 HoldButton calibrateButton(CALIB_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
 
-void reconnect() {
-  while (!mqttClient.connected()) {
-    Serial.print("Connecting to MQTT...");
-    if (mqttClient.connect("ArduFliteESP32")) {
-      Serial.println("connected");
-    } else {
-      Serial.print("Failed, rc=");
-      Serial.print(mqttClient.state());
-      Serial.println(" try again in 5 seconds");
-      delay(5000);
-    }
-  }
-}
-
 unsigned long lastMicros = 0;
 int print_counter = 0;
 
@@ -66,19 +40,8 @@ void setup() {
   Serial.begin(115200);
   while (!Serial);
 
-  pinMode(CALIB_BUTTON_PIN, INPUT_PULLUP);
-  // Note: INPUT_PULLUP means the pin is HIGH when not pressed,
-  // and LOW when pressed (assuming the other side of the button goes to GND).
+  pinMode(CALIB_BUTTON_PIN, INPUT_PULLUP); // Note: INPUT_PULLUP means the pin is HIGH when not pressed, and LOW when pressed (assuming the other side of the button goes to GND).
 
-  WiFiManager wifiManager;
-  if (!wifiManager.autoConnect("ArduFliteAP")) {
-    Serial.println("Failed to connect WiFi and hit timeout");
-    ESP.restart();
-  }
-
-  mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
-
-  telemetryMutex = xSemaphoreCreateMutex();
   telemetry.begin();
 
   // Initialize IMU
@@ -100,9 +63,6 @@ void setup() {
 
 void loop() 
 {
-  if (!mqttClient.connected()) reconnect();
-  mqttClient.loop();
-
   // Calculate delta time
   unsigned long currentMicros = micros();
   float dt = (currentMicros - lastMicros) / 1000000.0f;
@@ -130,30 +90,28 @@ void loop()
   servoMgr.writeCommands(rollCmd, pitchCmd, yawCmd);
 
   // Update telemetry data
-  if (xSemaphoreTake(telemetryMutex, 5) == pdTRUE) {
-      telemetryData.accelX = myIMU.getAccelX();
-      telemetryData.accelY = myIMU.getAccelY();
-      telemetryData.accelZ = myIMU.getAccelZ();
+  telemetryData.accelX = myIMU.getAccelX();
+  telemetryData.accelY = myIMU.getAccelY();
+  telemetryData.accelZ = myIMU.getAccelZ();
 
-      telemetryData.gyroX = myIMU.getGyroX();
-      telemetryData.gyroY = myIMU.getGyroY();
-      telemetryData.gyroZ = myIMU.getGyroZ();
+  telemetryData.gyroX = myIMU.getGyroX();
+  telemetryData.gyroY = myIMU.getGyroY();
+  telemetryData.gyroZ = myIMU.getGyroZ();
 
-      telemetryData.qw = myIMU.getQw();
-      telemetryData.qx = myIMU.getQx();
-      telemetryData.qy = myIMU.getQy();
-      telemetryData.qz = myIMU.getQz();
+  telemetryData.qw = myIMU.getQw();
+  telemetryData.qx = myIMU.getQx();
+  telemetryData.qy = myIMU.getQy();
+  telemetryData.qz = myIMU.getQz();
 
-      telemetryData.pitch = myIMU.getPitch();
-      telemetryData.roll = myIMU.getRoll();
-      telemetryData.yaw = myIMU.getYaw();
+  telemetryData.pitch = myIMU.getPitch();
+  telemetryData.roll = myIMU.getRoll();
+  telemetryData.yaw = myIMU.getYaw();
 
-      telemetryData.rollCmd = rollCmd;
-      telemetryData.pitchCmd = pitchCmd;
-      telemetryData.yawCmd = yawCmd;
+  telemetryData.rollCmd = rollCmd;
+  telemetryData.pitchCmd = pitchCmd;
+  telemetryData.yawCmd = yawCmd;
 
-      xSemaphoreGive(telemetryMutex);
-  }
+  telemetry.publish(telemetryData);
 
   if (print_counter++ >= PRINT_EVERY_N_UPDATES) 
   {

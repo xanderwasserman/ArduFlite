@@ -52,15 +52,15 @@ public:
             // SINGLE aileron servo
             int ailDeflect = mapFloatToInt(rollCmd, -1.0f, 1.0f, -70, 70);
 
-            int ailAngle   = 90 + ailDeflect;
+            int ailAngle   = 90 - ailDeflect;
             singleAilServo.write(ailAngle);
         } else {
             // DUAL ailerons
             // Example: left up when right down
             int ailDeflect = mapFloatToInt(rollCmd, -1.0f, 1.0f, -70, 70);
 
-            int leftAngle  = 90 + ailDeflect;
-            int rightAngle = 90 + ailDeflect;
+            int leftAngle  = 90 - ailDeflect;
+            int rightAngle = 90 - ailDeflect;
             leftAilServo.write(leftAngle);
             rightAilServo.write(rightAngle);
         }

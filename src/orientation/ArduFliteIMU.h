@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
-#include "FastIMU.h"
+#include <FastIMU.h>
 #include <EEPROM.h>
 #include <Adafruit_AHRS.h>
 

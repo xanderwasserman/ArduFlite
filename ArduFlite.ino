@@ -2,13 +2,13 @@
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <PubSubClient.h>
-#include "HoldButton.h"
-#include "HoldButtonManager.h"
-#include "ArduFliteIMU.h"
-#include "ArduFliteController.h"
-#include "ServoManager.h"
-#include "ArduFliteMqttTelemetry.h"
-#include "TelemetryData.h"
+#include "src/utils/HoldButton.h"
+#include "src/utils/HoldButtonManager.h"
+#include "src/orientation/ArduFliteIMU.h"
+#include "src/controller/ArduFliteController.h"
+#include "src/actuators/ServoManager.h"
+#include "src/telemetry/ArduFliteMqttTelemetry.h"
+#include "src/telemetry/TelemetryData.h"
 
 #define MQTT_SERVER "192.168.100.14" // Your MQTT broker IP address
 #define MQTT_PORT 1883

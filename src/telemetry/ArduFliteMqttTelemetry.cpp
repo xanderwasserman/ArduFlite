@@ -1,5 +1,5 @@
-#include "ArduFliteMqttTelemetry.h"
-#include "TelemetryData.h"
+#include "src/telemetry/ArduFliteMqttTelemetry.h"
+#include "src/telemetry/TelemetryData.h"
 
 SemaphoreHandle_t telemetryMutex;
 TelemetryData telemetryData;

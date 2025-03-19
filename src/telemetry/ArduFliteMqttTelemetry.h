@@ -2,7 +2,8 @@
 #define ARDUFLITEMQTTTELEMETRY_H
 
 #include <PubSubClient.h>
-#include "TelemetryData.h"
+
+#include "src/telemetry/TelemetryData.h"
 
 extern SemaphoreHandle_t telemetryMutex;
 extern TelemetryData telemetryData;

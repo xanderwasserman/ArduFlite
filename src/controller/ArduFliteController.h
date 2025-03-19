@@ -2,8 +2,8 @@
 #ifndef ARDU_FLITE_CONTROLLER_H
 #define ARDU_FLITE_CONTROLLER_H
 
-#include "FliteQuaternion.h"
-#include "pid.h"
+#include "src/orientation/FliteQuaternion.h"
+#include "src/controller/pid.h"
 
 class ArduFliteController {
 public:

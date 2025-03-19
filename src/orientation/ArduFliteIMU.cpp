@@ -1,4 +1,4 @@
-#include "ArduFliteIMU.h"
+#include "src/orientation/ArduFliteIMU.h"
 
 //////////////////////////////////////
 // Constructor

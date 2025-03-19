@@ -1,6 +1,6 @@
 // ButtonBase.cpp
 
-#include "ButtonBase.h"
+#include "src/utils/ButtonBase.h"
 
 ButtonBase::ButtonBase(int pin, bool usePullup, unsigned long debounceMs)
   : _pin(pin)

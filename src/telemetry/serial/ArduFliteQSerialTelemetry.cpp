@@ -1,0 +1,54 @@
+// ArduFliteQSerialTelemetry.cpp
+#include "ArduFliteQSerialTelemetry.h"
+
+ArduFliteQSerialTelemetry::ArduFliteQSerialTelemetry(float frequencyHz)
+{
+    intervalMs = (1.0f / frequencyHz) * 1000.0f;
+}
+
+void ArduFliteQSerialTelemetry::begin() {
+    // Create a mutex to protect pendingData
+    telemetryMutex = xSemaphoreCreateMutex();
+
+    // Create a FreeRTOS task to print periodically
+    xTaskCreatePinnedToCore(
+        telemetryTask,
+        "SerialTelemetryTask",
+        4096,      // stack size
+        this,      // parameter
+        1,         // priority
+        NULL,
+        1          // run on core 1 (ESP32)
+    );
+}
+
+void ArduFliteQSerialTelemetry::publish(const TelemetryData& data) {
+    // Store new data so the task can print it
+    if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        pendingData = data;
+        xSemaphoreGive(telemetryMutex);
+    }
+}
+
+void ArduFliteQSerialTelemetry::telemetryTask(void* pvParameters) {
+    ArduFliteQSerialTelemetry* self = static_cast<ArduFliteQSerialTelemetry*>(pvParameters);
+
+    for (;;) {
+        unsigned long startMs = millis();
+
+        // Copy local data under mutex
+        TelemetryData localCopy;
+        if (xSemaphoreTake(self->telemetryMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+            localCopy = self->pendingData;
+            xSemaphoreGive(self->telemetryMutex);
+        }
+
+        // Print the quaternion
+        Serial.printf("%f,%f,%f,%f\n", localCopy.qw, localCopy.qx, localCopy.qy, localCopy.qz);
+
+        // Delay for the remainder of the interval
+        unsigned long elapsed = millis() - startMs;
+        int delayMs = (int)max(1.0f, self->intervalMs - elapsed);
+        vTaskDelay(pdMS_TO_TICKS(delayMs));
+    }
+}

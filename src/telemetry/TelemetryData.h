@@ -11,7 +11,4 @@ struct TelemetryData {
     float rollCmd, pitchCmd, yawCmd;
 };
 
-extern SemaphoreHandle_t telemetryMutex;
-extern TelemetryData sharedTelemetryData;
-
 #endif

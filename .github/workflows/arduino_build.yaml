@@ -1,0 +1,41 @@
+name: Arduino Build Check (ESP32)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out the repo
+      - name: Check out the code
+        uses: actions/checkout@v2
+
+      # Step 2: Install Arduino CLI
+      - name: Install Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      # Step 3: Install ESP32 core
+      - name: Install ESP32 core
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+
+      # Step 4: Install required libraries
+      - name: Install Libraries
+        run: |
+          arduino-cli lib install "PubSubClient"
+          arduino-cli lib install "WiFiManager"
+          arduino-cli lib install "FastIMU"
+          arduino-cli lib install "Adafruit AHRS"
+          arduino-cli lib install "ESP32Servo"
+
+      # Step 5: Compile the sketch
+      - name: Compile the Arduino sketch for ESP32
+        run: |          
+          arduino-cli compile --fqbn esp32:esp32:esp32 ArduFlite.ino

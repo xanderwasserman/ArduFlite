@@ -1,7 +1,7 @@
 #ifndef HOLD_BUTTON_MANAGER_H
 #define HOLD_BUTTON_MANAGER_H
 
-#include "HoldButton.h"
+#include "src/utils/HoldButton.h"
 
 #define MAX_HOLD_BUTTONS 8  // Adjust to your needs
 

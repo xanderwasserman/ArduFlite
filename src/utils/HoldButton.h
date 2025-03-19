@@ -3,7 +3,7 @@
 #ifndef HOLD_BUTTON_H
 #define HOLD_BUTTON_H
 
-#include "ButtonBase.h"
+#include "src/utils/ButtonBase.h"
 
 typedef void (*HoldButtonCallback)();
 

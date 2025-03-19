@@ -14,7 +14,7 @@
 #define YAW_PIN         12
 
 // Calibration Button definition
-#define CALIB_BUTTON_PIN 27
+#define USER_BUTTON_PIN 27
 #define CALIB_HOLD_TIME 3000
 
 TelemetryData telemetryData;
@@ -31,7 +31,14 @@ void onCalibrateHold() {
     myIMU.selfCalibrate();
 }
 
-HoldButton calibrateButton(CALIB_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
+// Callback for telemetry reset button
+void onResetTripleTap() {
+    Serial.println("Resetting Telemetry layer...");
+    telemetry.reset();
+}
+
+HoldButton calibrateButton(USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
+MultiTapButton resetButton(USER_BUTTON_PIN, 500, 3, onResetTripleTap, true, 30);
 
 unsigned long lastMicros = 0;
 int print_counter = 0;
@@ -40,7 +47,7 @@ void setup() {
   Serial.begin(115200);
   while (!Serial);
 
-  pinMode(CALIB_BUTTON_PIN, INPUT_PULLUP); // Note: INPUT_PULLUP means the pin is HIGH when not pressed, and LOW when pressed (assuming the other side of the button goes to GND).
+  pinMode(USER_BUTTON_PIN, INPUT_PULLUP);
 
   telemetry.begin();
 

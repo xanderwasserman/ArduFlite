@@ -5,7 +5,7 @@
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <PubSubClient.h>
-#include "IArduFliteTelemetry.h"
+#include "ArduFliteTelemetry.h"
 #include "TelemetryData.h"
 
 class ArduFliteMqttTelemetry : public ArduFliteTelemetry {

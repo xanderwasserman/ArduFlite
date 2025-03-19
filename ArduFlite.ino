@@ -5,7 +5,8 @@
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/controller/ArduFliteController.h"
 #include "src/actuators/ServoManager.h"
-#include "src/telemetry/ArduFliteTelemetry.h"
+#include "src/telemetry/ArduFliteMqttTelemetry.h"
+#include "src/telemetry/ArduFliteQSerialTelemetry.h"
 
 #define PRINT_EVERY_N_UPDATES 50
 

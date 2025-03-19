@@ -22,7 +22,6 @@ void ArduFliteMqttTelemetry::begin() {
     WiFiManagerParameter custom_mqtt_user("user", "MQTT Username", mqttUser.c_str(), 32);
     WiFiManagerParameter custom_mqtt_pass("pass", "MQTT Password", mqttPass.c_str(), 32);
 
-    WiFiManager wifiManager;
     wifiManager.addParameter(&custom_mqtt_server);
     wifiManager.addParameter(&custom_mqtt_port);
     wifiManager.addParameter(&custom_mqtt_user);

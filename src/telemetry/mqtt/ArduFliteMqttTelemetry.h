@@ -17,11 +17,12 @@ public:
     void publish(const TelemetryData& data) override;
     void reset() override;
 
-    private:
+private:
     static void telemetryTask(void* pvParameters);
     void connectToMqtt();
 
     // For Wi-Fi & MQTT
+    WiFiManager wifiManager;
     WiFiClient wifiClient;
     PubSubClient mqttClient;
     float intervalMs;

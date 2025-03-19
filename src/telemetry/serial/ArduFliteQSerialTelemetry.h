@@ -2,8 +2,8 @@
 #pragma once
 
 #include <Arduino.h>
-#include "IArduFliteTelemetry.h"
-#include "TelemetryData.h"
+#include "src/telemetry/ArduFliteTelemetry.h"
+#include "src/telemetry/TelemetryData.h"
 
 class ArduFliteQSerialTelemetry : public IArduFliteTelemetry {
     public:

@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "src/utils/HoldButton.h"
 #include "src/utils/HoldButtonManager.h"
+#include "src/utils/MultiTapButton.h"
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/controller/ArduFliteController.h"
 #include "src/actuators/ServoManager.h"

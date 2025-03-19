@@ -1,7 +1,7 @@
 // ArduFliteTelemetry.h
 #pragma once
 
-#include "TelemetryData.h"
+#include "src/telemetry/TelemetryData.h"
 
 class ArduFliteTelemetry {
 public:

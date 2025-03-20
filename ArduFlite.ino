@@ -2,6 +2,7 @@
 #include "src/utils/HoldButton.h"
 #include "src/utils/HoldButtonManager.h"
 #include "src/utils/MultiTapButton.h"
+#include "src/utils/MultiTapButtonManager.h"
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/controller/ArduFliteController.h"
 #include "src/actuators/ServoManager.h"
@@ -40,7 +41,7 @@ void onResetTripleTap() {
 }
 
 HoldButton calibrateButton(USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
-MultiTapButton resetButton(USER_BUTTON_PIN, 500, 3, onResetTripleTap, true, 30);
+MultiTapButton resetButton(USER_BUTTON_PIN, 1000, 3, onResetTripleTap, true, 30);
 
 unsigned long lastMicros = 0;
 int print_counter = 0;
@@ -66,8 +67,11 @@ void setup() {
   Serial.printf("ArduFlite Controller initialised\n");
 
   calibrateButton.begin();
+  resetButton.begin();
   HoldButtonManager::registerButton(calibrateButton);
   Serial.println("Press and hold the button for 3s at any time to calibrate the IMU.");
+  MultiTapButtonManager::registerButton(resetButton);
+  Serial.println("Triple tap the button at any time to reset the telemetry layer.");
 }
 
 void loop() 
@@ -79,6 +83,7 @@ void loop()
 
   // 1) Update all buttons in one shot
   HoldButtonManager::updateAll();
+  MultiTapButtonManager::updateAll();
 
   // 2) Update sensor data
   myIMU.update(dt);
@@ -125,19 +130,19 @@ void loop()
   if (print_counter++ >= PRINT_EVERY_N_UPDATES) 
   {
     
-    Serial.print("Acceleration: ");
-    Serial.print(myIMU.getAccelX());
-    Serial.print(", ");
-    Serial.print(myIMU.getAccelY());
-    Serial.print(", ");
-    Serial.println(myIMU.getAccelZ());
+    // Serial.print("Acceleration: ");
+    // Serial.print(myIMU.getAccelX());
+    // Serial.print(", ");
+    // Serial.print(myIMU.getAccelY());
+    // Serial.print(", ");
+    // Serial.println(myIMU.getAccelZ());
 
-    Serial.print("Gyroscope: ");
-    Serial.print(myIMU.getGyroX());
-    Serial.print(",");
-    Serial.print(myIMU.getGyroY());
-    Serial.print(",");
-    Serial.println(myIMU.getGyroZ());
+    // Serial.print("Gyroscope: ");
+    // Serial.print(myIMU.getGyroX());
+    // Serial.print(",");
+    // Serial.print(myIMU.getGyroY());
+    // Serial.print(",");
+    // Serial.println(myIMU.getGyroZ());
     
     // Serial.print("Quarternion: ");
     // Serial.print(myIMU.getQw());
@@ -148,16 +153,16 @@ void loop()
     // Serial.print(", ");
     // Serial.println(myIMU.getQz());
 
-    Serial.print("Pitch: ");
-    Serial.print(myIMU.getPitch());
-    Serial.print(" Roll: ");
-    Serial.print(myIMU.getRoll());
-    Serial.print(" Yaw: ");
-    Serial.println(myIMU.getYaw());
+    // Serial.print("Pitch: ");
+    // Serial.print(myIMU.getPitch());
+    // Serial.print(" Roll: ");
+    // Serial.print(myIMU.getRoll());
+    // Serial.print(" Yaw: ");
+    // Serial.println(myIMU.getYaw());
 
-    Serial.print(" -> rollCmd: "); Serial.print(rollCmd);
-    Serial.print(" pitchCmd: "); Serial.print(pitchCmd);
-    Serial.print(" yawCmd: "); Serial.println(yawCmd);
+    // Serial.print(" -> rollCmd: "); Serial.print(rollCmd);
+    // Serial.print(" pitchCmd: "); Serial.print(pitchCmd);
+    // Serial.print(" yawCmd: "); Serial.println(yawCmd);
 
     print_counter = 0;
   }

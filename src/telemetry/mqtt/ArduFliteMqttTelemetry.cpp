@@ -11,6 +11,17 @@ ArduFliteMqttTelemetry::ArduFliteMqttTelemetry(float frequencyHz)
   , mqttClient(wifiClient)  // also call the PubSubClient ctor
 {
     intervalMs = (1.0f / frequencyHz) * 1000.0f;
+
+    // 1) Load previously saved MQTT settings from Preferences
+    loadPreferences();
+
+    // 2) Update WiFiManagerParameter defaults
+    // (The above constructor lines set initial defaults,
+    //  but if loadPreferences() changed them, let's re-sync.)
+    custom_mqtt_server.setValue(mqttServer.c_str(), 40);
+    custom_mqtt_port.setValue(String(mqttPort).c_str(), 6);
+    custom_mqtt_user.setValue(mqttUser.c_str(), 32);
+    custom_mqtt_pass.setValue(mqttPass.c_str(), 32);
 }
 
 void ArduFliteMqttTelemetry::begin() {
@@ -46,7 +57,7 @@ void ArduFliteMqttTelemetry::publish(const TelemetryData& data) {
 
 void ArduFliteMqttTelemetry::connectToMqtt() {
     if (!mqttClient.connected()) {
-        Serial.println("Connecting to MQTT... ");
+        Serial.printf("Connecting to MQTT with credentials:\nBroker: %s\nPort: %d\nUsername: %s\nPassword: %s\n", mqttServer.c_str(), mqttPort, mqttUser.c_str(), mqttPass.c_str());
         if (mqttUser.length() > 0) {
             if (mqttClient.connect("ArduFlite", mqttUser.c_str(), mqttPass.c_str())) {
                 Serial.println("connected with auth");
@@ -72,17 +83,27 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters) {
     // ----------------------
     // 1) WiFiManager config
     // ----------------------
+    // Reload saved preferences so we have the latest MQTT config
+    self->loadPreferences();
+    // Update our custom parameters with the (potentially new) values
+    self->custom_mqtt_server.setValue(self->mqttServer.c_str(), 40);
+    self->custom_mqtt_port.setValue(String(self->mqttPort).c_str(), 6);
+    self->custom_mqtt_user.setValue(self->mqttUser.c_str(), 32);
+    self->custom_mqtt_pass.setValue(self->mqttPass.c_str(), 32);
+
+    WiFiManager localManager;
+
     // Add the member parameters to wifiManager
-    self->wifiManager.addParameter(&self->custom_mqtt_server);
-    self->wifiManager.addParameter(&self->custom_mqtt_port);
-    self->wifiManager.addParameter(&self->custom_mqtt_user);
-    self->wifiManager.addParameter(&self->custom_mqtt_pass);
+    localManager.addParameter(&self->custom_mqtt_server);
+    localManager.addParameter(&self->custom_mqtt_port);
+    localManager.addParameter(&self->custom_mqtt_user);
+    localManager.addParameter(&self->custom_mqtt_pass);
 
     // Optionally set timeouts:
     // self->wifiManager.setConfigPortalTimeout(30); // e.g. 30s
 
     // Attempt to connect or open the config portal
-    if (!self->wifiManager.autoConnect("ArduFliteAP")) {
+    if (!localManager.autoConnect("ArduFliteAP")) {
         Serial.println("WiFi connection failed. Telemetry task will exit.");
         // If we want the task to keep trying, we could do a loop. Otherwise, stop.
         vTaskDelete(nullptr); // kill this task
@@ -94,6 +115,9 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters) {
     self->mqttPort   = atoi(self->custom_mqtt_port.getValue());
     self->mqttUser   = self->custom_mqtt_user.getValue();
     self->mqttPass   = self->custom_mqtt_pass.getValue();
+
+    // Save them so they persist across reboots
+    self->savePreferences();
 
     // Set up the MQTT client
     self->mqttClient.setServer(self->mqttServer.c_str(), self->mqttPort);
@@ -162,7 +186,8 @@ void ArduFliteMqttTelemetry::reset()
     mqttClient.disconnect();
 
     // Clear Wi-Fi credentials so that the next autoConnect() shows the portal
-    wifiManager.resetSettings();
+    WiFiManager wifiManager;
+    wifiManager.resetSettings(); 
 
     // Stop the current telemetry task if running
     if (taskHandle) {
@@ -172,4 +197,43 @@ void ArduFliteMqttTelemetry::reset()
 
     // Start again
     begin();
+}
+
+// ------------------------
+// Load & Save to Preferences
+// ------------------------
+void ArduFliteMqttTelemetry::loadPreferences()
+{
+    Preferences prefs;
+    if (!prefs.begin(PREF_NAMESPACE, true)) { // read-only mode
+        Serial.println("[MQTT] Preferences not found, using defaults");
+        return;
+    }
+
+    mqttServer = prefs.getString("server", mqttServer);
+    mqttPort   = prefs.getShort("port",   mqttPort);
+    mqttUser   = prefs.getString("user",  mqttUser);
+    mqttPass   = prefs.getString("pass",  mqttPass);
+
+    Serial.printf("[MQTT] Loaded from NVS:\nServer=%s Port=%d User=%s Pass=%s\n",
+        mqttServer.c_str(), mqttPort, mqttUser.c_str(), mqttPass.c_str());
+
+    prefs.end();
+}
+
+void ArduFliteMqttTelemetry::savePreferences()
+{
+    Preferences prefs;
+    if (!prefs.begin(PREF_NAMESPACE, false)) { // read/write
+        Serial.println("[MQTT] Failed to open prefs for writing");
+        return;
+    }
+
+    prefs.putString("server", mqttServer);
+    prefs.putShort("port",   mqttPort);
+    prefs.putString("user",  mqttUser);
+    prefs.putString("pass",  mqttPass);
+    prefs.end();
+
+    Serial.println("[MQTT] Saved new config to NVS");
 }

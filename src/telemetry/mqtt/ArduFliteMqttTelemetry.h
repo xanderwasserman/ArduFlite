@@ -1,5 +1,3 @@
-// ArduFliteMqttTelemetry.h
-
 #pragma once
 
 #include <WiFi.h>
@@ -18,23 +16,34 @@ public:
     void reset() override;
 
 private:
+    // This single task will do WiFi setup + telemetry loop
     static void telemetryTask(void* pvParameters);
+
+    // Called within the telemetry task to attempt an MQTT connection
     void connectToMqtt();
 
-    // For Wi-Fi & MQTT
+    // WiFiManager object as a member so we can call resetSettings() in reset()
     WiFiManager wifiManager;
-    WiFiClient wifiClient;
+
+    WiFiManagerParameter custom_mqtt_server;
+    WiFiManagerParameter custom_mqtt_port;
+    WiFiManagerParameter custom_mqtt_user;
+    WiFiManagerParameter custom_mqtt_pass;
+
+    // For Wi-Fi & MQTT
+    WiFiClient   wifiClient;
     PubSubClient mqttClient;
-    float intervalMs;
+    float        intervalMs;
+
     String mqttServer   = "192.168.0.10";
     int    mqttPort     = 1883;
     String mqttUser     = "";
     String mqttPass     = "";
 
     // Data sync
-    SemaphoreHandle_t telemetryMutex    = nullptr;
+    SemaphoreHandle_t telemetryMutex = nullptr;
     TelemetryData     pendingData;
 
-    // We store the task handle so we can stop it on reset
-    TaskHandle_t      taskHandle        = nullptr;
+    // FreeRTOS Task handle so we can kill/restart it on reset()
+    TaskHandle_t      taskHandle     = nullptr;
 };

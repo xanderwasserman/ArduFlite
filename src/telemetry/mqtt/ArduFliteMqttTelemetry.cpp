@@ -3,64 +3,35 @@
 #include "ArduFliteMqttTelemetry.h"
 #include <Arduino.h>
 
-ArduFliteMqttTelemetry::ArduFliteMqttTelemetry(float frequencyHz) : mqttClient(wifiClient) 
+ArduFliteMqttTelemetry::ArduFliteMqttTelemetry(float frequencyHz)
+  : custom_mqtt_server("server", "MQTT Server", mqttServer.c_str(), 40)
+  , custom_mqtt_port("port", "MQTT Port", String(mqttPort).c_str(), 6)
+  , custom_mqtt_user("user", "MQTT Username", mqttUser.c_str(), 32)
+  , custom_mqtt_pass("pass", "MQTT Password", mqttPass.c_str(), 32)
+  , mqttClient(wifiClient)  // also call the PubSubClient ctor
 {
     intervalMs = (1.0f / frequencyHz) * 1000.0f;
 }
 
 void ArduFliteMqttTelemetry::begin() {
-    // Only do this once if the task isn't already running.
-    // If you expect multiple calls to begin(), guard or stop any existing task.
-    if (taskHandle) {
-        // Task is already running. Optionally return or stop the task first.
+     // If the task is already running, do nothing
+     if (taskHandle) {
         return;
     }
 
-    // 1) Setup Wi-Fi manager parameters
-    WiFiManagerParameter custom_mqtt_server("server", "MQTT Server", mqttServer.c_str(), 40);
-    WiFiManagerParameter custom_mqtt_port("port", "MQTT Port", String(mqttPort).c_str(), 6);
-    WiFiManagerParameter custom_mqtt_user("user", "MQTT Username", mqttUser.c_str(), 32);
-    WiFiManagerParameter custom_mqtt_pass("pass", "MQTT Password", mqttPass.c_str(), 32);
-
-    wifiManager.addParameter(&custom_mqtt_server);
-    wifiManager.addParameter(&custom_mqtt_port);
-    wifiManager.addParameter(&custom_mqtt_user);
-    wifiManager.addParameter(&custom_mqtt_pass);
-
-    // Optional: don't re-use old credentials
-    // wifiManager.resetSettings();
-
-    // 2) Connect or start AP
-    if (!wifiManager.autoConnect("ArduFliteAP")) {
-        Serial.println("WiFi connection failed. Restarting...");
-        ESP.restart();
-    }
-
-    // 3) Capture user-provided MQTT credentials
-    mqttServer = custom_mqtt_server.getValue();
-    mqttPort   = atoi(custom_mqtt_port.getValue());
-    mqttUser   = custom_mqtt_user.getValue();
-    mqttPass   = custom_mqtt_pass.getValue();
-
-    // Configure MQTT server
-    mqttClient.setServer(mqttServer.c_str(), mqttPort);
-
-    // 4) Create a mutex to protect telemetry data
-    telemetryMutex = xSemaphoreCreateMutex();
-
-    // 5) Create a FreeRTOS task that repeatedly publishes data
+    // Create the FreeRTOS task that will handle WiFi + MQTT
     BaseType_t result = xTaskCreatePinnedToCore(
         telemetryTask,
-        "TelemetryTask",
-        4096,        // stack size
-        this,        // parameter
-        1,           // priority
-        &taskHandle, // <--- store the handle
-        1            // run on core 1
+        "MqttTelemetryTask",
+        8192,           // stack size
+        this,           // task parameter
+        1,              // priority
+        &taskHandle,    // store the handle
+        1               // run on core 1 (ESP32)
     );
 
     if (result != pdPASS) {
-        Serial.println("Failed to create TelemetryTask!");
+        Serial.println("Failed to create MqttTelemetryTask!");
     }
 }
 
@@ -73,17 +44,76 @@ void ArduFliteMqttTelemetry::publish(const TelemetryData& data) {
     }
 }
 
-void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters) {
-    ArduFliteMqttTelemetry* self = static_cast<ArduFliteMqttTelemetry*>(pvParameters);
+void ArduFliteMqttTelemetry::connectToMqtt() {
+    if (!mqttClient.connected()) {
+        Serial.println("Connecting to MQTT... ");
+        if (mqttUser.length() > 0) {
+            if (mqttClient.connect("ArduFlite", mqttUser.c_str(), mqttPass.c_str())) {
+                Serial.println("connected with auth");
+            } else {
+                Serial.print("failed, rc=");
+                Serial.println(mqttClient.state());
+            }
+        } else {
+            // No user/pass
+            if (mqttClient.connect("ArduFlite")) {
+                Serial.println("connected");
+            } else {
+                Serial.print("failed, rc=");
+                Serial.println(mqttClient.state());
+            }
+        }
+    }
+}
 
+void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters) {
+    auto* self = static_cast<ArduFliteMqttTelemetry*>(pvParameters);
+
+    // ----------------------
+    // 1) WiFiManager config
+    // ----------------------
+    // Add the member parameters to wifiManager
+    self->wifiManager.addParameter(&self->custom_mqtt_server);
+    self->wifiManager.addParameter(&self->custom_mqtt_port);
+    self->wifiManager.addParameter(&self->custom_mqtt_user);
+    self->wifiManager.addParameter(&self->custom_mqtt_pass);
+
+    // Optionally set timeouts:
+    // self->wifiManager.setConfigPortalTimeout(30); // e.g. 30s
+
+    // Attempt to connect or open the config portal
+    if (!self->wifiManager.autoConnect("ArduFliteAP")) {
+        Serial.println("WiFi connection failed. Telemetry task will exit.");
+        // If we want the task to keep trying, we could do a loop. Otherwise, stop.
+        vTaskDelete(nullptr); // kill this task
+        return;
+    }
+
+    // If we get here, WiFi is connected. Grab user-provided MQTT credentials
+    self->mqttServer = self->custom_mqtt_server.getValue();
+    self->mqttPort   = atoi(self->custom_mqtt_port.getValue());
+    self->mqttUser   = self->custom_mqtt_user.getValue();
+    self->mqttPass   = self->custom_mqtt_pass.getValue();
+
+    // Set up the MQTT client
+    self->mqttClient.setServer(self->mqttServer.c_str(), self->mqttPort);
+
+    // Create a mutex for data
+    self->telemetryMutex = xSemaphoreCreateMutex();
+
+    Serial.println("Telemetry WiFi + MQTT setup complete. Entering publish loop...");
+
+    // ----------------------
+    // 2) Main publish loop
+    // ----------------------
     while(true) {
         unsigned long startMillis = millis();
 
         // Make sure MQTT is connected
         self->connectToMqtt();
 
-        // Copy data under mutex
         TelemetryData localCopy;
+        // Copy data under mutex
         if (xSemaphoreTake(self->telemetryMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
             localCopy = self->pendingData;
             xSemaphoreGive(self->telemetryMutex);
@@ -124,40 +154,22 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters) {
     }
 }
 
-void ArduFliteMqttTelemetry::connectToMqtt() {
-    // Reconnect logic if needed
-    if (!mqttClient.connected()) {
-        Serial.print("Connecting to MQTT... ");
-        if (mqttUser.length() > 0) {
-            if (mqttClient.connect("ArduFlite", mqttUser.c_str(), mqttPass.c_str())) {
-                Serial.println("connected with auth");
-            } else {
-                Serial.print("failed, rc=");
-                Serial.println(mqttClient.state());
-            }
-        } else {
-            // No user/pass
-            if (mqttClient.connect("ArduFlite")) {
-                Serial.println("connected");
-            } else {
-                Serial.print("failed, rc=");
-                Serial.println(mqttClient.state());
-            }
-        }
-    }
-}
+void ArduFliteMqttTelemetry::reset()
+{
+    Serial.println("ArduFliteMqttTelemetry::reset() called. Stopping task & clearing Wi-Fi credentials...");
 
-void ArduFliteMqttTelemetry::reset() {
-    Serial.println("ArduFliteMqttTelemetry::reset() called, stopping task and re-entering WiFiManager...");
-
+    // Disconnect MQTT
     mqttClient.disconnect();
+
+    // Clear Wi-Fi credentials so that the next autoConnect() shows the portal
     wifiManager.resetSettings();
 
-    // 1) Stop the current task if it’s running
+    // Stop the current telemetry task if running
     if (taskHandle) {
         vTaskDelete(taskHandle);
         taskHandle = nullptr;
     }
 
+    // Start again
     begin();
 }

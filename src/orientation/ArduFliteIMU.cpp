@@ -226,7 +226,7 @@ void ArduFliteIMU::applyOrientation() {
     gyroX = -gyroX;
     
     accelY = -accelY;
-    gyroY = -gyroY;
+    // gyroY = -gyroY;
 
     // accelZ = -accelZ;
     gyroZ = -gyroZ;

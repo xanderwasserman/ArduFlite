@@ -60,9 +60,9 @@ void setup() {
     while (1);
   }
 
-  FliteQuaternion firstQ(1, 0, 0, 0);
-
-  myController.setDesiredOrientation(firstQ);
+  // FliteQuaternion firstQ(1, 0, 0, 0);
+  // myController.setDesiredQuaternion(firstQ);
+  myController.setDesiredEulerDegs(5.0, 0.0, 0.0);
 
   Serial.printf("ArduFlite Controller initialised\n");
 
@@ -130,19 +130,19 @@ void loop()
   if (print_counter++ >= PRINT_EVERY_N_UPDATES) 
   {
     
-    // Serial.print("Acceleration: ");
-    // Serial.print(myIMU.getAccelX());
-    // Serial.print(", ");
-    // Serial.print(myIMU.getAccelY());
-    // Serial.print(", ");
-    // Serial.println(myIMU.getAccelZ());
+    Serial.print("Acceleration: ");
+    Serial.print(myIMU.getAccelX());
+    Serial.print(", ");
+    Serial.print(myIMU.getAccelY());
+    Serial.print(", ");
+    Serial.println(myIMU.getAccelZ());
 
-    // Serial.print("Gyroscope: ");
-    // Serial.print(myIMU.getGyroX());
-    // Serial.print(",");
-    // Serial.print(myIMU.getGyroY());
-    // Serial.print(",");
-    // Serial.println(myIMU.getGyroZ());
+    Serial.print("Gyroscope: ");
+    Serial.print(myIMU.getGyroX());
+    Serial.print(",");
+    Serial.print(myIMU.getGyroY());
+    Serial.print(",");
+    Serial.println(myIMU.getGyroZ());
     
     // Serial.print("Quarternion: ");
     // Serial.print(myIMU.getQw());
@@ -153,22 +153,19 @@ void loop()
     // Serial.print(", ");
     // Serial.println(myIMU.getQz());
 
-    // Serial.print("Pitch: ");
-    // Serial.print(myIMU.getPitch());
-    // Serial.print(" Roll: ");
-    // Serial.print(myIMU.getRoll());
-    // Serial.print(" Yaw: ");
-    // Serial.println(myIMU.getYaw());
+    Serial.print("Pitch: ");
+    Serial.print(myIMU.getPitch());
+    Serial.print(" Roll: ");
+    Serial.print(myIMU.getRoll());
+    Serial.print(" Yaw: ");
+    Serial.println(myIMU.getYaw());
 
-    // Serial.print(" -> rollCmd: "); Serial.print(rollCmd);
-    // Serial.print(" pitchCmd: "); Serial.print(pitchCmd);
-    // Serial.print(" yawCmd: "); Serial.println(yawCmd);
+    Serial.print(" -> rollCmd: "); Serial.print(rollCmd);
+    Serial.print(" pitchCmd: "); Serial.print(pitchCmd);
+    Serial.print(" yawCmd: "); Serial.println(yawCmd);
 
     print_counter = 0;
   }
-  
-  //print quaternion for visualiser
-  // Serial.printf("%f,%f,%f,%f\n", myIMU.getQw(), myIMU.getQx(), myIMU.getQy(), myIMU.getQz());
 
   delay(10); // ~100 Hz print
 }

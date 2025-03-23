@@ -1,82 +1,43 @@
-// ServoManager.h
 #ifndef SERVO_MANAGER_H
 #define SERVO_MANAGER_H
 
 #include <Arduino.h>
-#include <ESP32Servo.h> // for ESP32 boards; adjust if needed
-
-static int mapFloatToInt(float val, float inMin, float inMax, int outMin, int outMax) {
-    if (val > inMax) val = inMax;
-    if (val < inMin) val = inMin;
-    return (int)((val - inMin) * (float)(outMax - outMin) / (inMax - inMin) + outMin);
-}
+#include <ESP32Servo.h>
 
 class ServoManager {
 public:
-    // Pass -1 (or any negative) for 'rightAileronPin' if you only have one aileron servo.
-    // If 'rightAileronPin' >= 0, we'll use dual-aileron logic.
+    /**
+     * Constructor.
+     * @param leftOrSingleAileronPin Digital pin for the left (or single) aileron servo.
+     * @param rightAileronPin Digital pin for the right aileron servo.
+     *                        Pass a negative value (e.g. -1) if using a single aileron.
+     * @param pitchPin Digital pin for the pitch servo.
+     * @param yawPin Digital pin for the yaw servo.
+     */
     ServoManager(int leftOrSingleAileronPin, int rightAileronPin,
-                 int pitchPin, int yawPin)
-      : pitchPin(pitchPin), yawPin(yawPin), 
-        leftAilPin(leftOrSingleAileronPin), rightAilPin(rightAileronPin)
-    {
-        // Attach pitch & yaw always
-        pitchServo.attach(pitchPin,  500, 2500);
-        yawServo.attach(yawPin,      500, 2500);
+                 int pitchPin, int yawPin);
 
-        if (rightAileronPin < 0) {
-            // SINGLE AILERON MODE
-            dualAilerons = false;
-            singleAilServo.attach(leftOrSingleAileronPin, 500, 2500);
-        } else {
-            // DUAL AILERON MODE
-            dualAilerons = true;
-            leftAilServo.attach(leftOrSingleAileronPin,  500, 2500);
-            rightAilServo.attach(rightAileronPin,        500, 2500);
-        }
-    }
-
-    // Accepts rollCmd, pitchCmd, yawCmd in [-1..+1]
-    void writeCommands(float rollCmd, float pitchCmd, float yawCmd) {
-        // Pitch & yaw: just map to [0..180] for a typical servo
-        int pitchDeg = mapFloatToInt(pitchCmd, -1.0f, 1.0f, -45, 45);
-        pitchDeg   = 90 - pitchDeg;
-
-        int yawDeg   = mapFloatToInt(yawCmd,   -1.0f, 1.0f, -45, 45);
-        yawDeg   = 90 - yawDeg;
-
-        pitchServo.write(pitchDeg);
-        yawServo.write(yawDeg);
-
-        if (!dualAilerons) {
-            // SINGLE aileron servo
-            int ailDeflect = mapFloatToInt(rollCmd, -1.0f, 1.0f, -70, 70);
-
-            int ailAngle   = 90 - ailDeflect;
-            singleAilServo.write(ailAngle);
-        } else {
-            // DUAL ailerons
-            // Example: left up when right down
-            int ailDeflect = mapFloatToInt(rollCmd, -1.0f, 1.0f, -70, 70);
-
-            int leftAngle  = 90 - ailDeflect;
-            int rightAngle = 90 - ailDeflect;
-            leftAilServo.write(leftAngle);
-            rightAilServo.write(rightAngle);
-        }
-    }
+    /**
+     * Write control commands to the servos.
+     * @param rollCmd  Command for roll in the range [-1, +1]
+     * @param pitchCmd Command for pitch in the range [-1, +1]
+     * @param yawCmd   Command for yaw in the range [-1, +1]
+     */
+    void writeCommands(float rollCmd, float pitchCmd, float yawCmd);
 
 private:
-    // Pin info stored, if you ever need it
+    // Helper: maps a float value from one range to another.
+    static int mapFloatToInt(float val, float inMin, float inMax, int outMin, int outMax);
+
+    // Pin numbers
     int pitchPin, yawPin;
     int leftAilPin, rightAilPin;
 
-    // Are we using single or dual ailerons?
+    // Mode: true if using dual aileron servos, false if using a single servo.
     bool dualAilerons;
 
-    // Servos
+    // Servo objects for pitch, yaw, and ailerons.
     Servo pitchServo, yawServo;
-    // Single aileron servo OR left & right aileron servos
     Servo singleAilServo, leftAilServo, rightAilServo;
 };
 

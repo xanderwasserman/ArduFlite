@@ -3,9 +3,9 @@
 
 // Constructor: Initialize the PIDs and set the default desired orientation
 ArduFliteController::ArduFliteController()
-    : pidRoll(2.0f, 0.0f, 0.01f, -1.0f, 1.0f),
-      pidPitch(5.0f, 0.0f, 0.01f, -1.0f, 1.0f),
-      pidYaw(2.0f, 0.0f, 0.01f, -1.0f, 1.0f)
+    : pidRoll(2.0f, 0.0f, 0.04f, -1.0f, 1.0f),
+      pidPitch(2.0f, 0.0f, 0.04f, -1.0f, 1.0f),
+      pidYaw(2.0f, 0.0f, 0.04f, -1.0f, 1.0f)
 {
     // For “straight and level” flight
     desiredQ = FliteQuaternion(1, 0, 0, 0);

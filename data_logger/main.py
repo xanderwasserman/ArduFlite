@@ -90,7 +90,8 @@ class DataLogger:
     def start(self):
         self.recording = True
         self.start_time = datetime.datetime.now()
-        fname = self.start_time.strftime("flight_data_%Y%m%d_%H%M%S.csv")
+        # fname = self.start_time.strftime("flight_data_%Y%m%d_%H%M%S.csv")
+        fname = "/home/pi/Desktop/" + self.start_time.strftime("flight_data_%Y%m%d_%H%M%S.csv")
         self.file = open(fname, "w", newline="")
         self.writer = csv.writer(self.file)
         self.writer.writerow(CSV_ORDER)

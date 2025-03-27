@@ -30,7 +30,7 @@ ServoManager::ServoManager(int leftOrSingleAileronPin, int rightAileronPin, int 
 void ServoManager::writeCommands(float rollCmd, float pitchCmd, float yawCmd) {
     // Map pitchCmd from [-1, +1] to a deflection range, then add 90 for servo mid-point.
     int pitchDeg = mapFloatToInt(pitchCmd, -1.0f, 1.0f, -70, 70);
-    pitchDeg = 90 + pitchDeg;
+    pitchDeg = 90 - pitchDeg;
 
     // Map yawCmd similarly.
     int yawDeg = mapFloatToInt(yawCmd, -1.0f, 1.0f, -70, 70);

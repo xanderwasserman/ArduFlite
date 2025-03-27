@@ -15,7 +15,21 @@ class GraphPlotter(pg.PlotWidget):
         self.setLabel('left', self.variable)
         self.setLabel('bottom', 'Time (s)')
         self.curve = self.plot(pen='y')
-
+        
+        # Set fixed y-axis range depending on the category:
+        if self.category in ["accel", "commands"]:
+            self.setYRange(-1, 1)
+            self.enableAutoRange(axis='y', enable=False)
+        elif self.category == "orientation":
+            self.setYRange(-90, 90)
+            self.enableAutoRange(axis='y', enable=False)
+        elif self.category == "gyro":
+            self.setYRange(-180, 180)
+            self.enableAutoRange(axis='y', enable=False)
+        else:
+            # For other categories (e.g. gyro) you might allow auto range.
+            self.enableAutoRange(axis='y', enable=True)
+        
         # Timer for updating the plot every 100 ms
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_plot)

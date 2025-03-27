@@ -8,17 +8,14 @@ def quaternion_to_euler(w, x, y, z):
     """
     Convert a quaternion (w, x, y, z) to Euler angles (roll, pitch, yaw) in degrees.
     """
-    # Roll (rotation about x-axis)
     t0 = +2.0 * (w * x + y * z)
     t1 = +1.0 - 2.0 * (x * x + y * y)
     roll = np.degrees(np.arctan2(t0, t1))
 
-    # Pitch (rotation about y-axis)
     t2 = +2.0 * (w * y - z * x)
     t2 = np.clip(t2, -1.0, 1.0)
     pitch = np.degrees(np.arcsin(t2))
 
-    # Yaw (rotation about z-axis)
     t3 = +2.0 * (w * z + x * y)
     t4 = +1.0 - 2.0 * (y * y + z * z)
     yaw = np.degrees(np.arctan2(t3, t4))
@@ -44,8 +41,8 @@ class AircraftVisualizer(gl.GLViewWidget):
             'yaw': 1.0
         }
 
-        # Adjust camera for a nicer default view.
-        self.setCameraPosition(distance=25, elevation=15, azimuth=30)
+        # Adjust camera: closer distance, keeping a good elevation and azimuth.
+        self.setCameraPosition(distance=5, elevation=15, azimuth=30)
 
         self.init_ground()
         self.init_aircraft()
@@ -76,17 +73,18 @@ class AircraftVisualizer(gl.GLViewWidget):
     def get_aircraft_mesh_data(self):
         """
         Generate mesh data for a filled aircraft.
-        This creates a fuselage built from cross-sections and adds wings and stabilizers.
+        Creates a fuselage from elliptical cross-sections and adds wings and stabilizers.
         Returns:
             all_vertices: (N, 3) numpy array of vertex positions.
             all_faces: (M, 3) numpy array of triangle indices.
             face_colors: (M, 4) numpy array with RGBA values for each face.
         """
         # --- Fuselage ---
-        # Cross-section parameters (from tail to nose)
+        # Cross-section parameters (from tail to nose).
+        # Note: We flip the z radii (use negative values) so that the top is at -z.
         xs = [-1.0, -0.5, 0.0, 0.5, 1.0]
         rys = [0.03, 0.05, 0.1, 0.1, 0.02]
-        rzs = [0.03, 0.05, 0.1, 0.1, 0.02]
+        rzs = [-0.03, -0.05, -0.1, -0.1, -0.02]
         num_segments = 16
 
         fuselage_vertices = []
@@ -148,7 +146,7 @@ class AircraftVisualizer(gl.GLViewWidget):
         # --- Vertical Fin ---
         vertical_fin_vertices = np.array([
             [-1.0, 0.0, 0.0],
-            [-1.0, 0.0, -0.6],
+            [-1.0, 0.0, -0.6],  # Tip in -z (upward in our coordinate system, since +z is down)
             [-0.7, 0.0, 0.0]
         ])
         vertical_fin_faces = np.array([
@@ -182,8 +180,8 @@ class AircraftVisualizer(gl.GLViewWidget):
         all_vertices = np.vstack(all_vertices)
         all_faces = np.vstack(all_faces)
 
-        # Set a metallic gray color for all faces.
-        face_colors = np.tile(np.array([[0.75, 0.75, 0.75, 1.0]]), (all_faces.shape[0], 1))
+        # Use a very light metallic color for all faces (almost white).
+        face_colors = np.tile(np.array([[0.95, 0.95, 0.95, 1.0]]), (all_faces.shape[0], 1))
 
         return all_vertices, all_faces, face_colors
 
@@ -211,12 +209,13 @@ class AircraftVisualizer(gl.GLViewWidget):
     def update_visualization(self):
         """
         Update the aircraft orientation using the latest quaternion data.
+        Applies a final z‑flip so that -z is up and +z is down.
         """
         q = self.data_store.data["quaternion"]
         if None not in (q["w"], q["x"], q["y"], q["z"]):
             roll, pitch, yaw = quaternion_to_euler(q["w"], q["x"], q["y"], q["z"])
 
-            # Apply any axis inversion factors.
+            # Apply axis inversion factors.
             roll *= self.axis_inversion['roll']
             pitch *= self.axis_inversion['pitch']
             yaw *= self.axis_inversion['yaw']
@@ -248,6 +247,9 @@ class AircraftVisualizer(gl.GLViewWidget):
 
             # Rotate the original mesh vertices.
             rotated_vertices = (R @ self._orig_mesh_vertices.T).T
+            # Flip the z-axis so that -z is up and +z is down.
+            rotated_vertices[:, 2] *= -1
+
             self.aircraft_mesh.setMeshData(
                 vertexes=rotated_vertices,
                 faces=self._faces,
@@ -257,3 +259,4 @@ class AircraftVisualizer(gl.GLViewWidget):
                 drawEdges=True,
                 edgeColor=(0, 0, 0, 1)
             )
+

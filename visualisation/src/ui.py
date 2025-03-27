@@ -36,14 +36,10 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # 3D Aircraft Visualizer in the center (rows 1..3, cols 1..3)
         self.visualizer = AircraftVisualizer(self.data_store)
-        self.visualizer.set_axis_inversion(1, -1, -1)
+        self.visualizer.set_axis_inversion(-1, 1, -1)
         layout.addWidget(self.visualizer, 1, 1, 3, 3)
         
         # Prepare the list of "edge" positions around the 5×5 center:
-        #   - Top row (row=0, col=0..4)
-        #   - Right column (row=1..3, col=4)
-        #   - Bottom row (row=4, col=4..0)
-        #   - Left column (row=3..1, col=0)
         edge_positions = [
             # Top row (left to right)
             (0, 1), (0, 2), (0, 3), 
@@ -77,6 +73,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # CSV Recording Button in the bottom center (row=4, col=2 for example)
         self.record_button = QtWidgets.QPushButton("Start Recording")
         self.record_button.setCheckable(True)
+        self.record_button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        self.record_button.setStyleSheet("background-color: green; font-size: 16px;")
         self.record_button.toggled.connect(self.toggle_recording)
         layout.addWidget(self.record_button, 4, 4)
 
@@ -85,11 +83,12 @@ class MainWindow(QtWidgets.QMainWindow):
         Toggle CSV recording on or off.
         """
         if checked:
-            self.csv_recorder.start_recording()
-            self.record_button.setText("Stop Recording")
+            self.csv_recorder.start_recording() 
+            self.record_button.setStyleSheet("background-color: red; font-size: 16px;")
         else:
             self.csv_recorder.stop_recording()
             self.record_button.setText("Start Recording")
+            self.record_button.setStyleSheet("background-color: green; font-size: 16px;")
 
     def log_data(self):
         """

@@ -23,7 +23,11 @@
 
 #define IMU_ADDRESS 0x68  // MPU-6500 address
 
-#define FILTER_UPDATE_RATE_HZ 100
+#define FILTER_TYPE_MADGWICK 0
+#define FILTER_TYPE_KALMAN 1
+
+#define FILTER_UPDATE_RATE_HZ 500
+#define FILTER_TYPE FILTER_TYPE_KALMAN
 
 struct ArduFliteIMUOffsets {
     float accelX;
@@ -76,7 +80,12 @@ public:
 
 private:
     MPU6500 IMU;
+
+#if FILTER_TYPE == FILTER_TYPE_MADGWICK
     Adafruit_Madgwick filter;
+#elif FILTER_TYPE == FILTER_TYPE_KALMAN
+    Adafruit_NXPSensorFusion filter;
+#endif
     ArduFliteIMUOffsets offsets;
 
     bool loadOffsetsFromEEPROM(ArduFliteIMUOffsets &dest);
@@ -119,7 +128,7 @@ private:
 
     void applyOrientation();
     bool applyCalibrations();
-    void initMadgwickFilter();
+    void initFilter();
 };
 
 #endif // ARDU_FLITE_IMU_H

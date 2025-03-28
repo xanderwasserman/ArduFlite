@@ -40,8 +40,8 @@ bool ArduFliteIMU::begin() {
         return false;
     }
 
-    // Setup & Warm up the Madgwick filter before normal operation
-    initMadgwickFilter();
+    // Setup & Warm up the respective filter before normal operation
+    initFilter();
 
     Serial.println("FastIMU (MPU-6500) initialized!");
     return true;
@@ -187,9 +187,13 @@ void ArduFliteIMU::update(float dt)
       filteredGyroZ  = gyroAlpha * gyroZ + (1 - gyroAlpha) * filteredGyroZ;
   }
 
+#if FILTER_TYPE == FILTER_TYPE_MADGWICK
   // Now update your orientation filter with the smoothed values:
-  filter.updateIMU(filteredGyroX, filteredGyroY, filteredGyroZ,
-                   filteredAccelX, filteredAccelY, filteredAccelZ, dt);
+  filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, filteredAccelX, filteredAccelY, filteredAccelZ, 0, 0, 0, dt);
+#elif FILTER_TYPE == FILTER_TYPE_KALMAN
+  // Update the EKF filter.
+  filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, filteredAccelX, filteredAccelY, filteredAccelZ, 0, 0, 0);
+#endif
 
   // Retrieve the resulting quaternion and Euler angles
   filter.getQuaternion(&qw, &qx, &qy, &qz);
@@ -199,11 +203,11 @@ void ArduFliteIMU::update(float dt)
 }
 
 //////////////////////////////////////
-// 'Warm-up' the Madgwick filter so that
+// 'Warm-up' the filter so that
 //  it produces stable results when we
 // start using it.
 //////////////////////////////////////
-void ArduFliteIMU::initMadgwickFilter() 
+void ArduFliteIMU::initFilter() 
 {   
     // Begin the filter with an initial sample frequency (2 Hz in this example)
     filter.begin(FILTER_UPDATE_RATE_HZ); 
@@ -250,9 +254,15 @@ void ArduFliteIMU::initMadgwickFilter()
             filteredGyroZ  = gyroAlpha * gyroZ + (1 - gyroAlpha) * filteredGyroZ;
         }
 
-        filter.updateIMU(filteredGyroX, filteredGyroY, filteredGyroZ, filteredAccelX, filteredAccelY, filteredAccelZ, dt);
+#if FILTER_TYPE == FILTER_TYPE_MADGWICK
+        // Now update your orientation filter with the smoothed values:
+        filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, filteredAccelX, filteredAccelY, filteredAccelZ, 0, 0, 0, dt);
+#elif FILTER_TYPE == FILTER_TYPE_KALMAN
+        // Update the EKF filter.
+        filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, filteredAccelX, filteredAccelY, filteredAccelZ, 0, 0, 0);
+#endif
   }
-  Serial.println("Madgwick filter warm-up complete.");
+  Serial.println("Filter warm-up complete.");
 }
 
 //////////////////////////////////////

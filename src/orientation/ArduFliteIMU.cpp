@@ -155,22 +155,44 @@ void ArduFliteIMU::update(float dt)
   IMU.getAccel(&accelData);
   IMU.getGyro(&gyroData);
 
-  // Subtract offsets
+  // Raw sensor values with offsets removed
   accelX = accelData.accelX - offsets.accelX;
   accelY = accelData.accelY - offsets.accelY;
   accelZ = accelData.accelZ - offsets.accelZ;
+  gyroX  = gyroData.gyroX - offsets.gyroX;
+  gyroY  = gyroData.gyroY - offsets.gyroY;
+  gyroZ  = gyroData.gyroZ - offsets.gyroZ;
 
-  gyroX = gyroData.gyroX - offsets.gyroX;
-  gyroY = gyroData.gyroY - offsets.gyroY;
-  gyroZ = gyroData.gyroZ - offsets.gyroZ;
-
-  // Apply orientation transforms
+  // Aapply any sensor orientation transforms
   applyOrientation();
 
-  filter.updateIMU(gyroX, gyroY, gyroZ, accelX, accelY, accelZ, dt);
+  // Apply a low-pass filter (exponential moving average)
+  // Initialize the filtered values on first run (could check if dt is small or a flag)
+  static bool initialized = false;
+  if (!initialized) {
+      filteredAccelX = accelX;
+      filteredAccelY = accelY;
+      filteredAccelZ = accelZ;
+      filteredGyroX  = gyroX;
+      filteredGyroY  = gyroY;
+      filteredGyroZ  = gyroZ;
+      initialized = true;
+  } else {
+      filteredAccelX = accelAlpha * accelX + (1 - accelAlpha) * filteredAccelX;
+      filteredAccelY = accelAlpha * accelY + (1 - accelAlpha) * filteredAccelY;
+      filteredAccelZ = accelAlpha * accelZ + (1 - accelAlpha) * filteredAccelZ;
 
+      filteredGyroX  = gyroAlpha * gyroX + (1 - gyroAlpha) * filteredGyroX;
+      filteredGyroY  = gyroAlpha * gyroY + (1 - gyroAlpha) * filteredGyroY;
+      filteredGyroZ  = gyroAlpha * gyroZ + (1 - gyroAlpha) * filteredGyroZ;
+  }
+
+  // Now update your orientation filter with the smoothed values:
+  filter.updateIMU(filteredGyroX, filteredGyroY, filteredGyroZ,
+                   filteredAccelX, filteredAccelY, filteredAccelZ, dt);
+
+  // Retrieve the resulting quaternion and Euler angles
   filter.getQuaternion(&qw, &qx, &qy, &qz);
-
   roll = filter.getRoll();
   pitch = filter.getPitch();
   yaw = filter.getYaw();
@@ -189,27 +211,46 @@ void ArduFliteIMU::initMadgwickFilter()
     // Run a number of update iterations to let the filter settle..
     unsigned long lastMicros = 0;
     for (int i = 0; i < 2000; i++) {
-      // Calculate delta time
-      unsigned long currentMicros = micros();
-      float dt = (currentMicros - lastMicros) / 1000000.0f;
-      lastMicros = currentMicros;
+        // Calculate delta time
+        unsigned long currentMicros = micros();
+        float dt = (currentMicros - lastMicros) / 1000000.0f;
+        lastMicros = currentMicros;
 
-      IMU.update();
-      IMU.getAccel(&accelData);
-      IMU.getGyro(&gyroData);
+        IMU.update();
+        IMU.getAccel(&accelData);
+        IMU.getGyro(&gyroData);
 
-      // Subtract offsets
-      accelX = accelData.accelX - offsets.accelX;
-      accelY = accelData.accelY - offsets.accelY;
-      accelZ = accelData.accelZ - offsets.accelZ;
+        // Subtract offsets
+        accelX = accelData.accelX - offsets.accelX;
+        accelY = accelData.accelY - offsets.accelY;
+        accelZ = accelData.accelZ - offsets.accelZ;
 
-      gyroX = gyroData.gyroX - offsets.gyroX;
-      gyroY = gyroData.gyroY - offsets.gyroY;
-      gyroZ = gyroData.gyroZ - offsets.gyroZ;   
+        gyroX = gyroData.gyroX - offsets.gyroX;
+        gyroY = gyroData.gyroY - offsets.gyroY;
+        gyroZ = gyroData.gyroZ - offsets.gyroZ; 
 
-      applyOrientation();
+        applyOrientation();
 
-      filter.updateIMU(gyroX, gyroY, gyroZ, accelX, accelY, accelZ, dt);
+        static bool initialized = false;
+        if (!initialized) {
+            filteredAccelX = accelX;
+            filteredAccelY = accelY;
+            filteredAccelZ = accelZ;
+            filteredGyroX  = gyroX;
+            filteredGyroY  = gyroY;
+            filteredGyroZ  = gyroZ;
+            initialized = true;
+        } else {
+            filteredAccelX = accelAlpha * accelX + (1 - accelAlpha) * filteredAccelX;
+            filteredAccelY = accelAlpha * accelY + (1 - accelAlpha) * filteredAccelY;
+            filteredAccelZ = accelAlpha * accelZ + (1 - accelAlpha) * filteredAccelZ;
+
+            filteredGyroX  = gyroAlpha * gyroX + (1 - gyroAlpha) * filteredGyroX;
+            filteredGyroY  = gyroAlpha * gyroY + (1 - gyroAlpha) * filteredGyroY;
+            filteredGyroZ  = gyroAlpha * gyroZ + (1 - gyroAlpha) * filteredGyroZ;
+        }
+
+        filter.updateIMU(filteredGyroX, filteredGyroY, filteredGyroZ, filteredAccelX, filteredAccelY, filteredAccelZ, dt);
   }
   Serial.println("Madgwick filter warm-up complete.");
 }

@@ -57,12 +57,12 @@ public:
     void getOffsets(ArduFliteIMUOffsets &ofs) const;
     void update(float dt);
 
-    float getAccelX() const { return accelX; }
-    float getAccelY() const { return accelY; }
-    float getAccelZ() const { return accelZ; }
-    float getGyroX()  const { return gyroX; }
-    float getGyroY()  const { return gyroY; }
-    float getGyroZ()  const { return gyroZ; }
+    float getAccelX() const { return filteredAccelX; }
+    float getAccelY() const { return filteredAccelY; }
+    float getAccelZ() const { return filteredAccelZ; }
+    float getGyroX()  const { return filteredGyroX; }
+    float getGyroY()  const { return filteredGyroY; }
+    float getGyroZ()  const { return filteredGyroZ; }
     float getMagX()  const { return magX; }
     float getMagY()  const { return magY; }
     float getMagZ()  const { return magZ; }
@@ -100,12 +100,18 @@ private:
     float qy = 0.0f;
     float qz = 0.0f;
 
+    // Smoothing factors (0 < alpha <= 1). Lower values are smoother but slower.
+    float accelAlpha = 0.05f;  
+    float gyroAlpha  = 0.8f;
+
+    // Filtered (smoothed) sensor values
+    float filteredAccelX, filteredAccelY, filteredAccelZ;
+    float filteredGyroX,  filteredGyroY,  filteredGyroZ;
+
     // The final Euler angles (in degrees)
     float pitch = 0.0f;
     float roll  = 0.0f;
     float yaw   = 0.0f;
-
-    float alpha = 0.98f; // (Unused now with Madgwick, but kept for legacy)
 
     AccelData accelData;
     GyroData  gyroData;

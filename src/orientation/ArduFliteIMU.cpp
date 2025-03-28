@@ -58,7 +58,7 @@ void ArduFliteIMU::initFilter()
     filter.begin(FILTER_UPDATE_RATE_HZ); 
 
     // Run a number of update iterations to let the filter settle..
-    unsigned long lastMicros = 0;
+    unsigned long lastMicros = micros();
     for (int i = 0; i < 2000; i++) {
         // Calculate delta time
         unsigned long currentMicros = micros();

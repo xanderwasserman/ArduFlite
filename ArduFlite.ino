@@ -10,6 +10,7 @@
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
 
 #define PRINT_EVERY_N_UPDATES 50
+#define LOOP_PERIOD_MICROS    2000  // 2 ms for 500 Hz
 
 #define LEFT_AIL_PIN    17
 #define RIGHT_AIL_PIN   16
@@ -76,6 +77,8 @@ void setup() {
 
 void loop() 
 {
+  static unsigned long nextCycle = micros(); // initialize next cycle time
+
   // Calculate delta time
   unsigned long currentMicros = micros();
   float dt = (currentMicros - lastMicros) / 1000000.0f;
@@ -130,19 +133,19 @@ void loop()
   if (print_counter++ >= PRINT_EVERY_N_UPDATES) 
   {
     
-    Serial.print("Acceleration: ");
-    Serial.print(myIMU.getAccelX());
-    Serial.print(", ");
-    Serial.print(myIMU.getAccelY());
-    Serial.print(", ");
-    Serial.println(myIMU.getAccelZ());
+    // Serial.print("Acceleration: ");
+    // Serial.print(myIMU.getAccelX());
+    // Serial.print(", ");
+    // Serial.print(myIMU.getAccelY());
+    // Serial.print(", ");
+    // Serial.println(myIMU.getAccelZ());
 
-    Serial.print("Gyroscope: ");
-    Serial.print(myIMU.getGyroX());
-    Serial.print(",");
-    Serial.print(myIMU.getGyroY());
-    Serial.print(",");
-    Serial.println(myIMU.getGyroZ());
+    // Serial.print("Gyroscope: ");
+    // Serial.print(myIMU.getGyroX());
+    // Serial.print(",");
+    // Serial.print(myIMU.getGyroY());
+    // Serial.print(",");
+    // Serial.println(myIMU.getGyroZ());
     
     // Serial.print("Quarternion: ");
     // Serial.print(myIMU.getQw());
@@ -167,5 +170,9 @@ void loop()
     print_counter = 0;
   }
 
-  delay(2); // ~500 Hz loop
+  // Schedule next cycle: wait until micros() reaches nextCycle.
+  nextCycle += LOOP_PERIOD_MICROS;
+  while (micros() < nextCycle) {
+    delayMicroseconds(10);
+  }
 }

@@ -17,17 +17,18 @@
 #define ORIENTATION_NORMAL                0
 #define ORIENTATION_SENSOR_FLIPPED_YZ     1
 
-// SELECT YOUR MODE HERE:
 #define IMU_ORIENTATION ORIENTATION_SENSOR_FLIPPED_YZ
-// ^^^ Change this to 1 as needed ^^^
-
-#define IMU_ADDRESS 0x68  // MPU-6500 address
 
 #define FILTER_TYPE_MADGWICK 0
 #define FILTER_TYPE_KALMAN 1
 
 #define FILTER_UPDATE_RATE_HZ 500
 #define FILTER_TYPE FILTER_TYPE_KALMAN
+
+#define MIN_DT 0.000001f  // Minimum dt to avoid division by zero issues.
+#define MAX_DT 0.05f      // Maximum dt to prevent large integration steps.
+
+#define IMU_ADDRESS 0x68  // MPU-6500 address
 
 struct ArduFliteIMUOffsets {
     float accelX;
@@ -114,8 +115,9 @@ private:
     float gyroAlpha  = 0.8f;
 
     // Filtered (smoothed) sensor values
-    float filteredAccelX, filteredAccelY, filteredAccelZ;
-    float filteredGyroX,  filteredGyroY,  filteredGyroZ;
+    float filteredAccelX, filteredAccelY, filteredAccelZ = 0.0f;
+    float filteredGyroX,  filteredGyroY,  filteredGyroZ = 0.0f;
+    float filteredMagX,  filteredMagY,  filteredMagZ = 0.0f;
 
     // The final Euler angles (in degrees)
     float pitch = 0.0f;
@@ -129,6 +131,7 @@ private:
     void applyOrientation();
     bool applyCalibrations();
     void initFilter();
+    void applyLowPassFilters();
 };
 
 #endif // ARDU_FLITE_IMU_H

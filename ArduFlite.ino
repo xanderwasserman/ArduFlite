@@ -167,5 +167,5 @@ void loop()
     print_counter = 0;
   }
 
-  delay(10); // ~100 Hz loop
+  delay(2); // ~500 Hz loop
 }

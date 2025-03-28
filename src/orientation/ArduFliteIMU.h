@@ -124,6 +124,8 @@ private:
     float roll  = 0.0f;
     float yaw   = 0.0f;
 
+    bool lpInitialized = false;
+
     AccelData accelData;
     GyroData  gyroData;
     MagData   magData;

@@ -336,9 +336,7 @@ void ArduFliteIMU::getOffsets(ArduFliteIMUOffsets &ofs) const {
 // Apply low-pass filter
 //////////////////////////////////////
 void ArduFliteIMU::applyLowPassFilters() {
-    // This static flag ensures that on the very first call,
-    // the filtered values are initialized to the raw sensor readings.
-    static bool lpInitialized = false;
+
     if (!lpInitialized) {
         filteredAccelX = accelX;
         filteredAccelY = accelY;

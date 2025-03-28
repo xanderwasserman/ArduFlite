@@ -1,7 +1,8 @@
-#include "PrintTask.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include <Arduino.h>
+
+#include "src/orientation/ArduFliteIMU.h"
+
+#include "PrintTask.h"
 
 // Declare extern references for the objects whose data you want to print.
 // Make sure these objects are defined in your main sketch or elsewhere.
@@ -45,9 +46,9 @@ static void printTask(void *parameter) {
     Serial.print(" Yaw: ");
     Serial.println(myIMU.getYaw());
 
-    Serial.print(" -> rollCmd: "); Serial.print(rollCmd);
-    Serial.print(" pitchCmd: "); Serial.print(pitchCmd);
-    Serial.print(" yawCmd: "); Serial.println(yawCmd);
+    Serial.print(" -> rollCmd: "); Serial.print(getRollCmd());
+    Serial.print(" pitchCmd: "); Serial.print(getPitchCmd());
+    Serial.print(" yawCmd: "); Serial.println(getYawCmd());
 
     // Delay until the next cycle.
     vTaskDelayUntil(&xLastWakeTime, xFrequency);

@@ -1,4 +1,6 @@
 #include <Arduino.h>
+
+#include "ArduFlite.h"
 #include "src/utils/HoldButton.h"
 #include "src/utils/HoldButtonManager.h"
 #include "src/utils/MultiTapButton.h"
@@ -10,19 +12,8 @@
 #include "src/telemetry/mqtt/ArduFliteMqttTelemetry.h"
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
 
-#define PRINT_EVERY_N_UPDATES 50
-#define LOOP_PERIOD_MICROS    2000  // 2 ms for 500 Hz
-
-#define LEFT_AIL_PIN    17
-#define RIGHT_AIL_PIN   16
-#define PITCH_PIN       4
-#define YAW_PIN         12
-
-// Calibration Button definition
-#define USER_BUTTON_PIN 27
-#define CALIB_HOLD_TIME 3000
-
 unsigned long lastMicros = 0;
+float rollCmd, pitchCmd, yawCmd = 0;
 
 TelemetryData telemetryData;
 ArduFliteMqttTelemetry telemetry(10.0f); // 10 Hz telemetry frequency
@@ -42,6 +33,16 @@ void onCalibrateHold() {
 void onResetTripleTap() {
     Serial.println("Resetting Telemetry layer...");
     telemetry.reset();
+}
+
+float getRollCmd() {
+  return rollCmd;
+}
+float getPitchCmd() {
+  return pitchCmd;
+}
+float getYawCmd() {
+  return yawCmd;
 }
 
 HoldButton calibrateButton(USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
@@ -79,8 +80,6 @@ void setup() {
 
 void loop() 
 {
-  float rollCmd, pitchCmd, yawCmd;
-
   static TickType_t xLastWakeTime = xTaskGetTickCount(); // Initialize the last wake time
   const TickType_t xFrequency = pdMS_TO_TICKS(2); // 2 ms period for 500Hz update rate
 

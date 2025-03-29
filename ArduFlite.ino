@@ -1,24 +1,19 @@
 #include <Arduino.h>
+
+#include "ArduFlite.h"
 #include "src/utils/HoldButton.h"
 #include "src/utils/HoldButtonManager.h"
 #include "src/utils/MultiTapButton.h"
 #include "src/utils/MultiTapButtonManager.h"
+#include "src/utils/PrintTask.h"
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/controller/ArduFliteController.h"
 #include "src/actuators/ServoManager.h"
 #include "src/telemetry/mqtt/ArduFliteMqttTelemetry.h"
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
 
-#define PRINT_EVERY_N_UPDATES 50
-
-#define LEFT_AIL_PIN    17
-#define RIGHT_AIL_PIN   16
-#define PITCH_PIN       4
-#define YAW_PIN         12
-
-// Calibration Button definition
-#define USER_BUTTON_PIN 27
-#define CALIB_HOLD_TIME 3000
+unsigned long lastMicros = 0;
+float rollCmd, pitchCmd, yawCmd = 0;
 
 TelemetryData telemetryData;
 ArduFliteMqttTelemetry telemetry(10.0f); // 10 Hz telemetry frequency
@@ -40,11 +35,18 @@ void onResetTripleTap() {
     telemetry.reset();
 }
 
+float getRollCmd() {
+  return rollCmd;
+}
+float getPitchCmd() {
+  return pitchCmd;
+}
+float getYawCmd() {
+  return yawCmd;
+}
+
 HoldButton calibrateButton(USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
 MultiTapButton resetButton(USER_BUTTON_PIN, 1000, 3, onResetTripleTap, true, 30);
-
-unsigned long lastMicros = 0;
-int print_counter = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -72,10 +74,15 @@ void setup() {
   Serial.println("Press and hold the button for 3s at any time to calibrate the IMU.");
   MultiTapButtonManager::registerButton(resetButton);
   Serial.println("Triple tap the button at any time to reset the telemetry layer.");
+
+  startPrintTask();
 }
 
 void loop() 
 {
+  static TickType_t xLastWakeTime = xTaskGetTickCount(); // Initialize the last wake time
+  const TickType_t xFrequency = pdMS_TO_TICKS(2); // 2 ms period for 500Hz update rate
+
   // Calculate delta time
   unsigned long currentMicros = micros();
   float dt = (currentMicros - lastMicros) / 1000000.0f;
@@ -97,7 +104,6 @@ void loop()
     );
 
   // run the controller
-  float rollCmd, pitchCmd, yawCmd;
   myController.update(currentQ, dt, rollCmd, pitchCmd, yawCmd);
 
   // send commands to servos
@@ -127,45 +133,6 @@ void loop()
 
   telemetry.publish(telemetryData);
 
-  if (print_counter++ >= PRINT_EVERY_N_UPDATES) 
-  {
-    
-    Serial.print("Acceleration: ");
-    Serial.print(myIMU.getAccelX());
-    Serial.print(", ");
-    Serial.print(myIMU.getAccelY());
-    Serial.print(", ");
-    Serial.println(myIMU.getAccelZ());
-
-    Serial.print("Gyroscope: ");
-    Serial.print(myIMU.getGyroX());
-    Serial.print(",");
-    Serial.print(myIMU.getGyroY());
-    Serial.print(",");
-    Serial.println(myIMU.getGyroZ());
-    
-    // Serial.print("Quarternion: ");
-    // Serial.print(myIMU.getQw());
-    // Serial.print(", ");
-    // Serial.print(myIMU.getQx());
-    // Serial.print(", ");
-    // Serial.print(myIMU.getQy());
-    // Serial.print(", ");
-    // Serial.println(myIMU.getQz());
-
-    Serial.print("Pitch: ");
-    Serial.print(myIMU.getPitch());
-    Serial.print(" Roll: ");
-    Serial.print(myIMU.getRoll());
-    Serial.print(" Yaw: ");
-    Serial.println(myIMU.getYaw());
-
-    Serial.print(" -> rollCmd: "); Serial.print(rollCmd);
-    Serial.print(" pitchCmd: "); Serial.print(pitchCmd);
-    Serial.print(" yawCmd: "); Serial.println(yawCmd);
-
-    print_counter = 0;
-  }
-
-  delay(2); // ~500 Hz loop
+  // Wait until next cycle
+  vTaskDelayUntil(&xLastWakeTime, xFrequency);
 }

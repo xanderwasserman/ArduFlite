@@ -40,11 +40,139 @@ bool ArduFliteIMU::begin() {
         return false;
     }
 
-    // Setup & Warm up the Madgwick filter before normal operation
-    initMadgwickFilter();
+    // Setup & Warm up the respective filter before normal operation
+    initFilter();
 
     Serial.println("FastIMU (MPU-6500) initialized!");
     return true;
+}
+
+//////////////////////////////////////
+// 'Warm-up' the filter so that
+//  it produces stable results when we
+// start using it.
+//////////////////////////////////////
+void ArduFliteIMU::initFilter() 
+{   
+    // Begin the filter with an initial sample frequency (2 Hz in this example)
+    filter.begin(FILTER_UPDATE_RATE_HZ); 
+
+    // Run a number of update iterations to let the filter settle..
+    unsigned long lastMicros = micros();
+    for (int i = 0; i < 2000; i++) {
+        // Calculate delta time
+        unsigned long currentMicros = micros();
+        float dt = (currentMicros - lastMicros) / 1000000.0f;
+        lastMicros = currentMicros;
+
+        if (dt < MIN_DT) dt = MIN_DT;
+        if (dt > MAX_DT) dt = MAX_DT;
+
+        IMU.update();
+
+        IMU.getAccel(&accelData);
+        IMU.getGyro(&gyroData);
+
+        // Subtract offsets
+        accelX = accelData.accelX - offsets.accelX;
+        accelY = accelData.accelY - offsets.accelY;
+        accelZ = accelData.accelZ - offsets.accelZ;
+
+        gyroX = gyroData.gyroX - offsets.gyroX;
+        gyroY = gyroData.gyroY - offsets.gyroY;
+        gyroZ = gyroData.gyroZ - offsets.gyroZ; 
+
+        applyOrientation();
+
+        // Update low-pass filters for sensor values
+        applyLowPassFilters();
+
+#if FILTER_TYPE == FILTER_TYPE_MADGWICK
+        // Now update your orientation filter with the smoothed values:
+        filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, 
+            filteredAccelX, filteredAccelY, filteredAccelZ, 
+            filteredMagX, filteredMagY, filteredMagZ, 
+            dt
+        );
+#elif FILTER_TYPE == FILTER_TYPE_KALMAN
+        // Update the EKF filter.
+        filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, 
+            filteredAccelX, filteredAccelY, filteredAccelZ, 
+            filteredMagX, filteredMagY, filteredMagZ
+        );
+#endif
+  }
+  Serial.println("Filter warm-up complete.");
+}
+
+//////////////////////////////////////
+// Update Filter
+//////////////////////////////////////
+void ArduFliteIMU::update(float dt) 
+{
+    if (dt < MIN_DT) dt = MIN_DT;
+    if (dt > MAX_DT) dt = MAX_DT;
+
+    IMU.update();
+
+    IMU.getAccel(&accelData);
+    IMU.getGyro(&gyroData);
+
+    // Raw sensor values with offsets removed
+    accelX = accelData.accelX - offsets.accelX;
+    accelY = accelData.accelY - offsets.accelY;
+    accelZ = accelData.accelZ - offsets.accelZ;
+    gyroX  = gyroData.gyroX - offsets.gyroX;
+    gyroY  = gyroData.gyroY - offsets.gyroY;
+    gyroZ  = gyroData.gyroZ - offsets.gyroZ;
+
+    // Aapply any sensor orientation transforms
+    applyOrientation();
+
+    // Update low-pass filters for sensor values
+    applyLowPassFilters();
+
+#if FILTER_TYPE == FILTER_TYPE_MADGWICK
+    // Now update your orientation filter with the smoothed values:
+    filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, 
+        filteredAccelX, filteredAccelY, filteredAccelZ, 
+        filteredMagX, filteredMagY, filteredMagZ, 
+        dt
+    );
+#elif FILTER_TYPE == FILTER_TYPE_KALMAN
+    // Update the EKF filter.
+    filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, 
+        filteredAccelX, filteredAccelY, filteredAccelZ, 
+        filteredMagX, filteredMagY, filteredMagZ
+    );
+#endif
+
+    // Retrieve the resulting quaternion and Euler angles
+    filter.getQuaternion(&qw, &qx, &qy, &qz);
+    roll = filter.getRoll();
+    pitch = filter.getPitch();
+    yaw = filter.getYaw();
+}
+
+//////////////////////////////////////
+// applyOrientation()
+//////////////////////////////////////
+void ArduFliteIMU::applyOrientation() {
+#if (IMU_ORIENTATION == ORIENTATION_NORMAL)
+    //pass
+
+#elif (IMU_ORIENTATION == ORIENTATION_SENSOR_FLIPPED_YZ)
+    // accelX = -accelX;
+    gyroX = -gyroX;
+    
+    accelY = -accelY;
+    // gyroY = -gyroY;
+
+    // accelZ = -accelZ;
+    gyroZ = -gyroZ;
+#else
+    #error "Unknown IMU_ORIENTATION selected!"
+#endif
 }
 
 //////////////////////////////////////
@@ -146,170 +274,6 @@ bool ArduFliteIMU::selfCalibrate() {
 }
 
 //////////////////////////////////////
-// update()
-//////////////////////////////////////
-void ArduFliteIMU::update(float dt) 
-{
-  IMU.update();
-
-  IMU.getAccel(&accelData);
-  IMU.getGyro(&gyroData);
-
-  // Raw sensor values with offsets removed
-  accelX = accelData.accelX - offsets.accelX;
-  accelY = accelData.accelY - offsets.accelY;
-  accelZ = accelData.accelZ - offsets.accelZ;
-  gyroX  = gyroData.gyroX - offsets.gyroX;
-  gyroY  = gyroData.gyroY - offsets.gyroY;
-  gyroZ  = gyroData.gyroZ - offsets.gyroZ;
-
-  // Aapply any sensor orientation transforms
-  applyOrientation();
-
-  // Apply a low-pass filter (exponential moving average)
-  // Initialize the filtered values on first run (could check if dt is small or a flag)
-  static bool initialized = false;
-  if (!initialized) {
-      filteredAccelX = accelX;
-      filteredAccelY = accelY;
-      filteredAccelZ = accelZ;
-      filteredGyroX  = gyroX;
-      filteredGyroY  = gyroY;
-      filteredGyroZ  = gyroZ;
-      initialized = true;
-  } else {
-      filteredAccelX = accelAlpha * accelX + (1 - accelAlpha) * filteredAccelX;
-      filteredAccelY = accelAlpha * accelY + (1 - accelAlpha) * filteredAccelY;
-      filteredAccelZ = accelAlpha * accelZ + (1 - accelAlpha) * filteredAccelZ;
-
-      filteredGyroX  = gyroAlpha * gyroX + (1 - gyroAlpha) * filteredGyroX;
-      filteredGyroY  = gyroAlpha * gyroY + (1 - gyroAlpha) * filteredGyroY;
-      filteredGyroZ  = gyroAlpha * gyroZ + (1 - gyroAlpha) * filteredGyroZ;
-  }
-
-  // Now update your orientation filter with the smoothed values:
-  filter.updateIMU(filteredGyroX, filteredGyroY, filteredGyroZ,
-                   filteredAccelX, filteredAccelY, filteredAccelZ, dt);
-
-  // Retrieve the resulting quaternion and Euler angles
-  filter.getQuaternion(&qw, &qx, &qy, &qz);
-  roll = filter.getRoll();
-  pitch = filter.getPitch();
-  yaw = filter.getYaw();
-}
-
-//////////////////////////////////////
-// 'Warm-up' the Madgwick filter so that
-//  it produces stable results when we
-// start using it.
-//////////////////////////////////////
-void ArduFliteIMU::initMadgwickFilter() 
-{   
-    // Begin the filter with an initial sample frequency (2 Hz in this example)
-    filter.begin(FILTER_UPDATE_RATE_HZ); 
-
-    // Run a number of update iterations to let the filter settle..
-    unsigned long lastMicros = 0;
-    for (int i = 0; i < 2000; i++) {
-        // Calculate delta time
-        unsigned long currentMicros = micros();
-        float dt = (currentMicros - lastMicros) / 1000000.0f;
-        lastMicros = currentMicros;
-
-        IMU.update();
-        IMU.getAccel(&accelData);
-        IMU.getGyro(&gyroData);
-
-        // Subtract offsets
-        accelX = accelData.accelX - offsets.accelX;
-        accelY = accelData.accelY - offsets.accelY;
-        accelZ = accelData.accelZ - offsets.accelZ;
-
-        gyroX = gyroData.gyroX - offsets.gyroX;
-        gyroY = gyroData.gyroY - offsets.gyroY;
-        gyroZ = gyroData.gyroZ - offsets.gyroZ; 
-
-        applyOrientation();
-
-        static bool initialized = false;
-        if (!initialized) {
-            filteredAccelX = accelX;
-            filteredAccelY = accelY;
-            filteredAccelZ = accelZ;
-            filteredGyroX  = gyroX;
-            filteredGyroY  = gyroY;
-            filteredGyroZ  = gyroZ;
-            initialized = true;
-        } else {
-            filteredAccelX = accelAlpha * accelX + (1 - accelAlpha) * filteredAccelX;
-            filteredAccelY = accelAlpha * accelY + (1 - accelAlpha) * filteredAccelY;
-            filteredAccelZ = accelAlpha * accelZ + (1 - accelAlpha) * filteredAccelZ;
-
-            filteredGyroX  = gyroAlpha * gyroX + (1 - gyroAlpha) * filteredGyroX;
-            filteredGyroY  = gyroAlpha * gyroY + (1 - gyroAlpha) * filteredGyroY;
-            filteredGyroZ  = gyroAlpha * gyroZ + (1 - gyroAlpha) * filteredGyroZ;
-        }
-
-        filter.updateIMU(filteredGyroX, filteredGyroY, filteredGyroZ, filteredAccelX, filteredAccelY, filteredAccelZ, dt);
-  }
-  Serial.println("Madgwick filter warm-up complete.");
-}
-
-//////////////////////////////////////
-// applyOrientation()
-//////////////////////////////////////
-void ArduFliteIMU::applyOrientation() {
-#if (IMU_ORIENTATION == ORIENTATION_NORMAL)
-    //pass
-
-#elif (IMU_ORIENTATION == ORIENTATION_SENSOR_FLIPPED_YZ)
-    // accelX = -accelX;
-    gyroX = -gyroX;
-    
-    accelY = -accelY;
-    // gyroY = -gyroY;
-
-    // accelZ = -accelZ;
-    gyroZ = -gyroZ;
-#else
-    #error "Unknown IMU_ORIENTATION selected!"
-#endif
-}
-
-//////////////////////////////////////
-// setOffsets(), getOffsets()
-//////////////////////////////////////
-void ArduFliteIMU::setOffsets(const ArduFliteIMUOffsets &ofs) {
-    offsets = ofs;
-}
-
-void ArduFliteIMU::getOffsets(ArduFliteIMUOffsets &ofs) const {
-    ofs = offsets;
-}
-
-//////////////////////////////////////
-// 9) load/save to EEPROM
-//////////////////////////////////////
-bool ArduFliteIMU::loadOffsetsFromEEPROM(ArduFliteIMUOffsets &dest) {
-    StoredCalibData tmp;
-    EEPROM.get(CALIB_DATA_ADDR, tmp);
-    if (tmp.magic != CALIB_MAGIC) {
-        return false; // no valid data
-    }
-    dest = tmp.offsets;
-    return true;
-}
-
-void ArduFliteIMU::saveOffsetsToEEPROM(const ArduFliteIMUOffsets &ofs) {
-    StoredCalibData tmp;
-    tmp.magic = CALIB_MAGIC;
-    tmp.offsets = ofs;
-    EEPROM.put(CALIB_DATA_ADDR, tmp);
-    EEPROM.commit();  // ESP32 style
-    Serial.println("Calibration data saved to EEPROM.");
-}
-
-//////////////////////////////////////
 // applyCalibrations()
 // Loads calibration data from EEPROM and applies them.
 //////////////////////////////////////
@@ -334,3 +298,61 @@ bool ArduFliteIMU::applyCalibrations() {
         return selfCalibrate();
     }
 }
+
+//////////////////////////////////////
+// load/save to EEPROM
+//////////////////////////////////////
+bool ArduFliteIMU::loadOffsetsFromEEPROM(ArduFliteIMUOffsets &dest) {
+    StoredCalibData tmp;
+    EEPROM.get(CALIB_DATA_ADDR, tmp);
+    if (tmp.magic != CALIB_MAGIC) {
+        return false; // no valid data
+    }
+    dest = tmp.offsets;
+    return true;
+}
+
+void ArduFliteIMU::saveOffsetsToEEPROM(const ArduFliteIMUOffsets &ofs) {
+    StoredCalibData tmp;
+    tmp.magic = CALIB_MAGIC;
+    tmp.offsets = ofs;
+    EEPROM.put(CALIB_DATA_ADDR, tmp);
+    EEPROM.commit();  // ESP32 style
+    Serial.println("Calibration data saved to EEPROM.");
+}
+
+//////////////////////////////////////
+// setOffsets(), getOffsets()
+//////////////////////////////////////
+void ArduFliteIMU::setOffsets(const ArduFliteIMUOffsets &ofs) {
+    offsets = ofs;
+}
+
+void ArduFliteIMU::getOffsets(ArduFliteIMUOffsets &ofs) const {
+    ofs = offsets;
+}
+
+//////////////////////////////////////
+// Apply low-pass filter
+//////////////////////////////////////
+void ArduFliteIMU::applyLowPassFilters() {
+
+    if (!lpInitialized) {
+        filteredAccelX = accelX;
+        filteredAccelY = accelY;
+        filteredAccelZ = accelZ;
+        filteredGyroX  = gyroX;
+        filteredGyroY  = gyroY;
+        filteredGyroZ  = gyroZ;
+        lpInitialized = true;
+    } else {
+        filteredAccelX = accelAlpha * accelX + (1.0f - accelAlpha) * filteredAccelX;
+        filteredAccelY = accelAlpha * accelY + (1.0f - accelAlpha) * filteredAccelY;
+        filteredAccelZ = accelAlpha * accelZ + (1.0f - accelAlpha) * filteredAccelZ;
+    
+        filteredGyroX  = gyroAlpha * gyroX + (1.0f - gyroAlpha) * filteredGyroX;
+        filteredGyroY  = gyroAlpha * gyroY + (1.0f - gyroAlpha) * filteredGyroY;
+        filteredGyroZ  = gyroAlpha * gyroZ + (1.0f - gyroAlpha) * filteredGyroZ;
+    }
+  }
+  

@@ -16,10 +16,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.init_ui()
 
-        # Timer to log data periodically (e.g., every 0.5 seconds)
+        # Timer to log data periodically (20Hz)
         self.log_timer = QtCore.QTimer()
         self.log_timer.timeout.connect(self.log_data)
-        self.log_timer.start(500)
+        self.log_timer.start(50)
 
     def init_ui(self):
         """

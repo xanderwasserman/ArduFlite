@@ -7,3 +7,14 @@ docker run -d \
   eclipse-mosquitto:latest
 
 ```
+
+```bash
+docker run -d \
+  --restart=always \
+  --name mosquitto \
+  -p 1883:1883 \
+  -v $(pwd)/mosquitto.conf:/mosquitto/config/mosquitto.conf \
+  eclipse-mosquitto:latest
+
+
+```

@@ -80,59 +80,66 @@ void setup() {
 
 void loop() 
 {
-  static TickType_t xLastWakeTime = xTaskGetTickCount(); // Initialize the last wake time
-  const TickType_t xFrequency = pdMS_TO_TICKS(2); // 2 ms period for 500Hz update rate
+    static TickType_t xLastWakeTime = xTaskGetTickCount(); // Initialize the last wake time
+    const TickType_t xFrequency = pdMS_TO_TICKS(LOOP_PERIOD_MILLIS); // 2 ms period for 500Hz update rate
 
-  // Calculate delta time
-  unsigned long currentMicros = micros();
-  float dt = (currentMicros - lastMicros) / 1000000.0f;
-  lastMicros = currentMicros;
+    // Calculate delta time
+    unsigned long currentMicros = micros();
+    float dt = (currentMicros - lastMicros) / 1000000.0f;
+    lastMicros = currentMicros;
 
-  // 1) Update all buttons in one shot
-  HoldButtonManager::updateAll();
-  MultiTapButtonManager::updateAll();
+    // Check if dt exceeds LOOP_PERIOD_MILLIS (converted to seconds)
+    if (dt > (LOOP_PERIOD_MILLIS / 1000.0f)) {
+      Serial.print("Warning: Loop time exceeded! dt = ");
+      Serial.print(dt, 6);
+      Serial.println(" seconds");
+    }
 
-  // 2) Update sensor data
-  myIMU.update(dt);
+    // 1) Update all buttons in one shot
+    HoldButtonManager::updateAll();
+    MultiTapButtonManager::updateAll();
 
-  // get the current quaternion from the IMU
-  FliteQuaternion currentQ(
-    myIMU.getQw(), 
-    myIMU.getQx(), 
-    myIMU.getQy(), 
-    myIMU.getQz()
-    );
+    // 2) Update sensor data
+    myIMU.update(dt);
 
-  // run the controller
-  myController.update(currentQ, dt, rollCmd, pitchCmd, yawCmd);
+    // get the current quaternion from the IMU
+    FliteQuaternion currentQ(
+      myIMU.getQw(), 
+      myIMU.getQx(), 
+      myIMU.getQy(), 
+      myIMU.getQz()
+      );
 
-  // send commands to servos
-  servoMgr.writeCommands(rollCmd, pitchCmd, yawCmd);
+    // run the controller
+    myController.update(currentQ, dt, rollCmd, pitchCmd, yawCmd);
 
-  // Update telemetry data
-  telemetryData.accelX = myIMU.getAccelX();
-  telemetryData.accelY = myIMU.getAccelY();
-  telemetryData.accelZ = myIMU.getAccelZ();
+    // send commands to servos
+    servoMgr.writeCommands(rollCmd, pitchCmd, yawCmd);
 
-  telemetryData.gyroX = myIMU.getGyroX();
-  telemetryData.gyroY = myIMU.getGyroY();
-  telemetryData.gyroZ = myIMU.getGyroZ();
+    // Update telemetry data
+    telemetryData.accelX = myIMU.getAccelX();
+    telemetryData.accelY = myIMU.getAccelY();
+    telemetryData.accelZ = myIMU.getAccelZ();
 
-  telemetryData.qw = myIMU.getQw();
-  telemetryData.qx = myIMU.getQx();
-  telemetryData.qy = myIMU.getQy();
-  telemetryData.qz = myIMU.getQz();
+    telemetryData.gyroX = myIMU.getGyroX();
+    telemetryData.gyroY = myIMU.getGyroY();
+    telemetryData.gyroZ = myIMU.getGyroZ();
 
-  telemetryData.pitch = myIMU.getPitch();
-  telemetryData.roll = myIMU.getRoll();
-  telemetryData.yaw = myIMU.getYaw();
+    telemetryData.qw = myIMU.getQw();
+    telemetryData.qx = myIMU.getQx();
+    telemetryData.qy = myIMU.getQy();
+    telemetryData.qz = myIMU.getQz();
 
-  telemetryData.rollCmd = rollCmd;
-  telemetryData.pitchCmd = pitchCmd;
-  telemetryData.yawCmd = yawCmd;
+    telemetryData.pitch = myIMU.getPitch();
+    telemetryData.roll = myIMU.getRoll();
+    telemetryData.yaw = myIMU.getYaw();
 
-  telemetry.publish(telemetryData);
+    telemetryData.rollCmd = rollCmd;
+    telemetryData.pitchCmd = pitchCmd;
+    telemetryData.yawCmd = yawCmd;
 
-  // Wait until next cycle
-  vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    telemetry.publish(telemetryData);
+
+    // Wait until next cycle
+    vTaskDelayUntil(&xLastWakeTime, xFrequency);
 }

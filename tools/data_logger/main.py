@@ -142,7 +142,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.logTimer = QtCore.QTimer(self)
         self.logTimer.timeout.connect(self.record_data)
-        self.logTimer.start(1000)
+        self.logTimer.start(100)
 
         self.dataLogger = DataLogger()
         self.mqttClient = MqttClient()

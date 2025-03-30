@@ -13,7 +13,7 @@ static void printTask(void *parameter) {
   // Initialize the last wake time.
   TickType_t xLastWakeTime = xTaskGetTickCount();
   // Set frequency to 1 second (1000 ms).
-  const TickType_t xFrequency = pdMS_TO_TICKS(1000);
+  const TickType_t xFrequency = pdMS_TO_TICKS(500);
 
   for (;;) {
     // Serial.print("Acceleration: ");

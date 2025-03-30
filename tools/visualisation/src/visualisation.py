@@ -46,6 +46,7 @@ class AircraftVisualizer(gl.GLViewWidget):
 
         self.init_ground()
         self.init_aircraft()
+        self.init_control_surfaces()
 
         # Timer for updating the visualization (20 Hz)
         self.timer = QtCore.QTimer()
@@ -80,8 +81,6 @@ class AircraftVisualizer(gl.GLViewWidget):
             face_colors: (M, 4) numpy array with RGBA values for each face.
         """
         # --- Fuselage ---
-        # Cross-section parameters (from tail to nose).
-        # Note: We flip the z radii (use negative values) so that the top is at -z.
         xs = [-1.0, -0.5, 0.0, 0.5, 1.0]
         rys = [0.03, 0.05, 0.1, 0.1, 0.02]
         rzs = [-0.03, -0.05, -0.1, -0.1, -0.02]
@@ -146,7 +145,7 @@ class AircraftVisualizer(gl.GLViewWidget):
         # --- Vertical Fin ---
         vertical_fin_vertices = np.array([
             [-1.0, 0.0, 0.0],
-            [-1.0, 0.0, -0.6],  # Tip in -z (upward in our coordinate system, since +z is down)
+            [-1.0, 0.0, -0.6],
             [-0.7, 0.0, 0.0]
         ])
         vertical_fin_faces = np.array([
@@ -206,9 +205,125 @@ class AircraftVisualizer(gl.GLViewWidget):
         )
         self.addItem(self.aircraft_mesh)
 
+    def init_control_surfaces(self):
+        """
+        Create separate mesh items for the control surfaces:
+        left/right ailerons, elevator, and rudder.
+        Their geometry is defined in the aircraft coordinate system.
+        """
+        # Left Aileron (moved to the trailing edge of the left wing)
+        left_aileron_vertices = np.array([
+            [-0.1, -0.6, 0.0],
+            [-0.1, -1.2, 0.0],
+            [0.0,  -1.2, 0.0],
+            [0.0,  -0.6, 0.0]
+        ])
+        left_aileron_faces = np.array([[0, 1, 2], [0, 2, 3]])
+        left_aileron_colors = np.array([[0.8, 0.0, 0.0, 1.0]] * left_aileron_faces.shape[0])
+        self.left_aileron = gl.GLMeshItem(
+            vertexes=left_aileron_vertices,
+            faces=left_aileron_faces,
+            faceColors=left_aileron_colors,
+            smooth=False,
+            shader='shaded',
+            drawEdges=True,
+            edgeColor=(0, 0, 0, 1)
+        )
+        self.addItem(self.left_aileron)
+        self._orig_left_aileron = left_aileron_vertices.copy()
+        self._left_aileron_faces = left_aileron_faces
+        self._left_aileron_colors = left_aileron_colors
+
+        # Right Aileron (moved to the trailing edge of the right wing)
+        right_aileron_vertices = np.array([
+            [-0.1,  0.6, 0.0],
+            [-0.1,  1.2, 0.0],
+            [0.0,   1.2, 0.0],
+            [0.0,   0.6, 0.0]
+        ])
+        right_aileron_faces = np.array([[0, 1, 2], [0, 2, 3]])
+        right_aileron_colors = np.array([[0.8, 0.0, 0.0, 1.0]] * right_aileron_faces.shape[0])
+        self.right_aileron = gl.GLMeshItem(
+            vertexes=right_aileron_vertices,
+            faces=right_aileron_faces,
+            faceColors=right_aileron_colors,
+            smooth=False,
+            shader='shaded',
+            drawEdges=True,
+            edgeColor=(0, 0, 0, 1)
+        )
+        self.addItem(self.right_aileron)
+        self._orig_right_aileron = right_aileron_vertices.copy()
+        self._right_aileron_faces = right_aileron_faces
+        self._right_aileron_colors = right_aileron_colors
+
+        # Elevator (attached to the trailing edge of the horizontal stabilizer) 
+        elevator_vertices = np.array([ 
+            [-1.1, -0.4, 0.0], 
+            [-1.1, 0.4, 0.0], 
+            [-1.0, 0.4, 0.0], 
+            [-1.0, -0.4, 0.0] 
+        ]) 
+        
+        elevator_faces = np.array([[0, 1, 2], [0, 2, 3]]) 
+        elevator_colors = np.array([[0.0, 0.8, 0.0, 1.0]] * elevator_faces.shape[0]) 
+        self.elevator = gl.GLMeshItem( 
+            vertexes=elevator_vertices, 
+            faces=elevator_faces, 
+            faceColors=elevator_colors, 
+            smooth=False, 
+            shader='shaded', 
+            drawEdges=True, 
+            edgeColor=(0, 0, 0, 1) 
+        ) 
+        self.addItem(self.elevator) 
+        self._orig_elevator = elevator_vertices.copy() 
+        self._elevator_faces = elevator_faces 
+        self._elevator_colors = elevator_colors
+
+        # Rudder (attached to the trailing edge of the vertical fin)
+        rudder_vertices = np.array([
+            [-1.0, 0.0, -0.6],
+            [-1.0, 0.0, -0.3],
+            [-1.1,  0.0, -0.3],
+            [-1.1,  0.0, -0.6]
+        ])
+        rudder_faces = np.array([[0, 1, 2], [0, 2, 3]])
+        rudder_colors = np.array([[0.0, 0.0, 0.8, 1.0]] * rudder_faces.shape[0])
+        self.rudder = gl.GLMeshItem(
+            vertexes=rudder_vertices,
+            faces=rudder_faces,
+            faceColors=rudder_colors,
+            smooth=False,
+            shader='shaded',
+            drawEdges=True,
+            edgeColor=(0, 0, 0, 1)
+        )
+        self.addItem(self.rudder)
+        self._orig_rudder = rudder_vertices.copy()
+        self._rudder_faces = rudder_faces
+        self._rudder_colors = rudder_colors
+
+    @staticmethod
+    def rotation_matrix(axis, angle):
+        """
+        Compute a rotation matrix for rotating 'angle' radians around 'axis'
+        """
+        axis = np.array(axis)
+        axis = axis / np.linalg.norm(axis)
+        cos_a = np.cos(angle)
+        sin_a = np.sin(angle)
+        ux, uy, uz = axis
+        return np.array([
+            [cos_a + ux*ux*(1-cos_a),      ux*uy*(1-cos_a) - uz*sin_a, ux*uz*(1-cos_a) + uy*sin_a],
+            [uy*ux*(1-cos_a) + uz*sin_a, cos_a + uy*uy*(1-cos_a),      uy*uz*(1-cos_a) - ux*sin_a],
+            [uz*ux*(1-cos_a) - uy*sin_a, uz*uy*(1-cos_a) + ux*sin_a, cos_a + uz*uz*(1-cos_a)]
+        ])
+
     def update_visualization(self):
         """
         Update the aircraft orientation using the latest quaternion data.
+        Also update the control surfaces based on the command values.
         Applies a final z‑flip so that -z is up and +z is down.
         """
         q = self.data_store.data["quaternion"]
@@ -260,3 +375,80 @@ class AircraftVisualizer(gl.GLViewWidget):
                 edgeColor=(0, 0, 0, 1)
             )
 
+            # Helper function: apply deflection rotation about a hinge,
+            # then overall aircraft rotation R and final z flip.
+            def transform_surface(orig_vertices, hinge, axis, deflection_angle):
+                relative = orig_vertices - hinge
+                R_defl = AircraftVisualizer.rotation_matrix(axis, deflection_angle)
+                rotated_relative = (R_defl @ relative.T).T
+                transformed = rotated_relative + hinge
+                transformed = (R @ transformed.T).T
+                transformed[:, 2] *= -1
+                return transformed
+
+            # Get command values (default to 0 if not available)
+            # Commands are in the range -1 to 1; scale them so that ±1 is 90° deflection.
+            rollCmd = self.data_store.data["commands"]["rollCmd"] or 0.0
+            pitchCmd = self.data_store.data["commands"]["pitchCmd"] or 0.0
+            yawCmd = self.data_store.data["commands"]["yawCmd"] or 0.0
+
+            max_deflection = np.radians(90)  # 90° maximum for all control surfaces
+
+            # Compute actual deflection angles.
+            left_aileron_angle = -rollCmd * max_deflection
+            right_aileron_angle = rollCmd * max_deflection
+            elevator_angle = -pitchCmd * max_deflection
+            rudder_angle = yawCmd * max_deflection
+
+            # Update left aileron.
+            # Hinge at the trailing edge of the left wing (x = 0.0).
+            hinge_left = np.array([0.0, -0.6, 0.0])
+            transformed_left = transform_surface(self._orig_left_aileron, hinge_left, [0, 1, 0], left_aileron_angle)
+            self.left_aileron.setMeshData(
+                vertexes=transformed_left,
+                faces=self._left_aileron_faces,
+                faceColors=self._left_aileron_colors,
+                smooth=False,
+                shader='shaded',
+                drawEdges=True,
+                edgeColor=(0, 0, 0, 1)
+            )
+
+            # Update right aileron.
+            hinge_right = np.array([0.0, 0.6, 0.0])
+            transformed_right = transform_surface(self._orig_right_aileron, hinge_right, [0, 1, 0], right_aileron_angle)
+            self.right_aileron.setMeshData(
+                vertexes=transformed_right,
+                faces=self._right_aileron_faces,
+                faceColors=self._right_aileron_colors,
+                smooth=False,
+                shader='shaded',
+                drawEdges=True,
+                edgeColor=(0, 0, 0, 1)
+            )
+
+            # Update elevator.
+            hinge_elevator = np.array([-1.0, 0.0, 0.0]) 
+            transformed_elevator = transform_surface(self._orig_elevator, hinge_elevator, [0, 1, 0], elevator_angle) 
+            self.elevator.setMeshData( 
+                vertexes=transformed_elevator, 
+                faces=self._elevator_faces, 
+                faceColors=self._elevator_colors, 
+                smooth=False, 
+                shader='shaded', 
+                drawEdges=True, 
+                edgeColor=(0, 0, 0, 1) 
+            )
+
+            # Update rudder.
+            hinge_rudder = np.array([-1.0, 0.0, -0.6])
+            transformed_rudder = transform_surface(self._orig_rudder, hinge_rudder, [0, 0, 1], rudder_angle)
+            self.rudder.setMeshData(
+                vertexes=transformed_rudder,
+                faces=self._rudder_faces,
+                faceColors=self._rudder_colors,
+                smooth=False,
+                shader='shaded',
+                drawEdges=True,
+                edgeColor=(0, 0, 0, 1)
+            )

@@ -17,6 +17,9 @@ private:
 
     float integral;
     float prevError;
+
+    float filteredDerivative = 0.0;
+    float derivativeAlpha = 0.1; 
 };
 
 #endif // PID_H

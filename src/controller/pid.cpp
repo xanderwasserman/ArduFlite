@@ -8,6 +8,8 @@ PID::PID(float kp, float ki, float kd, float outMin, float outMax)
 }
 
 float PID::update(float error, float dt) {
+    if (dt < 1e-3f) dt = 1e-3f;
+
     // Proportional term
     float pTerm = kp * error;
 
@@ -15,9 +17,10 @@ float PID::update(float error, float dt) {
     float newIntegral = integral + error * dt;
     float iTermCandidate = ki * newIntegral;
 
-    // Derivative term
+    // Derivative term (with slight low-pass filtering)
     float derivative = (error - prevError) / dt;
-    float dTerm = kd * derivative;
+    filteredDerivative = derivativeAlpha * derivative + (1.0f - derivativeAlpha) * filteredDerivative;
+    float dTerm = kd * filteredDerivative;
 
     // Compute the unsaturated output
     float unsatOutput = pTerm + iTermCandidate + dTerm;

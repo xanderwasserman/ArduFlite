@@ -86,12 +86,6 @@ void ArduFliteController::update(const FliteQuaternion &measuredQ, float dt,
     if (fabs(pitchErr) < deadband)  pitchErr = 0.0f;
     if (fabs(yawErr) < deadband)    yawErr = 0.0f;
 
-    // Optionally, clamp the errors to avoid excessive commands
-    float maxError = 0.5f;  // in radians; adjust based on your system
-    rollErr  = constrain(rollErr, -maxError, maxError);
-    pitchErr = constrain(pitchErr, -maxError, maxError);
-    yawErr   = constrain(yawErr, -maxError, maxError);
-
     // Feed errors to the PID controllers: now a change in roll affects rollOut, pitch affects pitchOut, yaw affects yawOut.
     rollOut  = pidRoll.update(rollErr, dt);
     pitchOut = pidPitch.update(pitchErr, dt);

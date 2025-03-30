@@ -134,9 +134,14 @@ void ArduFliteIMU::update(float dt)
 
 #if FILTER_TYPE == FILTER_TYPE_MADGWICK
     // Now update your orientation filter with the smoothed values:
-    filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, 
-        filteredAccelX, filteredAccelY, filteredAccelZ, 
-        filteredMagX, filteredMagY, filteredMagZ, 
+    //TODO: use this block when we have a magnetometer!
+    // filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, 
+    //     filteredAccelX, filteredAccelY, filteredAccelZ, 
+    //     filteredMagX, filteredMagY, filteredMagZ, 
+    //     dt
+    // );
+    filter.updateIMU(filteredGyroX, filteredGyroY, filteredGyroZ, 
+        filteredAccelX, filteredAccelY, filteredAccelZ,  
         dt
     );
 #elif FILTER_TYPE == FILTER_TYPE_KALMAN

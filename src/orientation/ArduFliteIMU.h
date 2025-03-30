@@ -14,21 +14,21 @@
 // 1) SENSOR_FLIPPED_YZ           => Invert Y, Z
 //////////////////////////////////////////////////////////////
 
-#define ORIENTATION_NORMAL                0
-#define ORIENTATION_SENSOR_FLIPPED_YZ     1
+#define ORIENTATION_NORMAL                  0
+#define ORIENTATION_SENSOR_FLIPPED_YZ       1
 
-#define IMU_ORIENTATION ORIENTATION_SENSOR_FLIPPED_YZ
+#define IMU_ORIENTATION                     ORIENTATION_SENSOR_FLIPPED_YZ
 
-#define FILTER_TYPE_MADGWICK 0
-#define FILTER_TYPE_KALMAN 1
+#define FILTER_TYPE_MADGWICK                0
+#define FILTER_TYPE_KALMAN                  1
 
-#define FILTER_UPDATE_RATE_HZ 500
-#define FILTER_TYPE FILTER_TYPE_KALMAN
+#define FILTER_UPDATE_RATE_HZ               500
+#define FILTER_TYPE                         FILTER_TYPE_MADGWICK
 
-#define MIN_DT 0.000001f  // Minimum dt to avoid division by zero issues.
-#define MAX_DT 0.05f      // Maximum dt to prevent large integration steps.
+#define MIN_DT                              0.000001f  // Minimum dt to avoid division by zero issues.
+#define MAX_DT                              0.05f      // Maximum dt to prevent large integration steps.
 
-#define IMU_ADDRESS 0x68  // MPU-6500 address
+#define IMU_ADDRESS                         0x68  // MPU-6500 address
 
 struct ArduFliteIMUOffsets {
     float accelX;

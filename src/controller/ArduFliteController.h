@@ -4,6 +4,10 @@
 #include "src/orientation/FliteQuaternion.h"
 #include "src/controller/pid.h"
 
+static float extractYaw(const FliteQuaternion &q);
+static float wrapAngle(float angle);
+static FliteQuaternion removeYaw(const FliteQuaternion &q);
+
 class ArduFliteController {
 public:
     // Constructor

@@ -64,7 +64,7 @@ void setup() {
 
   // FliteQuaternion firstQ(1, 0, 0, 0);
   // myController.setDesiredQuaternion(firstQ);
-  myController.setDesiredEulerDegs(5.0, 0.0, 0.0);
+  myController.setDesiredEulerDegs(0.0, 0.0, 0.0);
 
   Serial.printf("ArduFlite Controller initialised\n");
 

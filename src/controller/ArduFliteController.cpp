@@ -1,5 +1,7 @@
-#include "src/controller/ArduFliteController.h"
 #include <math.h>
+#include <Arduino.h>
+
+#include "src/controller/ArduFliteController.h"
 
 // Constructor: Initialize the PIDs and set the default desired orientation
 ArduFliteController::ArduFliteController()

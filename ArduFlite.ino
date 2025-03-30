@@ -16,8 +16,8 @@ unsigned long lastMicros = 0;
 float rollCmd, pitchCmd, yawCmd = 0;
 
 TelemetryData telemetryData;
-ArduFliteMqttTelemetry telemetry(10.0f); // 10 Hz telemetry frequency
-// ArduFliteQSerialTelemetry telemetry(10.0f);
+ArduFliteMqttTelemetry telemetry(20.0f); // 20 Hz telemetry frequency
+// ArduFliteQSerialTelemetry telemetry(20.0f);
 
 ArduFliteIMU myIMU;
 ArduFliteController myController;

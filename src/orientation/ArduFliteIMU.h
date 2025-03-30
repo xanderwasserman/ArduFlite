@@ -112,7 +112,7 @@ private:
 
     // Smoothing factors (0 < alpha <= 1). Lower values are smoother but slower.
     float accelAlpha = 0.05f;  
-    float gyroAlpha  = 0.8f;
+    float gyroAlpha  = 0.9f;
 
     // Filtered (smoothed) sensor values
     float filteredAccelX, filteredAccelY, filteredAccelZ = 0.0f;

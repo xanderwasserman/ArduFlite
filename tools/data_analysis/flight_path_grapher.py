@@ -1,95 +1,53 @@
-import pandas as pd
+import argparse
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
-# 1) Read in the data
-df = pd.read_csv("FlightData/flight_data_20250328_173437.csv")
-
-# 2) Convert quaternion (w, x, y, z) to rotation matrix.
-#    Quaternions must be normalized, so we do that first.
-def rotation_matrix_from_quaternion(w, x, y, z):
+def cumulative_trapz(y, x):
     """
-    Convert a quaternion into a 3x3 rotation matrix.
-    We assume the quaternion is normalized (w^2 + x^2 + y^2 + z^2 = 1).
+    Compute the cumulative trapezoidal integration of y with respect to x.
+    Returns an array where the i-th element is the integral from x[0] to x[i].
     """
-    xx = x * x
-    yy = y * y
-    zz = z * z
-    xy = x * y
-    xz = x * z
-    yz = y * z
-    wx = w * x
-    wy = w * y
-    wz = w * z
+    out = np.zeros_like(y)
+    for i in range(1, len(y)):
+        dt = x[i] - x[i-1]
+        out[i] = out[i-1] + 0.5 * (y[i] + y[i-1]) * dt
+    return out
 
-    return np.array([
-        [1 - 2*(yy + zz),   2*(xy - wz),       2*(xz + wy)],
-        [2*(xy + wz),       1 - 2*(xx + zz),   2*(yz - wx)],
-        [2*(xz - wy),       2*(yz + wx),       1 - 2*(xx + yy)]
-    ])
+def main(file_path):
+    # Read the CSV file with proper encoding and delimiter
+    df = pd.read_csv(file_path, delimiter=',', encoding='utf-8-sig')
 
-# Normalize the quaternion columns
-norm = np.sqrt(df["quaternion_w"]**2 + df["quaternion_x"]**2 +
-               df["quaternion_y"]**2 + df["quaternion_z"]**2)
+    # Convert pitch angle from degrees to radians
+    pitch_rad = np.deg2rad(df['orientation_pitch'].values)
 
-df["quaternion_w"] /= norm
-df["quaternion_x"] /= norm
-df["quaternion_y"] /= norm
-df["quaternion_z"] /= norm
+    # Decompose acceleration assuming accel_x is the forward acceleration.
+    # Horizontal component: a_horizontal = accel_x * cos(pitch)
+    # Vertical component:   a_vertical   = accel_x * sin(pitch)
+    horizontal_acc = df['accel_x'].values * np.cos(pitch_rad)
+    vertical_acc = df['accel_x'].values * np.sin(pitch_rad)
 
-# 3) Integrate acceleration to get rough position.
-#    +Z is down, +X is forward, +Y is right.
+    # Create a time vector (assume timestamp is in seconds and start at 0)
+    time = df['timestamp'].values
+    time = time - time[0]
 
-velocity = np.zeros(3)   # m/s
-position = np.zeros(3)   # m
-positions = [position.copy()]
+    # Integrate to get velocities and then displacements
+    horizontal_velocity = cumulative_trapz(horizontal_acc, time)
+    horizontal_disp = cumulative_trapz(horizontal_velocity, time)
+    vertical_velocity = cumulative_trapz(vertical_acc, time)
+    vertical_disp = cumulative_trapz(vertical_velocity, time)
 
-timestamps = df["timestamp"].values
-for i in range(1, len(df)):
-    dt = timestamps[i] - timestamps[i-1]
-    if dt <= 0:
-        # Fallback if timestamps are not strictly increasing
-        dt = 0.01
+    # Plot the estimated flight path (Horizontal displacement vs. Altitude displacement)
+    plt.figure(figsize=(10, 5))
+    plt.plot(horizontal_disp, vertical_disp, marker='o')
+    plt.xlabel('Horizontal Displacement (m)')
+    plt.ylabel('Altitude Displacement (m)')
+    plt.title('Estimated Flight Path (Disregarding Yaw)')
+    plt.grid(True)
+    plt.show()
 
-    # Current quaternion
-    w = df["quaternion_w"].iloc[i]
-    x = df["quaternion_x"].iloc[i]
-    y = df["quaternion_y"].iloc[i]
-    z = df["quaternion_z"].iloc[i]
-
-    # Rotation from body to inertial
-    R = rotation_matrix_from_quaternion(w, x, y, z)
-
-    # Body-frame acceleration in g. Convert to m/s^2
-    a_body_g = np.array([df["accel_x"].iloc[i],
-                         df["accel_y"].iloc[i],
-                         df["accel_z"].iloc[i]])
-    a_body_mss = a_body_g * 9.81
-
-    # Since +Z is down, a stationary sensor sees ~+9.81 in Z.
-    # Subtract that gravity component in the body frame:
-    a_body_no_gravity = a_body_mss - np.array([0, 0, 9.81])
-
-    # Rotate to inertial frame
-    a_inertial = R @ a_body_no_gravity
-
-    # Integrate to get velocity and position
-    velocity += a_inertial * dt
-    position += velocity * dt
-
-    positions.append(position.copy())
-
-positions = np.array(positions)
-
-# 4) Plot the 3D trajectory
-fig = plt.figure()
-ax = fig.add_subplot(111, projection="3d")
-
-# If you want a "Z up" view, you could use -positions[:, 2] below.
-ax.plot(positions[:, 0], positions[:, 1], positions[:, 2])
-ax.set_xlabel("X (m)")  # forward
-ax.set_ylabel("Y (m)")  # right
-ax.set_zlabel("Z (m)")  # down
-ax.set_title("Estimated 3D Flight Path (+Z down)")
-
-plt.show()
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Plot estimated flight path from glider flight data.')
+    parser.add_argument('file', help='Path to the flight data CSV file')
+    args = parser.parse_args()
+    main(args.file)

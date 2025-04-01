@@ -1,5 +1,5 @@
-#ifndef ARDU_FLITE_CONTROLLER_H
-#define ARDU_FLITE_CONTROLLER_H
+#ifndef ARDU_FLITE_ATTITUDE_CONTROLLER_H
+#define ARDU_FLITE_ATTITUDE_CONTROLLER_H
 
 #include "src/orientation/FliteQuaternion.h"
 #include "src/controller/pid.h"
@@ -8,10 +8,10 @@ static float extractYaw(const FliteQuaternion &q);
 static float wrapAngle(float angle);
 static FliteQuaternion removeYaw(const FliteQuaternion &q);
 
-class ArduFliteController {
+class ArduFliteAttitudeController {
 public:
     // Constructor
-    ArduFliteController();
+    ArduFliteAttitudeController();
 
     // Set the desired orientation as a quaternion
     void setDesiredQuaternion(const FliteQuaternion &qd);
@@ -34,6 +34,9 @@ public:
 private:
     FliteQuaternion desiredQ;
     PID pidRoll, pidPitch, pidYaw;
+
+    // Mutex for protecting access to class state.
+    SemaphoreHandle_t attitudeMutex;
 };
 
-#endif // ARDU_FLITE_CONTROLLER_H
+#endif // ARDU_FLITE_ATTITUDE_CONTROLLER_H

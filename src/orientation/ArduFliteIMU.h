@@ -30,6 +30,20 @@
 
 #define IMU_ADDRESS                         0x68  // MPU-6500 address
 
+// Define a simple 3D vector struct.
+struct Vector3 {
+    float x;
+    float y;
+    float z;
+};
+
+// Define a simple structure for Euler angles.
+struct EulerAngles {
+    float roll;
+    float pitch;
+    float yaw;
+};
+
 struct ArduFliteIMUOffsets {
     float accelX;
     float accelY;
@@ -62,22 +76,12 @@ public:
     void getOffsets(ArduFliteIMUOffsets &ofs) const;
     void update(float dt);
 
-    float getAccelX() const { return filteredAccelX; }
-    float getAccelY() const { return filteredAccelY; }
-    float getAccelZ() const { return filteredAccelZ; }
-    float getGyroX()  const { return filteredGyroX; }
-    float getGyroY()  const { return filteredGyroY; }
-    float getGyroZ()  const { return filteredGyroZ; }
-    float getMagX()  const { return magX; }
-    float getMagY()  const { return magY; }
-    float getMagZ()  const { return magZ; }
-    float getQw()  const { return qw; }
-    float getQx()  const { return qx; }
-    float getQy()  const { return qy; }
-    float getQz()  const { return qz; }
-    float getPitch()  const { return pitch; }
-    float getRoll()   const { return roll; }
-    float getYaw()    const { return yaw; }
+    // Grouped getters for sensor data:
+    Vector3 getAcceleration();    // Returns filtered accelerometer data.
+    Vector3 getGyro();            // Returns filtered gyro data.
+    Vector3 getMag();             // Returns magnetometer data.
+    FliteQuaternion getQuaternion(); // Returns the current quaternion.
+    EulerAngles getOrientation();    // Returns Euler angles (roll, pitch, yaw).
 
 private:
     MPU6500 IMU;
@@ -129,6 +133,9 @@ private:
     AccelData accelData;
     GyroData  gyroData;
     MagData   magData;
+
+    // Mutex for protecting access to sensor data and filter state.
+    SemaphoreHandle_t imuMutex;
 
     void applyOrientation();
     bool applyCalibrations();

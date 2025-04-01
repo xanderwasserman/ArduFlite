@@ -2,38 +2,47 @@
 #define TELEMETRY_DATA_H
 
 #include <Arduino.h>
-#include "ArduFliteIMU.h"
+#include "src/orientation/ArduFliteIMU.h"
 
 struct TelemetryData {
     float accelX, accelY, accelZ;
     float gyroX, gyroY, gyroZ;
     float qw, qx, qy, qz;
     float pitch, roll, yaw;
+    float rollRateCmd, pitchRateCmd, yawRateCmd;
     float rollCmd, pitchCmd, yawCmd;
 
-    void update(const ArduFliteIMU &myIMU, float roll_command, float pitch_command, float yaw_command) {
+    void update(const ArduFliteIMU &myIMU, float rollRate_command, float pitchRate_command, float yawRate_command, float roll_command, float pitch_command, float yaw_command) {
         // Update accelerometer data
-        accelX = myIMU.getAccelX();
-        accelY = myIMU.getAccelY();
-        accelZ = myIMU.getAccelZ();
+        Vector3 accel = myIMU.getAcceleration();
+        accelX = accel.x;
+        accelY = accel.y;
+        accelZ = accel.z;
 
         // Update gyroscope data
-        gyroX = myIMU.getGyroX();
-        gyroY = myIMU.getGyroY();
-        gyroZ = myIMU.getGyroZ();
+        Vector3 gyro = myIMU.getGyro();
+        gyroX = gyro.x;
+        gyroY = gyro.y;
+        gyroZ = gyro.z;
 
         // Update quaternion data
-        qw = myIMU.getQw();
-        qx = myIMU.getQx();
-        qy = myIMU.getQy();
-        qz = myIMU.getQz();
+        FliteQuaternion q = myIMU.getQuaternion();
+        qw = q.w;
+        qx = q.x;
+        qy = q.y;
+        qz = q.z;
 
         // Update orientation data
-        pitch = myIMU.getPitch();
-        roll  = myIMU.getRoll();
-        yaw   = myIMU.getYaw();
+        EulerAngles orientation = myIMU.getOrientation();
+        pitch = orientation.pitch;
+        roll  = orientation.roll;
+        yaw   = orientation.yaw;
 
         // Update command data
+        rollRateCmd  = rollRate_command;
+        pitchRateCmd = pitchRate_command;
+        yawRateCmd   = yawRate_command;
+
         rollCmd  = roll_command;
         pitchCmd = pitch_command;
         yawCmd   = yaw_command;

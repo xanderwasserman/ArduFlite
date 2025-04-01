@@ -4,8 +4,15 @@
 // Constructor
 //////////////////////////////////////
 ArduFliteIMU::ArduFliteIMU() {
+
     // Initialize our offsets to zero by default
     offsets = {0, 0, 0, 0, 0, 0};
+
+    // Create the mutex for this IMU instance.
+    imuMutex = xSemaphoreCreateMutex();
+    if (imuMutex == NULL) {
+        Serial.println("Failed to create IMU mutex!");
+    }
 }
 
 //////////////////////////////////////
@@ -113,6 +120,9 @@ void ArduFliteIMU::update(float dt)
     if (dt < MIN_DT) dt = MIN_DT;
     if (dt > MAX_DT) dt = MAX_DT;
 
+    // Protect the update operation with the mutex.
+    xSemaphoreTake(imuMutex, portMAX_DELAY);
+
     IMU.update();
 
     IMU.getAccel(&accelData);
@@ -157,6 +167,8 @@ void ArduFliteIMU::update(float dt)
     roll = filter.getRoll();
     pitch = filter.getPitch();
     yaw = filter.getYaw();
+
+    xSemaphoreGive(imuMutex);
 }
 
 //////////////////////////////////////
@@ -359,5 +371,60 @@ void ArduFliteIMU::applyLowPassFilters() {
         filteredGyroY  = gyroAlpha * gyroY + (1.0f - gyroAlpha) * filteredGyroY;
         filteredGyroZ  = gyroAlpha * gyroZ + (1.0f - gyroAlpha) * filteredGyroZ;
     }
-  }
+}
   
+// Grouped getter for accelerometer data
+Vector3 ArduFliteIMU::getAcceleration() {
+    Vector3 acc;
+    xSemaphoreTake(imuMutex, portMAX_DELAY);
+    acc.x = filteredAccelX;
+    acc.y = filteredAccelY;
+    acc.z = filteredAccelZ;
+    xSemaphoreGive(imuMutex);
+    return acc;
+}
+
+// Grouped getter for gyro data
+Vector3 ArduFliteIMU::getGyro() {
+    Vector3 gyro;
+    xSemaphoreTake(imuMutex, portMAX_DELAY);
+    gyro.x = filteredGyroX;
+    gyro.y = filteredGyroY;
+    gyro.z = filteredGyroZ;
+    xSemaphoreGive(imuMutex);
+    return gyro;
+}
+
+// Grouped getter for magnetometer data
+Vector3 ArduFliteIMU::getMag() {
+    Vector3 mag;
+    xSemaphoreTake(imuMutex, portMAX_DELAY);
+    mag.x = magX;
+    mag.y = magY;
+    mag.z = magZ;
+    xSemaphoreGive(imuMutex);
+    return mag;
+}
+
+// Getter for the quaternion.
+FliteQuaternion ArduFliteIMU::getQuaternion() {
+    FliteQuaternion q;
+    xSemaphoreTake(imuMutex, portMAX_DELAY);
+    q.w = qw;
+    q.x = qx;
+    q.y = qy;
+    q.z = qz;
+    xSemaphoreGive(imuMutex);
+    return q;
+}
+
+// Grouped getter for Euler angles (orientation)
+EulerAngles ArduFliteIMU::getOrientation() {
+    EulerAngles ang;
+    xSemaphoreTake(imuMutex, portMAX_DELAY);
+    ang.roll  = roll;
+    ang.pitch = pitch;
+    ang.yaw   = yaw;
+    xSemaphoreGive(imuMutex);
+    return ang;
+}

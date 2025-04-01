@@ -1,22 +1,28 @@
 #include <math.h>
 #include <Arduino.h>
-#include "src/controller/ArduFliteController.h"
+#include "src/controller/ArduFliteAttitudeController.h"
 
 // ---------------------------------------------------------------------------
-// ArduFliteController Class Implementation
+// ArduFliteAttitudeController Class Implementation
 // ---------------------------------------------------------------------------
 
 /**
  * @brief Constructor: Initializes the PID controllers and sets the default
  * desired orientation to "straight and level" (no rotation).
  */
-ArduFliteController::ArduFliteController()
-    : pidRoll(1.0f, 0.0f, 0.05f, -1.0f, 1.0f),
-      pidPitch(1.0f, 0.0f, 0.05f, -1.0f, 1.0f),
-      pidYaw(2.0f, 0.0f, 0.0f, -1.0f, 1.0f)
+ ArduFliteAttitudeController::ArduFliteAttitudeController()
+    : pidRoll(  1.0f,   0.0f,   0.05f,  -45.0f,     45.0f),
+      pidPitch( 1.0f,   0.0f,   0.05f,  -45.0f,     45.0f),
+      pidYaw(   2.0f,   0.0f,   0.0f,   -45.0f,     45.0f)
 {
     // Desired orientation is no rotation.
     desiredQ = FliteQuaternion(1, 0, 0, 0);
+
+    // Create the mutex for protecting desiredQ.
+    attitudeMutex = xSemaphoreCreateMutex();
+    if (attitudeMutex == NULL) {
+        Serial.println("Failed to create ArduFliteAttitudeController mutex!");
+    }
 }
 
 /**
@@ -24,8 +30,10 @@ ArduFliteController::ArduFliteController()
  *
  * @param qd The desired quaternion.
  */
-void ArduFliteController::setDesiredQuaternion(const FliteQuaternion &qd) {
+void ArduFliteAttitudeController::setDesiredQuaternion(const FliteQuaternion &qd) {
+    xSemaphoreTake(attitudeMutex, portMAX_DELAY);
     desiredQ = qd;
+    xSemaphoreGive(attitudeMutex);
 }
 
 /**
@@ -38,7 +46,7 @@ void ArduFliteController::setDesiredQuaternion(const FliteQuaternion &qd) {
  * @param pitch Pitch angle in radians.
  * @param yaw   Yaw angle in radians.
  */
-void ArduFliteController::setDesiredEulerRads(float roll, float pitch, float yaw) {
+void ArduFliteAttitudeController::setDesiredEulerRads(float roll, float pitch, float yaw) {
     // Compute half-angles.
     float halfRoll  = roll  * 0.5f;
     float halfPitch = pitch * 0.5f;
@@ -53,10 +61,14 @@ void ArduFliteController::setDesiredEulerRads(float roll, float pitch, float yaw
     float sy = sin(halfYaw);
 
     // Convert Euler angles to a quaternion using the standard formula.
-    desiredQ.w = cr * cp * cy + sr * sp * sy;
-    desiredQ.x = sr * cp * cy - cr * sp * sy;
-    desiredQ.y = cr * sp * cy + sr * cp * sy;
-    desiredQ.z = cr * cp * sy - sr * sp * cy;
+    FliteQuaternion q;
+    q.w = cr * cp * cy + sr * sp * sy;
+    q.x = sr * cp * cy - cr * sp * sy;
+    q.y = cr * sp * cy + sr * cp * sy;
+    q.z = cr * cp * sy - sr * sp * cy;
+
+    // Use the setter that protects desiredQ.
+    setDesiredQuaternion(q);
 }
 
 /**
@@ -66,7 +78,7 @@ void ArduFliteController::setDesiredEulerRads(float roll, float pitch, float yaw
  * @param pitch Pitch angle in degrees.
  * @param yaw   Yaw angle in degrees.
  */
-void ArduFliteController::setDesiredEulerDegs(float roll, float pitch, float yaw) {
+void ArduFliteAttitudeController::setDesiredEulerDegs(float roll, float pitch, float yaw) {
     const float deg2rad = PI / 180.0f;
     setDesiredEulerRads(roll * deg2rad, pitch * deg2rad, yaw * deg2rad);
 }
@@ -87,10 +99,15 @@ void ArduFliteController::setDesiredEulerDegs(float roll, float pitch, float yaw
  * @param pitchOut  The controller output for pitch (to be applied to the elevators).
  * @param yawOut    The controller output for yaw (to be applied to the rudder).
  */
-void ArduFliteController::update(const FliteQuaternion &measuredQ, float dt, 
-    float &rollOut, float &pitchOut, float &yawOut) {
+void ArduFliteAttitudeController::update(const FliteQuaternion &measuredQ, float dt, float &rollOut, float &pitchOut, float &yawOut) {
     // Enforce a minimum timestep to prevent division by zero.
     if (dt < 1e-3f) dt = 1e-3f;
+
+    // Read desiredQ in a thread-safe way.
+    FliteQuaternion localDesiredQ;
+    xSemaphoreTake(attitudeMutex, portMAX_DELAY);
+    localDesiredQ = desiredQ;
+    xSemaphoreGive(attitudeMutex);
 
     // Normalize the measured quaternion.
     FliteQuaternion measuredNormalized = measuredQ;
@@ -100,12 +117,12 @@ void ArduFliteController::update(const FliteQuaternion &measuredQ, float dt,
     }
 
     // --- Compute Yaw Error Separately ---
-    float desiredYaw = extractYaw(desiredQ);
+    float desiredYaw = extractYaw(localDesiredQ);
     float measuredYaw = extractYaw(measuredNormalized);
     float yawErr = wrapAngle(desiredYaw - measuredYaw);
 
     // --- Remove Yaw from Both Desired and Measured Quaternions ---
-    FliteQuaternion desiredNoYaw = removeYaw(desiredQ);
+    FliteQuaternion desiredNoYaw = removeYaw(localDesiredQ);
     FliteQuaternion measuredNoYaw = removeYaw(measuredNormalized);
 
     // --- Compute Roll/Pitch Error Quaternion ---
@@ -144,7 +161,7 @@ void ArduFliteController::update(const FliteQuaternion &measuredQ, float dt,
 /**
  * @brief Resets all PID controllers.
  */
-void ArduFliteController::reset() {
+void ArduFliteAttitudeController::reset() {
     pidRoll.reset();
     pidPitch.reset();
     pidYaw.reset();

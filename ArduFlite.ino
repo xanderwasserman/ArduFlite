@@ -5,7 +5,6 @@
 #include "src/utils/HoldButtonManager.h"
 #include "src/utils/MultiTapButton.h"
 #include "src/utils/MultiTapButtonManager.h"
-#include "src/utils/PrintTask.h"
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/controller/ArduFliteController.h"
 #include "src/actuators/ServoManager.h"

@@ -11,12 +11,14 @@
 #include "src/actuators/ServoManager.h"
 #include "src/telemetry/mqtt/ArduFliteMqttTelemetry.h"
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
+#include "src/telemetry/serial/ArduFliteDebugSerialTelemetry.h"
 
 unsigned long lastMicros = 0;
 float rollCmd, pitchCmd, yawCmd = 0;
 
 TelemetryData telemetryData;
 ArduFliteMqttTelemetry telemetry(20.0f); // 20 Hz telemetry frequency
+ArduFliteDebugSerialTelemetry debugTelemetry(1.0f); // 1 Hz telemetry frequency
 // ArduFliteQSerialTelemetry telemetry(20.0f);
 
 ArduFliteIMU myIMU;
@@ -35,16 +37,6 @@ void onResetTripleTap() {
     telemetry.reset();
 }
 
-float getRollCmd() {
-  return rollCmd;
-}
-float getPitchCmd() {
-  return pitchCmd;
-}
-float getYawCmd() {
-  return yawCmd;
-}
-
 HoldButton calibrateButton(USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
 MultiTapButton resetButton(USER_BUTTON_PIN, 1000, 3, onResetTripleTap, true, 30);
 
@@ -55,6 +47,7 @@ void setup() {
   pinMode(USER_BUTTON_PIN, INPUT_PULLUP);
 
   telemetry.begin();
+  debugTelemetry.begin();
 
   // Initialize IMU
   if (!myIMU.begin()) {
@@ -62,8 +55,6 @@ void setup() {
     while (1);
   }
 
-  // FliteQuaternion firstQ(1, 0, 0, 0);
-  // myController.setDesiredQuaternion(firstQ);
   myController.setDesiredEulerDegs(0.0, 0.0, 0.0);
 
   Serial.printf("ArduFlite Controller initialised\n");
@@ -117,28 +108,11 @@ void loop()
     servoMgr.writeCommands(rollCmd, pitchCmd, yawCmd);
 
     // Update telemetry data
-    telemetryData.accelX = myIMU.getAccelX();
-    telemetryData.accelY = myIMU.getAccelY();
-    telemetryData.accelZ = myIMU.getAccelZ();
+    telemetryData.update(myIMU, rollCmd, pitchCmd, yawCmd);
 
-    telemetryData.gyroX = myIMU.getGyroX();
-    telemetryData.gyroY = myIMU.getGyroY();
-    telemetryData.gyroZ = myIMU.getGyroZ();
-
-    telemetryData.qw = myIMU.getQw();
-    telemetryData.qx = myIMU.getQx();
-    telemetryData.qy = myIMU.getQy();
-    telemetryData.qz = myIMU.getQz();
-
-    telemetryData.pitch = myIMU.getPitch();
-    telemetryData.roll = myIMU.getRoll();
-    telemetryData.yaw = myIMU.getYaw();
-
-    telemetryData.rollCmd = rollCmd;
-    telemetryData.pitchCmd = pitchCmd;
-    telemetryData.yawCmd = yawCmd;
-
+    // Publish telemetry data to the telemetry tasks
     telemetry.publish(telemetryData);
+    debugTelemetry.publish(telemetryData);
 
     // Wait until next cycle
     vTaskDelayUntil(&xLastWakeTime, xFrequency);

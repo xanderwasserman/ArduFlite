@@ -1,6 +1,7 @@
 #ifndef ARDU_FLITE_RATE_CONTROLLER_H
 #define ARDU_FLITE_RATE_CONTROLLER_H
 
+#include <Arduino.h>
 #include "src/controller/pid.h"
 
 /**

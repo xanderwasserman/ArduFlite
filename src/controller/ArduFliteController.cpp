@@ -15,8 +15,6 @@
 
  #include "src/controller/ArduFliteController.h"
  #include <Arduino.h>
- #include <FreeRTOS.h>
- #include <semphr.h>
  
  /**
   * @brief Constructor for ArduFliteController.
@@ -157,11 +155,23 @@
              // In Assist mode, use the attitude controller to compute desired rates.
              FliteQuaternion currentQ = controller->imu->getQuaternion();
              controller->attitudeCtrl->update(currentQ, dt, rollRateCmd, pitchRateCmd, yawRateCmd);
+
+            xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
+            controller->lastRollRateCmd  = rollRateCmd;
+            controller->lastPitchRateCmd = pitchRateCmd;
+            controller->lastYawRateCmd   = yawRateCmd;
+            xSemaphoreGive(controller->ctrlMutex);
          } else {
              // In Stabilized mode, use pilot-provided rate setpoints.
              rollRateCmd  = localPilotRoll;
              pitchRateCmd = localPilotPitch;
              yawRateCmd   = localPilotYaw;
+
+            xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
+            controller->lastRollRateCmd  = rollRateCmd;
+            controller->lastPitchRateCmd = pitchRateCmd;
+            controller->lastYawRateCmd   = yawRateCmd;
+            xSemaphoreGive(controller->ctrlMutex); 
          }
          
          // Pass the desired angular rates to the rate controller.
@@ -202,7 +212,61 @@
          
          // Write the computed servo commands (normalized to [-1, 1]).
          controller->servoMgr->writeCommands(rollCmd, pitchCmd, yawCmd);
+
+        xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
+        controller->lastRollCmd  = rollCmd;
+        controller->lastPitchCmd = pitchCmd;
+        controller->lastYawCmd   = yawCmd;
+        xSemaphoreGive(controller->ctrlMutex);
+
          vTaskDelayUntil(&xLastWakeTime, xFrequency);
      }
  }
  
+ float ArduFliteController::getRollRateCmd() {
+    float value;
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value = lastRollRateCmd;
+    xSemaphoreGive(ctrlMutex);
+    return value;
+}
+
+float ArduFliteController::getPitchRateCmd() {
+    float value;
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value = lastPitchRateCmd;
+    xSemaphoreGive(ctrlMutex);
+    return value;
+}
+
+float ArduFliteController::getYawRateCmd() {
+    float value;
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value = lastYawRateCmd;
+    xSemaphoreGive(ctrlMutex);
+    return value;
+}
+
+float ArduFliteController::getRollCmd() {
+    float value;
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value = lastRollCmd;
+    xSemaphoreGive(ctrlMutex);
+    return value;
+}
+
+float ArduFliteController::getPitchCmd() {
+    float value;
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value = lastPitchCmd;
+    xSemaphoreGive(ctrlMutex);
+    return value;
+}
+
+float ArduFliteController::getYawCmd() {
+    float value;
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value = lastYawCmd;
+    xSemaphoreGive(ctrlMutex);
+    return value;
+}

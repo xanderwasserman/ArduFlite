@@ -6,6 +6,7 @@
 #include <FastIMU.h>
 #include <EEPROM.h>
 #include <Adafruit_AHRS.h>
+#include "src/orientation/FliteQuaternion.h"
 
 /**
  * @defgroup OrientationModes Orientation Modes
@@ -175,35 +176,35 @@ public:
      *
      * @return Vector3 containing the filtered acceleration values.
      */
-    Vector3 getAcceleration();
+    Vector3 getAcceleration() const;
 
     /**
      * @brief Retrieves filtered gyroscope data.
      *
      * @return Vector3 containing the filtered gyroscope values.
      */
-    Vector3 getGyro();
+    Vector3 getGyro() const;
 
     /**
      * @brief Retrieves magnetometer data.
      *
      * @return Vector3 containing the magnetometer values.
      */
-    Vector3 getMag();
+    Vector3 getMag() const;
 
     /**
      * @brief Retrieves the current orientation as a quaternion.
      *
      * @return FliteQuaternion representing the current orientation.
      */
-    FliteQuaternion getQuaternion();
+    FliteQuaternion getQuaternion() const;
 
     /**
      * @brief Retrieves the current orientation as Euler angles.
      *
      * @return EulerAngles containing the roll, pitch, and yaw angles.
      */
-    EulerAngles getOrientation();
+    EulerAngles getOrientation() const;
 
 private:
     /// IMU hardware instance.

@@ -419,7 +419,7 @@
   *
   * @return Vector3 containing the filtered accelerometer data.
   */
- Vector3 ArduFliteIMU::getAcceleration() {
+ Vector3 ArduFliteIMU::getAcceleration() const {
      Vector3 acc;
      xSemaphoreTake(imuMutex, portMAX_DELAY);
      acc.x = filteredAccelX;
@@ -436,7 +436,7 @@
   *
   * @return Vector3 containing the filtered gyroscope data.
   */
- Vector3 ArduFliteIMU::getGyro() {
+ Vector3 ArduFliteIMU::getGyro() const {
      Vector3 gyro;
      xSemaphoreTake(imuMutex, portMAX_DELAY);
      gyro.x = filteredGyroX;
@@ -453,7 +453,7 @@
   *
   * @return Vector3 containing the magnetometer data.
   */
- Vector3 ArduFliteIMU::getMag() {
+ Vector3 ArduFliteIMU::getMag() const {
      Vector3 mag;
      xSemaphoreTake(imuMutex, portMAX_DELAY);
      mag.x = magX;
@@ -470,7 +470,7 @@
   *
   * @return FliteQuaternion representing the current orientation.
   */
- FliteQuaternion ArduFliteIMU::getQuaternion() {
+ FliteQuaternion ArduFliteIMU::getQuaternion() const {
      FliteQuaternion q;
      xSemaphoreTake(imuMutex, portMAX_DELAY);
      q.w = qw;
@@ -488,7 +488,7 @@
   *
   * @return EulerAngles containing the roll, pitch, and yaw.
   */
- EulerAngles ArduFliteIMU::getOrientation() {
+ EulerAngles ArduFliteIMU::getOrientation() const {
      EulerAngles ang;
      xSemaphoreTake(imuMutex, portMAX_DELAY);
      ang.roll  = roll;

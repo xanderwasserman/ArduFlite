@@ -44,11 +44,10 @@ void ArduFliteDebugSerialTelemetry::telemetryTask(void* pvParameters) {
         }
 
         Serial.printf("Accel: %f, %f, %f\n", localCopy.accelX, localCopy.accelY, localCopy.accelZ);
-        Serial.print("Gyro: %f, %f, %f\n", localCopy.gyroX, localCopy.gyroY, localCopy.gyroZ);
-        Serial.print("Q: %f, %f, %f, %f\n", localCopy.qw, localCopy.qx, localCopy.qy, localCopy.qz);
-        Serial.print("Orientation: %f, %f, %f\n", localCopy.pitch, localCopy.roll, localCopy.yaw);
-        Serial.print("Rate Cmd: %f, %f, %f\n", localCopy.pitchRateCmd, localCopy.rollRateCmd, localCopy.yawRateCmd);
-        Serial.print("Servo Cmd: %f, %f, %f\n", localCopy.pitchCmd, localCopy.rollCmd, localCopy.yawCmd);
+        Serial.printf("Gyro: %f, %f, %f\n", localCopy.gyroX, localCopy.gyroY, localCopy.gyroZ);
+        Serial.printf("Q: %f, %f, %f, %f\n", localCopy.qw, localCopy.qx, localCopy.qy, localCopy.qz);
+        Serial.printf("Orientation: %f, %f, %f\n", localCopy.pitch, localCopy.roll, localCopy.yaw);
+        Serial.printf("Servo Cmd: %f, %f, %f\n", localCopy.pitchCmd, localCopy.rollCmd, localCopy.yawCmd);
 
         // Delay for the remainder of the interval
         unsigned long elapsed = millis() - startMs;

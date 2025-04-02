@@ -4,8 +4,6 @@
 #include "src/orientation/FliteQuaternion.h"
 #include "src/controller/pid.h"
 #include <Arduino.h>
-#include <FreeRTOS.h>
-#include <semphr.h>
 
 /**
  * @brief Extracts the yaw angle (rotation about the Z-axis) from a quaternion.

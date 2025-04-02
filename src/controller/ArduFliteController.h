@@ -95,6 +95,13 @@ public:
      */
     ArduFliteMode getMode() const;
 
+    float getRollRateCmd();
+    float getPitchRateCmd();
+    float getYawRateCmd();
+    float getRollCmd();
+    float getPitchCmd(); 
+    float getYawCmd();
+
 private:
     ArduFliteIMU* imu;                          ///< Pointer to the IMU instance.
     ArduFliteAttitudeController* attitudeCtrl;  ///< Pointer to the outer loop controller.
@@ -108,6 +115,14 @@ private:
     volatile float pilotRollRateSetpoint;       ///< Pilot roll rate setpoint (deg/s) for STABILIZED_MODE.
     volatile float pilotPitchRateSetpoint;      ///< Pilot pitch rate setpoint (deg/s) for STABILIZED_MODE.
     volatile float pilotYawRateSetpoint;        ///< Pilot yaw rate setpoint (deg/s) for STABILIZED_MODE.
+
+    // Shared command variables
+    float lastRollRateCmd = 0.0f;
+    float lastPitchRateCmd = 0.0f;
+    float lastYawRateCmd = 0.0f;
+    float lastRollCmd = 0.0f;
+    float lastPitchCmd = 0.0f;
+    float lastYawCmd = 0.0f;
 
     SemaphoreHandle_t ctrlMutex;                ///< Mutex to protect shared state.
 

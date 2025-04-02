@@ -25,8 +25,6 @@ ArduFliteIMU myIMU;
 ArduFliteAttitudeController attitudeController;
 ArduFliteRateController rateController;
 ServoManager servoMgr(LEFT_AIL_PIN, RIGHT_AIL_PIN, PITCH_PIN, YAW_PIN);
-
-// Create the overall controller, passing pointers to the shared objects.
 ArduFliteController arduflite(&myIMU, &attitudeController, &rateController, &servoMgr);
 
 // Callback for calibrate button.
@@ -105,7 +103,7 @@ void loop() {
   MultiTapButtonManager::updateAll();
 
   // Update telemetry data with the latest IMU and control information.
-  telemetryData.update(myIMU, /* additional data can be added if needed */);
+  telemetryData.update(myIMU, arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(), arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd());
   telemetry.publish(telemetryData);
   debugTelemetry.publish(telemetryData);
 

@@ -22,7 +22,7 @@
  ArduFliteAttitudeController::ArduFliteAttitudeController()
      : pidRoll(  40.0f,   0.0f,   0.05f,  -45.0f,     45.0f),
        pidPitch( 40.0f,   0.0f,   0.05f,  -45.0f,     45.0f),
-       pidYaw(   40.0f,   0.0f,   0.0f,   -45.0f,     45.0f)
+       pidYaw(   40.0f,   0.0f,   0.05f,  -45.0f,    45.0f)
  {
      // Desired orientation is initialized to no rotation.
      desiredQ = FliteQuaternion(1, 0, 0, 0);

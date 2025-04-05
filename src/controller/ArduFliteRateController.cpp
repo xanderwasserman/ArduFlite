@@ -4,9 +4,9 @@
 // The output limits are set to -1.0 and +1.0 so that the final servo commands remain normalized.
 ArduFliteRateController::ArduFliteRateController()
     : desiredRollRate(0.0f), desiredPitchRate(0.0f), desiredYawRate(0.0f),
-      pidRoll(  0.01f,   0.001f,  0.000001f,     -1.0f,  1.0f),
-      pidPitch( 0.01f,   0.001f,  0.000001f,     -1.0f,  1.0f),
-      pidYaw(   0.01f,   0.001f,  0.000001f,     -1.0f,  1.0f),
+      pidRoll(  0.02f,   0.005f,  0.000001f,     -1.0f,  1.0f),
+      pidPitch( 0.02f,   0.005f,  0.000001f,     -1.0f,  1.0f),
+      pidYaw(   0.02f,   0.005f,  0.000001f,     -1.0f,  1.0f),
       filteredRollOutput(0.0f), filteredPitchOutput(0.0f), filteredYawOutput(0.0f),
       outputAlpha(0.05f) 
 {

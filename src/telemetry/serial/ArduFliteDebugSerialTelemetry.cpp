@@ -47,6 +47,7 @@ void ArduFliteDebugSerialTelemetry::telemetryTask(void* pvParameters) {
         Serial.printf("Gyro: %f, %f, %f\n", localCopy.gyroX, localCopy.gyroY, localCopy.gyroZ);
         Serial.printf("Q: %f, %f, %f, %f\n", localCopy.qw, localCopy.qx, localCopy.qy, localCopy.qz);
         Serial.printf("Orientation: %f, %f, %f\n", localCopy.pitch, localCopy.roll, localCopy.yaw);
+        Serial.printf("Rate Cmd: %f, %f, %f\n", localCopy.pitchRateCmd, localCopy.rollRateCmd, localCopy.yawRateCmd);
         Serial.printf("Servo Cmd: %f, %f, %f\n", localCopy.pitchCmd, localCopy.rollCmd, localCopy.yawCmd);
 
         // Delay for the remainder of the interval

@@ -17,7 +17,7 @@
 // Global telemetry objects.
 TelemetryData telemetryData;
 ArduFliteMqttTelemetry telemetry(20.0f);          // 20 Hz telemetry frequency
-ArduFliteDebugSerialTelemetry debugTelemetry(1.0f); // 1 Hz telemetry frequency
+// ArduFliteDebugSerialTelemetry debugTelemetry(1.0f); // 1 Hz telemetry frequency
 // ArduFliteQSerialTelemetry telemetry(20.0f);
 
 // Create instances of the core components.
@@ -62,7 +62,7 @@ void setup() {
   pinMode(USER_BUTTON_PIN, INPUT_PULLUP);
 
   telemetry.begin();
-  debugTelemetry.begin();
+  // debugTelemetry.begin();
 
   // Initialize the IMU.
   if (!myIMU.begin()) {
@@ -105,7 +105,7 @@ void loop() {
   // Update telemetry data with the latest IMU and control information.
   telemetryData.update(myIMU, arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(), arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd());
   telemetry.publish(telemetryData);
-  debugTelemetry.publish(telemetryData);
+  // debugTelemetry.publish(telemetryData);
 
   // You can add code here to switch modes (e.g., on a button press) by calling:
   // arduflite.setMode(STABILIZED_MODE);

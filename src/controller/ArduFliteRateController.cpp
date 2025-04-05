@@ -1,13 +1,14 @@
 #include "src/controller/ArduFliteRateController.h"
 
 // Constructor with initial PID parameters.
-// The gains here are sample values—you will need to tune them for your aircraft.
 // The output limits are set to -1.0 and +1.0 so that the final servo commands remain normalized.
 ArduFliteRateController::ArduFliteRateController()
     : desiredRollRate(0.0f), desiredPitchRate(0.0f), desiredYawRate(0.0f),
-      pidRoll(  0.1f,   0.01f,  0.005f,     -1.0f,  1.0f),
-      pidPitch( 0.1f,   0.01f,  0.005f,     -1.0f,  1.0f),
-      pidYaw(   0.1f,   0.01f,  0.005f,     -1.0f,  1.0f)
+      pidRoll(  0.01f,   0.001f,  0.000001f,     -1.0f,  1.0f),
+      pidPitch( 0.01f,   0.001f,  0.000001f,     -1.0f,  1.0f),
+      pidYaw(   0.01f,   0.001f,  0.000001f,     -1.0f,  1.0f),
+      filteredRollOutput(0.0f), filteredPitchOutput(0.0f), filteredYawOutput(0.0f),
+      outputAlpha(0.05f) 
 {
     // Create the mutex to protect desired rate updates.
     rateMutex = xSemaphoreCreateMutex();
@@ -48,10 +49,20 @@ void ArduFliteRateController::update(float measuredRollRate, float measuredPitch
     float pitchError = desiredPitchRate - measuredPitchRate;
     float yawError   = desiredYawRate   - measuredYawRate;
 
-    // Update the PID controllers and compute final output commands.
-    rollOut  = pidRoll.update(rollError, dt);
-    pitchOut = pidPitch.update(pitchError, dt);
-    yawOut   = pidYaw.update(yawError, dt);
+    // Compute raw PID outputs.
+    float newRollOut  = pidRoll.update(rollError, dt);
+    float newPitchOut = pidPitch.update(pitchError, dt);
+    float newYawOut   = pidYaw.update(yawError, dt);
+
+    // Apply an exponential moving average filter to smooth the output.
+    filteredRollOutput  = outputAlpha * newRollOut  + (1.0f - outputAlpha) * filteredRollOutput;
+    filteredPitchOutput = outputAlpha * newPitchOut + (1.0f - outputAlpha) * filteredPitchOutput;
+    filteredYawOutput   = outputAlpha * newYawOut   + (1.0f - outputAlpha) * filteredYawOutput;
+
+    // Use the filtered outputs as the final command.
+    rollOut  = filteredRollOutput;
+    pitchOut = filteredPitchOutput;
+    yawOut   = filteredYawOutput;
 }
 
 // Reset all PID controllers.

@@ -1,0 +1,29 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Compile FireBeetle2 Sketch",
+        "type": "shell",
+        "command": "arduino-cli compile --fqbn esp32:esp32:dfrobot_firebeetle2_esp32e",
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        },
+        "presentation": {
+          "echo": true,
+          "reveal": "always"
+        }
+      },
+      {
+        "label": "Upload FireBeetle2 Sketch",
+        "type": "shell",
+        "command": "arduino-cli upload -p COM4 --fqbn esp32:esp32:dfrobot_firebeetle2_esp32e",
+        "group": "build",
+        "presentation": {
+          "echo": true,
+          "reveal": "always"
+        }
+      }
+    ]
+  }
+  

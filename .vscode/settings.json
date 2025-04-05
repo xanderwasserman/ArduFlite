@@ -1,0 +1,15 @@
+{
+    "VsCodeTaskButtons.showCounter": true,
+    "VsCodeTaskButtons.tasks": [
+        {
+            "label": "$(search-refresh) Build",
+            "task": "Compile FireBeetle2 Sketch",
+            "tooltip": "🛠️ Compile FireBeetle2 Sketch"
+        },
+        {
+            "label": "$(notebook-move-up) Upload",
+            "task": "Upload FireBeetle2 Sketch",
+            "tooltip": "🧹 Upload FireBeetle2 Sketch"
+        }
+    ]
+}

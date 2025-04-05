@@ -388,9 +388,9 @@ class AircraftVisualizer(gl.GLViewWidget):
 
             # Get command values (default to 0 if not available)
             # Commands are in the range -1 to 1; scale them so that ±1 is 90° deflection.
-            rollCmd = self.data_store.data["commands"]["rollCmd"] or 0.0
-            pitchCmd = self.data_store.data["commands"]["pitchCmd"] or 0.0
-            yawCmd = self.data_store.data["commands"]["yawCmd"] or 0.0
+            rollCmd = self.data_store.data["command_servo"]["rollCmd"] or 0.0
+            pitchCmd = self.data_store.data["command_servo"]["pitchCmd"] or 0.0
+            yawCmd = self.data_store.data["command_servo"]["yawCmd"] or 0.0
 
             max_deflection = np.radians(90)  # 90° maximum for all control surfaces
 

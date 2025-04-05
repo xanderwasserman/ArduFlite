@@ -39,9 +39,12 @@ class MqttClient:
             ("arduflite/orientation/pitch", 0),
             ("arduflite/orientation/roll", 0),
             ("arduflite/orientation/yaw", 0),
-            ("arduflite/commands/rollCmd", 0),
-            ("arduflite/commands/pitchCmd", 0),
-            ("arduflite/commands/yawCmd", 0)
+            ("arduflite/command_rate/rollRateCmd", 0),
+            ("arduflite/command_rate/pitchRateCmd", 0),
+            ("arduflite/command_rate/yawRateCmd", 0),
+            ("arduflite/command_servo/rollCmd", 0),
+            ("arduflite/command_servo/pitchCmd", 0),
+            ("arduflite/command_servo/yawCmd", 0)
         ]
         for topic, qos in topics:
             client.subscribe(topic, qos)

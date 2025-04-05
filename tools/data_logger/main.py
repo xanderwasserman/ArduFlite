@@ -22,15 +22,19 @@ TOPIC_MAPPING = {
     "arduflite/orientation/pitch": "orientation_pitch",
     "arduflite/orientation/roll": "orientation_roll",
     "arduflite/orientation/yaw": "orientation_yaw",
-    "arduflite/commands/rollCmd": "commands_rollCmd",
-    "arduflite/commands/pitchCmd": "commands_pitchCmd",
-    "arduflite/commands/yawCmd": "commands_yawCmd"
+    "arduflite/command_rate/rollCmd": "commandsRate_rollCmd",
+    "arduflite/command_rate/pitchCmd": "commandsRate_pitchCmd",
+    "arduflite/command_rate/yawCmd": "commandsRate_yawCmd",
+    "arduflite/command_servo/rollCmd": "commands_rollCmd",
+    "arduflite/command_servo/pitchCmd": "commands_pitchCmd",
+    "arduflite/command_servo/yawCmd": "commands_yawCmd"
 }
 
 CSV_ORDER = ["timestamp", "quaternion_w", "quaternion_x", "quaternion_y", "quaternion_z",
              "accel_x", "accel_y", "accel_z",
              "gyro_x", "gyro_y", "gyro_z",
              "orientation_pitch", "orientation_roll", "orientation_yaw",
+             "commandsRate_rollCmd", "commandsRate_pitchCmd", "commandsRate_yawCmd",
              "commands_rollCmd", "commands_pitchCmd", "commands_yawCmd"]
 
 # Global storage for the latest values.

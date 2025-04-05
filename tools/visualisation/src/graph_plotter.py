@@ -17,7 +17,7 @@ class GraphPlotter(pg.PlotWidget):
         self.curve = self.plot(pen='y')
         
         # Set fixed y-axis range depending on the category:
-        if self.category in ["accel", "commands"]:
+        if self.category in ["accel", "command_rate", "command_servo"]:
             self.setYRange(-1, 1)
             self.enableAutoRange(axis='y', enable=False)
         elif self.category == "orientation":

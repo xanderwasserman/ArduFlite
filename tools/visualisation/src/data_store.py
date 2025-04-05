@@ -14,7 +14,8 @@ class DataStore:
             "accel": {"x": None, "y": None, "z": None},
             "gyro": {"x": None, "y": None, "z": None},
             "orientation": {"pitch": None, "roll": None, "yaw": None},
-            "commands": {"rollCmd": None, "pitchCmd": None, "yawCmd": None},
+            "command_rate": {"rollRateCmd": None, "pitchRateCmd": None, "yawRateCmd": None},
+            "command_servo": {"rollCmd": None, "pitchCmd": None, "yawCmd": None},
         }
         # Historical data stored as deque for each variable with (timestamp, value) tuples
         self.history = {}

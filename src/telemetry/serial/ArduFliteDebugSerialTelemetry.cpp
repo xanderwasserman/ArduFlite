@@ -43,6 +43,7 @@ void ArduFliteDebugSerialTelemetry::telemetryTask(void* pvParameters) {
             xSemaphoreGive(self->telemetryMutex);
         }
 
+        Serial.print("\033[2J\033[H");
         Serial.printf("Accel: %f, %f, %f\n", localCopy.accelX, localCopy.accelY, localCopy.accelZ);
         Serial.printf("Gyro: %f, %f, %f\n", localCopy.gyroX, localCopy.gyroY, localCopy.gyroZ);
         Serial.printf("Q: %f, %f, %f, %f\n", localCopy.qw, localCopy.qx, localCopy.qy, localCopy.qz);

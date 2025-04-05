@@ -59,7 +59,8 @@
  
      // Load calibration offsets from EEPROM; if unavailable, perform self-calibration.
      if (!applyCalibrations()) {
-         return false;
+        Serial.println("FastIMU failed to apply calibrations!");
+        return false;
      }
  
      // Initialize and warm up the orientation filter.
@@ -226,76 +227,82 @@
  
      double sumAx = 0, sumAy = 0, sumAz = 0;
      double sumGx = 0, sumGy = 0, sumGz = 0;
+
+    // Protect the sensor update with a mutex.
+    xSemaphoreTake(imuMutex, portMAX_DELAY);
  
-     while (millis() - start < CALIB_MS) {
-         // Read raw sensor data.
-         IMU.update();
-         IMU.getAccel(&accelData);
-         IMU.getGyro(&gyroData);
- 
-         double ax = accelData.accelX;
-         double ay = accelData.accelY;
-         double az = accelData.accelZ;
-         double gx = gyroData.gyroX;
-         double gy = gyroData.gyroY;
-         double gz = gyroData.gyroZ;
- 
-         // Accumulate readings.
-         sumAx += ax;
-         sumAy += ay;
-         sumAz += az;
-         sumGx += gx;
-         sumGy += gy;
-         sumGz += gz;
-         samples++;
- 
-         delay(5); // Small delay between samples.
-     }
- 
-     double avgAx = sumAx / samples;
-     double avgAy = sumAy / samples;
-     double avgAz = sumAz / samples;
-     double avgGx = sumGx / samples;
-     double avgGy = sumGy / samples;
-     double avgGz = sumGz / samples;
- 
-     Serial.println("Raw average readings:");
-     Serial.print("Accel: ");
-     Serial.print(avgAx, 3); Serial.print(", ");
-     Serial.print(avgAy, 3); Serial.print(", ");
-     Serial.println(avgAz, 3);
- 
-     Serial.print("Gyro: ");
-     Serial.print(avgGx, 3); Serial.print(", ");
-     Serial.print(avgGy, 3); Serial.print(", ");
-     Serial.println(avgGz, 3);
- 
-     // Determine desired offsets.
-     ArduFliteIMUOffsets newOfs;
-     newOfs.accelX = float(avgAx - 0.0);   // Desired X is 0.
-     newOfs.accelY = float(avgAy - 0.0);   // Desired Y is 0.
-     newOfs.accelZ = float(avgAz - 1.0);   // Desired Z is 1.
-     newOfs.gyroX  = float(avgGx);         // Desired gyro values are 0.
-     newOfs.gyroY  = float(avgGy);
-     newOfs.gyroZ  = float(avgGz);
- 
-     Serial.println("Computed new offsets:");
-     Serial.print("Accel Offsets: ");
-     Serial.print(newOfs.accelX, 3); Serial.print(", ");
-     Serial.print(newOfs.accelY, 3); Serial.print(", ");
-     Serial.println(newOfs.accelZ, 3);
- 
-     Serial.print("Gyro Offsets: ");
-     Serial.print(newOfs.gyroX, 3); Serial.print(", ");
-     Serial.print(newOfs.gyroY, 3); Serial.print(", ");
-     Serial.println(newOfs.gyroZ, 3);
- 
-     // Store and save the calibration offsets.
-     setOffsets(newOfs);
-     saveOffsetsToEEPROM(newOfs);
- 
-     Serial.println("=== Self Calibration Done ===");
-     return true;
+    while (millis() - start < CALIB_MS) {
+        // Read raw sensor data.
+        IMU.update();
+        IMU.getAccel(&accelData);
+        IMU.getGyro(&gyroData);
+
+        double ax = accelData.accelX;
+        double ay = accelData.accelY;
+        double az = accelData.accelZ;
+        double gx = gyroData.gyroX;
+        double gy = gyroData.gyroY;
+        double gz = gyroData.gyroZ;
+
+        // Accumulate readings.
+        sumAx += ax;
+        sumAy += ay;
+        sumAz += az;
+        sumGx += gx;
+        sumGy += gy;
+        sumGz += gz;
+        samples++;
+
+        delay(5); // Small delay between samples.
+    }
+
+    double avgAx = sumAx / samples;
+    double avgAy = sumAy / samples;
+    double avgAz = sumAz / samples;
+    double avgGx = sumGx / samples;
+    double avgGy = sumGy / samples;
+    double avgGz = sumGz / samples;
+
+    Serial.println("Raw average readings:");
+    Serial.print("Accel: ");
+    Serial.print(avgAx, 3); Serial.print(", ");
+    Serial.print(avgAy, 3); Serial.print(", ");
+    Serial.println(avgAz, 3);
+
+    Serial.print("Gyro: ");
+    Serial.print(avgGx, 3); Serial.print(", ");
+    Serial.print(avgGy, 3); Serial.print(", ");
+    Serial.println(avgGz, 3);
+
+    // Determine desired offsets.
+    ArduFliteIMUOffsets newOfs;
+    newOfs.accelX = float(avgAx - 0.0);   // Desired X is 0.
+    newOfs.accelY = float(avgAy - 0.0);   // Desired Y is 0.
+    newOfs.accelZ = float(avgAz - 1.0);   // Desired Z is 1.
+    newOfs.gyroX  = float(avgGx);         // Desired gyro values are 0.
+    newOfs.gyroY  = float(avgGy);
+    newOfs.gyroZ  = float(avgGz);
+
+    Serial.println("Computed new offsets:");
+    Serial.print("Accel Offsets: ");
+    Serial.print(newOfs.accelX, 3); Serial.print(", ");
+    Serial.print(newOfs.accelY, 3); Serial.print(", ");
+    Serial.println(newOfs.accelZ, 3);
+
+    Serial.print("Gyro Offsets: ");
+    Serial.print(newOfs.gyroX, 3); Serial.print(", ");
+    Serial.print(newOfs.gyroY, 3); Serial.print(", ");
+    Serial.println(newOfs.gyroZ, 3);
+
+    // Store and save the calibration offsets.
+    setOffsets(newOfs);
+    saveOffsetsToEEPROM(newOfs);
+
+    Serial.println("=== Self Calibration Done ===");
+
+    xSemaphoreGive(imuMutex);
+
+    return true;
  }
  
  /**

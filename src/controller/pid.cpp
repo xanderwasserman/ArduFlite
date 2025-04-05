@@ -1,9 +1,10 @@
 #include "pid.h"
-#include <algorithm> // for std::max and std::min
+#include <algorithm>
 
 PID::PID(float kp, float ki, float kd, float outMin, float outMax)
     : kp(kp), ki(ki), kd(kd), outMin(outMin), outMax(outMax),
-      integral(0.0f), prevError(0.0f)
+      integral(0.0f), prevError(0.0f), maxIntegral(100.0f), 
+      derivativeAlpha(0.01f), filteredDerivative(0.0f)
 {
 }
 
@@ -15,6 +16,8 @@ float PID::update(float error, float dt) {
 
     // Candidate integral update
     float newIntegral = integral + error * dt;
+    // Clamp the integrator to prevent windup.
+    newIntegral = std::clamp(newIntegral, -maxIntegral, maxIntegral);
     float iTermCandidate = ki * newIntegral;
 
     // Derivative term (with slight low-pass filtering)
@@ -25,13 +28,8 @@ float PID::update(float error, float dt) {
     // Compute the unsaturated output
     float unsatOutput = pTerm + iTermCandidate + dTerm;
 
-    // Saturate the output
-    float satOutput = unsatOutput;
-    if (unsatOutput > outMax) {
-        satOutput = outMax;
-    } else if (unsatOutput < outMin) {
-        satOutput = outMin;
-    }
+    // Saturate the output.
+    float satOutput = std::clamp(unsatOutput, outMin, outMax);
 
     // Anti-windup: update the integrator only if:
     // 1) The unsaturated output is within limits, or

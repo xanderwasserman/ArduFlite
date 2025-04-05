@@ -11,6 +11,10 @@ public:
     // Resets the integrator and previous error.
     void reset();
 
+    // Setters for the integrator limit and derivative filter coefficient.
+    void setMaxIntegral(float max) { maxIntegral = max; }
+    void setDerivativeAlpha(float alpha) { derivativeAlpha = alpha; }
+
 private:
     float kp, ki, kd;
     float outMin, outMax;
@@ -19,7 +23,8 @@ private:
     float prevError;
 
     float filteredDerivative = 0.0;
-    float derivativeAlpha = 0.1; 
+    float derivativeAlpha = 0.01; 
+    float maxIntegral;
 };
 
 #endif // PID_H

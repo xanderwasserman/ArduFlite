@@ -54,7 +54,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Create graphs for accel, gyro, orientation, and commands.
         # We'll place them in order around the edge positions.
         self.graphs = []
-        categories = ["accel", "gyro", "orientation", "commands"]
+        categories = ["accel", "gyro", "orientation", "command_servo"]
         edge_iter = iter(edge_positions)
         
         for category in categories:

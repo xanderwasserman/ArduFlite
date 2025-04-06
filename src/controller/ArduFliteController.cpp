@@ -1,198 +1,290 @@
-#include <math.h>
-#include <Arduino.h>
+/**
+ * @file ArduFliteController.cpp
+ * @brief Implements the overall controller for ArduFlite which combines
+ *        the attitude (outer loop) and rate (inner loop) controllers.
+ *
+ * This class manages two FreeRTOS tasks running at different rates:
+ * - The OuterLoopTask (at ~100Hz) computes desired angular rates either via the
+ *   attitude controller (Assist mode) or from direct pilot input (Stabilized mode).
+ * - The InnerLoopTask (at ~500Hz) updates the IMU, runs the rate controller to compute
+ *   final servo commands, and sends those commands to the servos.
+ *
+ * It uses a mutex (ctrlMutex) to protect shared state (mode and pilot setpoints)
+ * from concurrent access.
+ */
+
 #include "src/controller/ArduFliteController.h"
-
-// ---------------------------------------------------------------------------
-// ArduFliteController Class Implementation
-// ---------------------------------------------------------------------------
-
+#include <Arduino.h>
+ 
 /**
- * @brief Constructor: Initializes the PID controllers and sets the default
- * desired orientation to "straight and level" (no rotation).
+ * @brief Constructor for ArduFliteController.
+ * 
+ * Initializes the controller with pointers to the shared components: IMU,
+ * attitude controller, rate controller, and ServoManager. Also initializes the
+ * operating mode to ASSIST_MODE and creates a mutex to protect shared state.
+ *
+ * @param imu Pointer to the ArduFliteIMU instance.
+ * @param attitudeCtrl Pointer to the ArduFliteAttitudeController instance.
+ * @param rateCtrl Pointer to the ArduFliteRateController instance.
+ * @param servoMgr Pointer to the ServoManager instance.
  */
-ArduFliteController::ArduFliteController()
-    : pidRoll(1.0f, 0.0f, 0.05f, -1.0f, 1.0f),
-      pidPitch(1.0f, 0.0f, 0.05f, -1.0f, 1.0f),
-      pidYaw(2.0f, 0.0f, 0.0f, -1.0f, 1.0f)
+ArduFliteController::ArduFliteController(ArduFliteIMU* imu, ArduFliteAttitudeController* attitudeCtrl, ArduFliteRateController* rateCtrl, ServoManager* servoMgr)
+    : imu(imu), attitudeCtrl(attitudeCtrl), rateCtrl(rateCtrl), servoMgr(servoMgr), outerTaskHandle(NULL), innerTaskHandle(NULL), mode(ASSIST_MODE), pilotRollRateSetpoint(0.0f), pilotPitchRateSetpoint(0.0f), pilotYawRateSetpoint(0.0f)
 {
-    // Desired orientation is no rotation.
-    desiredQ = FliteQuaternion(1, 0, 0, 0);
+    // Create the mutex for protecting shared state.
+    ctrlMutex = xSemaphoreCreateMutex();
+    if (ctrlMutex == NULL) {
+        Serial.println("Failed to create ArduFliteController mutex!");
+    }
 }
-
+ 
 /**
- * @brief Sets the desired orientation directly as a quaternion.
+ * @brief Sets the operating mode of the controller.
+ * 
+ * This function allows switching between ASSIST_MODE (where the pilot controls the
+ * attitude setpoint and the controller computes desired angular rates) and 
+ * STABILIZED_MODE (where the pilot directly provides rate setpoints).
  *
- * @param qd The desired quaternion.
+ * @param newMode The new mode to set.
  */
-void ArduFliteController::setDesiredQuaternion(const FliteQuaternion &qd) {
-    desiredQ = qd;
+void ArduFliteController::setMode(ArduFliteMode newMode) 
+{
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    mode = newMode;
+    xSemaphoreGive(ctrlMutex);
 }
-
+ 
 /**
- * @brief Sets the desired orientation using Euler angles in radians.
- *
- * The parameters are provided in the order: roll, pitch, yaw. This function
- * uses the standard aerospace convention: roll about x, pitch about y, yaw about z.
- *
- * @param roll  Roll angle in radians.
- * @param pitch Pitch angle in radians.
- * @param yaw   Yaw angle in radians.
+ * @brief Returns the current operating mode.
+ * 
+ * @return ArduFliteMode The current mode (ASSIST_MODE or STABILIZED_MODE).
  */
-void ArduFliteController::setDesiredEulerRads(float roll, float pitch, float yaw) {
-    // Compute half-angles.
-    float halfRoll  = roll  * 0.5f;
-    float halfPitch = pitch * 0.5f;
-    float halfYaw   = yaw   * 0.5f;
+ArduFliteMode ArduFliteController::getMode() const {
+    ArduFliteMode m;
 
-    // Pre-compute sine and cosine for efficiency.
-    float cr = cos(halfRoll);
-    float sr = sin(halfRoll);
-    float cp = cos(halfPitch);
-    float sp = sin(halfPitch);
-    float cy = cos(halfYaw);
-    float sy = sin(halfYaw);
+    xSemaphoreTake((SemaphoreHandle_t)ctrlMutex, portMAX_DELAY);
+    m = mode;
+    xSemaphoreGive((SemaphoreHandle_t)ctrlMutex);
 
-    // Convert Euler angles to a quaternion using the standard formula.
-    desiredQ.w = cr * cp * cy + sr * sp * sy;
-    desiredQ.x = sr * cp * cy - cr * sp * sy;
-    desiredQ.y = cr * sp * cy + sr * cp * sy;
-    desiredQ.z = cr * cp * sy - sr * sp * cy;
+    return m;
 }
-
+ 
 /**
- * @brief Sets the desired orientation using Euler angles in degrees.
+ * @brief Sets the desired attitude (in Euler angles, degrees) for Assist mode.
+ * 
+ * In Assist mode, the attitude controller will use these values to compute the
+ * desired angular rates.
  *
- * @param roll  Roll angle in degrees.
+ * @param roll Roll angle in degrees.
  * @param pitch Pitch angle in degrees.
- * @param yaw   Yaw angle in degrees.
+ * @param yaw Yaw angle in degrees.
  */
-void ArduFliteController::setDesiredEulerDegs(float roll, float pitch, float yaw) {
-    const float deg2rad = PI / 180.0f;
-    setDesiredEulerRads(roll * deg2rad, pitch * deg2rad, yaw * deg2rad);
+void ArduFliteController::setDesiredEulerDegs(float roll, float pitch, float yaw) 
+{
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    pilotRollAngleSetpoint  = roll;
+    pilotPitchAngleSetpoint = pitch;
+    pilotYawAngleSetpoint   = yaw;
+    xSemaphoreGive(ctrlMutex);
+
+    // Forward the request to the attitude controller.
+    attitudeCtrl->setDesiredEulerDegs(roll, pitch, yaw);
 }
-
+ 
 /**
- * @brief Updates the controller based on the measured orientation.
+ * @brief Sets the pilot-provided rate setpoints for Stabilized mode.
+ * 
+ * When operating in Stabilized mode, these values are used directly as the desired
+ * angular rates.
  *
- * This function decouples the yaw error from the roll and pitch errors. It:
- * 1. Extracts and computes yaw error using a wrapped angle difference.
- * 2. Removes the yaw component from both the desired and measured quaternions.
- * 3. Computes the error quaternion for roll and pitch.
- * 4. Converts the roll/pitch error quaternion to a rotation vector using the log map.
- * 5. Feeds the computed errors to the respective PID controllers.
- *
- * @param measuredQ The measured orientation as a quaternion.
- * @param dt        The time step in seconds.
- * @param rollOut   The controller output for roll (to be applied to the ailerons).
- * @param pitchOut  The controller output for pitch (to be applied to the elevators).
- * @param yawOut    The controller output for yaw (to be applied to the rudder).
+ * @param rollRate Desired roll rate setpoint (e.g., in deg/s).
+ * @param pitchRate Desired pitch rate setpoint.
+ * @param yawRate Desired yaw rate setpoint.
  */
-void ArduFliteController::update(const FliteQuaternion &measuredQ, float dt, 
-    float &rollOut, float &pitchOut, float &yawOut) {
-    // Enforce a minimum timestep to prevent division by zero.
-    if (dt < 1e-3f) dt = 1e-3f;
-
-    // Normalize the measured quaternion.
-    FliteQuaternion measuredNormalized = measuredQ;
-    float normSq = measuredNormalized.normSq();
-    if (normSq < 1e-6f) {
-        measuredNormalized = FliteQuaternion(1, 0, 0, 0);
-    }
-
-    // --- Compute Yaw Error Separately ---
-    float desiredYaw = extractYaw(desiredQ);
-    float measuredYaw = extractYaw(measuredNormalized);
-    float yawErr = wrapAngle(desiredYaw - measuredYaw);
-
-    // --- Remove Yaw from Both Desired and Measured Quaternions ---
-    FliteQuaternion desiredNoYaw = removeYaw(desiredQ);
-    FliteQuaternion measuredNoYaw = removeYaw(measuredNormalized);
-
-    // --- Compute Roll/Pitch Error Quaternion ---
-    // qErrorRP represents the rotation needed (ignoring yaw) to go from the measured
-    // to the desired orientation.
-    FliteQuaternion qErrorRP = desiredNoYaw * measuredNoYaw.inverse();
-    qErrorRP.normalize();
-    // Ensure the error quaternion represents the smallest rotation.
-    if (qErrorRP.w < 0) {
-        qErrorRP.w = -qErrorRP.w;
-        qErrorRP.x = -qErrorRP.x;
-        qErrorRP.y = -qErrorRP.y;
-        qErrorRP.z = -qErrorRP.z;
-    }
-
-    // --- Convert the Error Quaternion to a Rotation Vector (Log Map) ---
-    float theta = 2.0f * acos(qErrorRP.w);
-    float sinHalfTheta = sqrt(1.0f - qErrorRP.w * qErrorRP.w);
-    float scale = (sinHalfTheta < 1e-6f) ? 2.0f : (theta / sinHalfTheta);
-    // In the standard convention, qErrorRP.x is the roll error and qErrorRP.y is the pitch error.
-    float rollErr  = scale * qErrorRP.x;
-    float pitchErr = scale * qErrorRP.y;
+void ArduFliteController::setPilotRateSetpoints(float rollRate, float pitchRate, float yawRate) 
+{
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    pilotRollRateSetpoint  = rollRate;
+    pilotPitchRateSetpoint = pitchRate;
+    pilotYawRateSetpoint   = yawRate;
+    xSemaphoreGive(ctrlMutex);
+}
+ 
+/**
+ * @brief Starts the overall control tasks.
+ * 
+ * Creates two FreeRTOS tasks:
+ * - OuterLoopTask: Handles attitude control (runs at ~100Hz).
+ * - InnerLoopTask: Handles rate control and servo updates (runs at ~500Hz).
+ */
+void ArduFliteController::startTasks() 
+{
+    xTaskCreate(OuterLoopTask, "OuterLoop", 4096, this, 2, &outerTaskHandle);
+    xTaskCreate(InnerLoopTask, "InnerLoop", 4096, this, 3, &innerTaskHandle);
+}
+ 
+/**
+ * @brief Outer loop task.
+ * 
+ * Runs at approximately 100Hz. Depending on the mode, it either uses the attitude
+ * controller to compute desired angular rates from the IMU's quaternion (Assist mode)
+ * or directly uses the pilot-provided rate setpoints (Stabilized mode).
+ *
+ * The computed desired rates are then passed to the rate controller.
+ *
+ * @param parameters Pointer to the ArduFliteController instance.
+ */
+void ArduFliteController::OuterLoopTask(void* parameters) 
+{
+    ArduFliteController* controller = static_cast<ArduFliteController*>(parameters);
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(10); // 10 ms period (100Hz)
+    static unsigned long lastMicros = micros();
     
-    // --- Apply Deadband to Filter Out Small Noise ---
-    float deadband = 0.01f;  // Adjust as needed (about 0.57 degrees)
-    if (fabs(rollErr) < deadband)   rollErr = 0.0f;
-    if (fabs(pitchErr) < deadband)  pitchErr = 0.0f;
-    if (fabs(yawErr) < deadband)    yawErr = 0.0f;
+    float rollRateCmd = 0, pitchRateCmd = 0, yawRateCmd = 0;
+    ArduFliteMode currentMode;
+    float localPilotRoll = 0, localPilotPitch = 0, localPilotYaw = 0;
+     
+    for (;;) 
+    {
+        unsigned long currentMicros = micros();
+        float dt = (currentMicros - lastMicros) / 1000000.0f;
+        lastMicros = currentMicros;
+        if (dt < 1e-3f) dt = 1e-3f;
 
-    // --- Feed the Errors to the PID Controllers ---
-    rollOut  = pidRoll.update(rollErr, dt);
-    pitchOut = pidPitch.update(pitchErr, dt);
-    yawOut   = pidYaw.update(yawErr, dt);
+        // Protect reading of the mode and pilot setpoints.
+        xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
+        currentMode = controller->mode;
+        localPilotRoll  = controller->pilotRollRateSetpoint;
+        localPilotPitch = controller->pilotPitchRateSetpoint;
+        localPilotYaw   = controller->pilotYawRateSetpoint;
+        xSemaphoreGive(controller->ctrlMutex);
+
+        if (currentMode == ASSIST_MODE) 
+        {
+            // In Assist mode, use the attitude controller to compute desired rates.
+            FliteQuaternion currentQ = controller->imu->getQuaternion();
+            controller->attitudeCtrl->update(currentQ, dt, rollRateCmd, pitchRateCmd, yawRateCmd);
+
+            xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
+            controller->lastRollRateCmd  = rollRateCmd;
+            controller->lastPitchRateCmd = pitchRateCmd;
+            controller->lastYawRateCmd   = yawRateCmd;
+            xSemaphoreGive(controller->ctrlMutex);
+        } 
+        else 
+        {
+            // In Stabilized mode, use pilot-provided rate setpoints.
+            rollRateCmd  = localPilotRoll;
+            pitchRateCmd = localPilotPitch;
+            // yawRateCmd   = localPilotYaw; //!commented out as we don't have a heading reference, so rather just react to gyro
+            yawRateCmd   = 0;
+
+            xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
+            controller->lastRollRateCmd  = rollRateCmd;
+            controller->lastPitchRateCmd = pitchRateCmd;
+            controller->lastYawRateCmd   = yawRateCmd;
+            xSemaphoreGive(controller->ctrlMutex); 
+        }
+        
+        // Pass the desired angular rates to the rate controller.
+        controller->rateCtrl->setDesiredRates(rollRateCmd, pitchRateCmd, yawRateCmd);
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+ 
+/**
+ * @brief Inner loop task.
+ * 
+ * Runs at approximately 500Hz. This task updates the IMU sensor data, retrieves
+ * the measured angular rates, runs the rate controller to compute the final servo
+ * commands, and then writes these commands to the servos.
+ *
+ * @param parameters Pointer to the ArduFliteController instance.
+ */
+void ArduFliteController::InnerLoopTask(void* parameters) 
+{
+    ArduFliteController* controller = static_cast<ArduFliteController*>(parameters);
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(2); // 2 ms period (500Hz)
+    static unsigned long lastMicros = micros();
+    float rollCmd, pitchCmd, yawCmd;
+    
+    for (;;) 
+    {
+        unsigned long currentMicros = micros();
+        float dt = (currentMicros - lastMicros) / 1000000.0f;
+        lastMicros = currentMicros;
+        if (dt < 1e-3f) dt = 1e-3f;
+        
+        // Update IMU data.
+        controller->imu->update(dt);
+        // Retrieve measured angular rates from the IMU.
+        Vector3 gyro = controller->imu->getGyro();
+        
+        // Update the rate controller (inner loop) to compute servo commands.
+        controller->rateCtrl->update(gyro.x, gyro.y, gyro.z, dt, rollCmd, pitchCmd, yawCmd);
+        
+        // Write the computed servo commands (normalized to [-1, 1]).
+        controller->servoMgr->writeCommands(rollCmd, pitchCmd, yawCmd);
+
+        xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
+        controller->lastRollCmd  = rollCmd;
+        controller->lastPitchCmd = pitchCmd;
+        controller->lastYawCmd   = yawCmd;
+        xSemaphoreGive(controller->ctrlMutex);
+
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+ 
+float ArduFliteController::getRollRateCmd() 
+{
+    float value;
+
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value = lastRollRateCmd;
+    xSemaphoreGive(ctrlMutex);
+
+    return value;
 }
 
-/**
- * @brief Resets all PID controllers.
- */
-void ArduFliteController::reset() {
-    pidRoll.reset();
-    pidPitch.reset();
-    pidYaw.reset();
+float ArduFliteController::getPitchRateCmd() {
+    float value;
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value = lastPitchRateCmd;
+    xSemaphoreGive(ctrlMutex);
+    return value;
 }
 
-// ---------------------------------------------------------------------------
-// Helper Functions for Decoupling Yaw
-// ---------------------------------------------------------------------------
-
-/**
- * @brief Extracts the yaw angle (rotation about Z) from a quaternion.
- * 
- * Uses the standard conversion formula:
- * yaw = atan2(2*(w*z + x*y), 1 - 2*(y² + z²))
- * 
- * @param q The input quaternion.
- * @return float The yaw angle in radians.
- */
-static float extractYaw(const FliteQuaternion &q) {
-    return atan2(2.0f * (q.w * q.z + q.x * q.y),
-                 1.0f - 2.0f * (q.y * q.y + q.z * q.z));
+float ArduFliteController::getYawRateCmd() {
+    float value;
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value = lastYawRateCmd;
+    xSemaphoreGive(ctrlMutex);
+    return value;
 }
 
-/**
- * @brief Wraps an angle to the interval [-π, π].
- * 
- * @param angle The input angle in radians.
- * @return float The wrapped angle.
- */
-static float wrapAngle(float angle) {
-    while (angle > PI) angle -= TWO_PI;
-    while (angle < -PI) angle += TWO_PI;
-    return angle;
+float ArduFliteController::getRollCmd() {
+    float value;
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value = lastRollCmd;
+    xSemaphoreGive(ctrlMutex);
+    return value;
 }
 
-/**
- * @brief Removes the yaw component from a quaternion.
- * 
- * This is achieved by constructing a quaternion that represents the
- * inverse of the yaw rotation and multiplying it with the input quaternion.
- * 
- * @param q The input quaternion.
- * @return FliteQuaternion The quaternion with yaw removed.
- */
-static FliteQuaternion removeYaw(const FliteQuaternion &q) {
-    float yaw = extractYaw(q);
-    float halfYaw = -yaw * 0.5f;
-    // Create a quaternion that undoes the yaw rotation.
-    FliteQuaternion yawInv(cos(halfYaw), 0, 0, sin(halfYaw));
-    return yawInv * q; // Assuming operator* implements quaternion multiplication.
+float ArduFliteController::getPitchCmd() {
+    float value;
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value = lastPitchCmd;
+    xSemaphoreGive(ctrlMutex);
+    return value;
+}
+
+float ArduFliteController::getYawCmd() {
+    float value;
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value = lastYawCmd;
+    xSemaphoreGive(ctrlMutex);
+    return value;
 }

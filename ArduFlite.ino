@@ -5,32 +5,47 @@
 #include "src/utils/HoldButtonManager.h"
 #include "src/utils/MultiTapButton.h"
 #include "src/utils/MultiTapButtonManager.h"
-#include "src/orientation/ArduFliteIMU.h"
-#include "src/controller/ArduFliteController.h"
 #include "src/actuators/ServoManager.h"
+#include "src/orientation/ArduFliteIMU.h"
+#include "src/controller/ArduFliteAttitudeController.h"
+#include "src/controller/ArduFliteRateController.h"
+#include "src/controller/ArduFliteController.h"
 #include "src/telemetry/mqtt/ArduFliteMqttTelemetry.h"
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
 #include "src/telemetry/serial/ArduFliteDebugSerialTelemetry.h"
 
-unsigned long lastMicros = 0;
-float rollCmd, pitchCmd, yawCmd = 0;
-
+// Global telemetry objects.
 TelemetryData telemetryData;
-ArduFliteMqttTelemetry telemetry(20.0f); // 20 Hz telemetry frequency
-ArduFliteDebugSerialTelemetry debugTelemetry(1.0f); // 1 Hz telemetry frequency
+ArduFliteMqttTelemetry telemetry(20.0f);          // 20 Hz telemetry frequency
+// ArduFliteDebugSerialTelemetry debugTelemetry(1.0f); // 1 Hz telemetry frequency
 // ArduFliteQSerialTelemetry telemetry(20.0f);
 
+// Create instances of the core components.
 ArduFliteIMU myIMU;
-ArduFliteController myController;
+ArduFliteAttitudeController attitudeController;
+ArduFliteRateController rateController;
 ServoManager servoMgr(LEFT_AIL_PIN, RIGHT_AIL_PIN, PITCH_PIN, YAW_PIN);
+ArduFliteController arduflite(&myIMU, &attitudeController, &rateController, &servoMgr);
 
-// Callback for calibrate button
+// Callback for calibrate button.
 void onCalibrateHold() {
     Serial.println("Calibrating IMU...");
     myIMU.selfCalibrate();
 }
 
-// Callback for telemetry reset button
+// Callback for telemetry reset button.
+void onModeDoubleTap() {
+    Serial.println("Toggling Controller Mode...");
+
+    if (arduflite.getMode() == ASSIST_MODE) {
+      arduflite.setMode(STABILIZED_MODE);
+    } else {
+      arduflite.setMode(ASSIST_MODE);
+    }
+    
+}
+
+// Callback for telemetry reset button.
 void onResetTripleTap() {
     Serial.println("Resetting Telemetry layer...");
     telemetry.reset();
@@ -38,6 +53,7 @@ void onResetTripleTap() {
 
 HoldButton calibrateButton(USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
 MultiTapButton resetButton(USER_BUTTON_PIN, 1000, 3, onResetTripleTap, true, 30);
+MultiTapButton modeButton(USER_BUTTON_PIN, 1000, 2, onModeDoubleTap, true, 30);
 
 void setup() {
   Serial.begin(115200);
@@ -46,73 +62,52 @@ void setup() {
   pinMode(USER_BUTTON_PIN, INPUT_PULLUP);
 
   telemetry.begin();
-  debugTelemetry.begin();
+  // debugTelemetry.begin();
 
-  // Initialize IMU
+  // Initialize the IMU.
   if (!myIMU.begin()) {
-    Serial.println("IMU failed to init!");
-    while (1);
+      Serial.println("IMU failed to init!");
+      while (1);
   }
 
-  myController.setDesiredEulerDegs(0.0, 0.0, 0.0);
+  // Start with a level attitude (Assist mode).
+  arduflite.setDesiredEulerDegs(0.0, 0.0, 0.0);
+  arduflite.setPilotRateSetpoints(0.0, 0.0, 0.0);
 
-  Serial.printf("ArduFlite Controller initialised\n");
+  // Set the mode (default is ASSIST_MODE).
+  arduflite.setMode(ASSIST_MODE);
 
+  // Start the overall control tasks.
+  arduflite.startTasks();
+
+  // Initialize and register buttons.
   calibrateButton.begin();
   resetButton.begin();
+  modeButton.begin();
+
   HoldButtonManager::registerButton(calibrateButton);
   Serial.println("Press and hold the button for 3s at any time to calibrate the IMU.");
+
   MultiTapButtonManager::registerButton(resetButton);
   Serial.println("Triple tap the button at any time to reset the telemetry layer.");
 
-  startPrintTask();
+  MultiTapButtonManager::registerButton(modeButton);
+  Serial.println("Double tap the button at any time to change the ArduFlite Mode.");
+
+  Serial.println("ArduFlite Controller initialised.");
 }
 
-void loop() 
-{
-    static TickType_t xLastWakeTime = xTaskGetTickCount(); // Initialize the last wake time
-    const TickType_t xFrequency = pdMS_TO_TICKS(LOOP_PERIOD_MILLIS); // 2 ms period for 500Hz update rate
+void loop() {
+  // Main loop can handle telemetry and button updates.
+  HoldButtonManager::updateAll();
+  MultiTapButtonManager::updateAll();
 
-    // Calculate delta time
-    unsigned long currentMicros = micros();
-    float dt = (currentMicros - lastMicros) / 1000000.0f;
-    lastMicros = currentMicros;
+  // Update telemetry data with the latest IMU and control information.
+  telemetryData.update(myIMU, arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(), arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd());
+  telemetry.publish(telemetryData);
+  // debugTelemetry.publish(telemetryData);
 
-    // Check if dt exceeds LOOP_PERIOD_MILLIS (converted to seconds)
-    if (dt > (LOOP_PERIOD_MILLIS / 1000.0f)) {
-      Serial.print("Warning: Loop time exceeded! dt = ");
-      Serial.print(dt, 6);
-      Serial.println(" seconds");
-    }
+  //TODO: update pilot setpoints via arduflite.setPilotRateSetpoints(...) or arduflite.setDesiredEulerDegs(...)
 
-    // 1) Update all buttons in one shot
-    HoldButtonManager::updateAll();
-    MultiTapButtonManager::updateAll();
-
-    // 2) Update sensor data
-    myIMU.update(dt);
-
-    // get the current quaternion from the IMU
-    FliteQuaternion currentQ(
-      myIMU.getQw(), 
-      myIMU.getQx(), 
-      myIMU.getQy(), 
-      myIMU.getQz()
-      );
-
-    // run the controller
-    myController.update(currentQ, dt, rollCmd, pitchCmd, yawCmd);
-
-    // send commands to servos
-    servoMgr.writeCommands(rollCmd, pitchCmd, yawCmd);
-
-    // Update telemetry data
-    telemetryData.update(myIMU, rollCmd, pitchCmd, yawCmd);
-
-    // Publish telemetry data to the telemetry tasks
-    telemetry.publish(telemetryData);
-    debugTelemetry.publish(telemetryData);
-
-    // Wait until next cycle
-    vTaskDelayUntil(&xLastWakeTime, xFrequency);
+  vTaskDelay(pdMS_TO_TICKS(10));
 }

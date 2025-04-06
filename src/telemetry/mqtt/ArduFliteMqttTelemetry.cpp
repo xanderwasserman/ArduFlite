@@ -163,9 +163,13 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters) {
             self->mqttClient.publish("arduflite/orientation/roll", String(localCopy.roll, 2).c_str());
             self->mqttClient.publish("arduflite/orientation/yaw", String(localCopy.yaw, 2).c_str());
 
-            self->mqttClient.publish("arduflite/commands/rollCmd", String(localCopy.rollCmd, 3).c_str());
-            self->mqttClient.publish("arduflite/commands/pitchCmd", String(localCopy.pitchCmd, 3).c_str());
-            self->mqttClient.publish("arduflite/commands/yawCmd", String(localCopy.yawCmd, 3).c_str());
+            self->mqttClient.publish("arduflite/command_servo/rollCmd", String(localCopy.rollCmd, 3).c_str());
+            self->mqttClient.publish("arduflite/command_servo/pitchCmd", String(localCopy.pitchCmd, 3).c_str());
+            self->mqttClient.publish("arduflite/command_servo/yawCmd", String(localCopy.yawCmd, 3).c_str());
+
+            self->mqttClient.publish("arduflite/command_rate/rollRateCmd", String(localCopy.rollRateCmd, 3).c_str());
+            self->mqttClient.publish("arduflite/command_rate/pitchRateCmd", String(localCopy.pitchRateCmd, 3).c_str());
+            self->mqttClient.publish("arduflite/command_rate/yawRateCmd", String(localCopy.yawRateCmd, 3).c_str());
         }
 
         // Let PubSubClient handle incoming messages (if you care about subscriptions)

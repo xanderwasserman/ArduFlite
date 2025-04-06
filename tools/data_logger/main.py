@@ -22,15 +22,19 @@ TOPIC_MAPPING = {
     "arduflite/orientation/pitch": "orientation_pitch",
     "arduflite/orientation/roll": "orientation_roll",
     "arduflite/orientation/yaw": "orientation_yaw",
-    "arduflite/commands/rollCmd": "commands_rollCmd",
-    "arduflite/commands/pitchCmd": "commands_pitchCmd",
-    "arduflite/commands/yawCmd": "commands_yawCmd"
+    "arduflite/command_rate/rollCmd": "commandsRate_rollCmd",
+    "arduflite/command_rate/pitchCmd": "commandsRate_pitchCmd",
+    "arduflite/command_rate/yawCmd": "commandsRate_yawCmd",
+    "arduflite/command_servo/rollCmd": "commands_rollCmd",
+    "arduflite/command_servo/pitchCmd": "commands_pitchCmd",
+    "arduflite/command_servo/yawCmd": "commands_yawCmd"
 }
 
 CSV_ORDER = ["timestamp", "quaternion_w", "quaternion_x", "quaternion_y", "quaternion_z",
              "accel_x", "accel_y", "accel_z",
              "gyro_x", "gyro_y", "gyro_z",
              "orientation_pitch", "orientation_roll", "orientation_yaw",
+             "commandsRate_rollCmd", "commandsRate_pitchCmd", "commandsRate_yawCmd",
              "commands_rollCmd", "commands_pitchCmd", "commands_yawCmd"]
 
 # Global storage for the latest values.
@@ -48,7 +52,6 @@ class MqttClient(QtCore.QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # You can choose a protocol version to avoid the deprecation warning:
         self.client = mqtt.Client(protocol=mqtt.MQTTv311)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
@@ -90,7 +93,6 @@ class DataLogger:
     def start(self):
         self.recording = True
         self.start_time = datetime.datetime.now()
-        # fname = self.start_time.strftime("flight_data_%Y%m%d_%H%M%S.csv")
         fname = "/home/pi/Desktop/" + self.start_time.strftime("flight_data_%Y%m%d_%H%M%S.csv")
         self.file = open(fname, "w", newline="")
         self.writer = csv.writer(self.file)
@@ -117,7 +119,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Flight Data Logger")
-        self.resize(200, 200)
+        self.resize(200, 200)  # Slightly increased window size for the bigger button
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
         layout = QtWidgets.QVBoxLayout(central)
@@ -132,6 +134,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Logging button
         self.logButton = QtWidgets.QPushButton("Start Logging")
+        # Increase button size
+        self.logButton.setMinimumSize(150, 50)
+        # Set initial style (green for start)
+        self.logButton.setStyleSheet("background-color: green; font-size: 16px; padding: 10px;")
         layout.addWidget(self.logButton)
         self.logButton.clicked.connect(self.toggle_logging)
 
@@ -154,9 +160,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self.dataLogger.recording:
             self.dataLogger.start()
             self.logButton.setText("Stop Logging")
+            # Set button to red when logging is active.
+            self.logButton.setStyleSheet("background-color: red; font-size: 16px; padding: 10px;")
         else:
             self.dataLogger.stop()
             self.logButton.setText("Start Logging")
+            # Set button to green when logging is stopped.
+            self.logButton.setStyleSheet("background-color: green; font-size: 16px; padding: 10px;")
 
     def record_data(self):
         if self.dataLogger.recording:

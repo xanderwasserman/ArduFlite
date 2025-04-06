@@ -7,7 +7,7 @@
 
 class ArduFliteDebugSerialTelemetry : public ArduFliteTelemetry {
     public:
-        ArduFliteQSerialTelemetry(float frequencyHz = 1.0f);
+        ArduFliteDebugSerialTelemetry(float frequencyHz = 1.0f);
     
         void begin() override;
         void publish(const TelemetryData& data) override;

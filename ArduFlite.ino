@@ -107,9 +107,7 @@ void loop() {
   telemetry.publish(telemetryData);
   // debugTelemetry.publish(telemetryData);
 
-  // You can add code here to switch modes (e.g., on a button press) by calling:
-  // arduflite.setMode(STABILIZED_MODE);
-  // and update pilot rate setpoints via arduflite.setPilotRateSetpoints(...)
+  //TODO: update pilot setpoints via arduflite.setPilotRateSetpoints(...) or arduflite.setDesiredEulerDegs(...)
 
   vTaskDelay(pdMS_TO_TICKS(10));
 }

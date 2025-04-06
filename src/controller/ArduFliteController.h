@@ -115,6 +115,9 @@ private:
     volatile float pilotRollRateSetpoint;       ///< Pilot roll rate setpoint (deg/s) for STABILIZED_MODE.
     volatile float pilotPitchRateSetpoint;      ///< Pilot pitch rate setpoint (deg/s) for STABILIZED_MODE.
     volatile float pilotYawRateSetpoint;        ///< Pilot yaw rate setpoint (deg/s) for STABILIZED_MODE.
+    volatile float pilotRollAngleSetpoint;       ///< Pilot roll angle setpoint for ASSIST_MODE.
+    volatile float pilotPitchAngleSetpoint;      ///< Pilot pitch angle setpoint for ASSIST_MODE.
+    volatile float pilotYawAngleSetpoint;        ///< Pilot yaw angle setpoint for ASSIST_MODE.
 
     // Shared command variables
     float lastRollRateCmd = 0.0f;

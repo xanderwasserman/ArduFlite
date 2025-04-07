@@ -29,7 +29,7 @@ ArduFliteRateController rateController;
 ServoConfig pitchCfg    = { PITCH_PIN, 500, 2500, 90, 70, false };
 ServoConfig yawCfg      = { YAW_PIN, 500, 2500, 90, 70, false };
 ServoConfig leftAilCfg  = { LEFT_AIL_PIN, 500, 2500, 90, 70, false };
-ServoConfig rightAilCfg = { RIGHT_AIL_PIN, 500, 2500, 90, 70, false };
+ServoConfig rightAilCfg = { RIGHT_AIL_PIN, 500, 2500, 90, 70, true };
 
 // Instantiate the ServoManager for a conventional wing design with dual ailerons.
 ServoManager servoMgr(CONVENTIONAL, pitchCfg, yawCfg, leftAilCfg, rightAilCfg, true);
@@ -127,31 +127,39 @@ void loop()
     unsigned long currentTime = millis();
 
     // Only update the attitude setpoint if the aircraft is in-flight.
-    if (currentState == INFLIGHT && (currentTime - lastSetpointUpdate > 1000)) 
+    // if (currentState == INFLIGHT && (currentTime - lastSetpointUpdate > 2000)) 
+    if (currentTime - lastSetpointUpdate > 2000) 
     {
-        static int state = 0;
-        switch (state) 
-        {
-            case 0: 
-                // Set a level attitude.
-                arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
-                Serial.println("Setting attitude: level (0° roll)");
-                state++;
-                break;
-            case 1:
-                // Set a positive roll (e.g., 10°) to start a right roll.
-                arduflite.setDesiredEulerDegs(-2.0f, 10.0f, 0.0f);
-                Serial.println("Setting attitude: roll +10°");
-                state++;
-                break;
-            case 2:
-                // Set a negative pitch (e.g., -10°) to start a left roll.
-                arduflite.setDesiredEulerDegs(-2.0f, -10.0f, 0.0f);
-                Serial.println("Setting attitude: roll -10°");
-                state = 0;
-                break;
-        }
-        lastSetpointUpdate = currentTime;
+      int angle = 90;
+      static int state = 0;
+      switch (state) 
+      {
+          case 0: 
+              // Set a level attitude.
+              arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
+              Serial.println("Setting attitude: level (0° roll)");
+              state++;
+              break;
+          case 1:
+              // Set a positive roll (e.g., 10°) to start a right roll.
+              arduflite.setDesiredEulerDegs(-2.0f, angle, 0.0f);
+              Serial.printf("Setting attitude: roll +%d°\n", angle);
+              state++;
+              break;
+          case 2: 
+            // Set a level attitude.
+            arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
+            Serial.println("Setting attitude: level (0° roll)");
+            state++;
+            break;
+          case 3:
+              // Set a negative pitch (e.g., -10°) to start a left roll.
+              arduflite.setDesiredEulerDegs(-2.0f, -angle, 0.0f);
+              Serial.printf("Setting attitude: roll -%d°\n", -angle);
+              state = 0;
+              break;
+      }
+      lastSetpointUpdate = currentTime;
     }
     else if (currentState == PREFLIGHT && lastState == UNKNOWN_STATE) 
     {

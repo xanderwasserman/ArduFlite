@@ -59,7 +59,7 @@
   * @param pitch Pitch angle in radians.
   * @param yaw   Yaw angle in radians.
   */
- void ArduFliteAttitudeController::setDesiredEulerRads(float roll, float pitch, float yaw) 
+ void ArduFliteAttitudeController::setDesiredEulerRads(float pitch, float roll, float yaw) 
  {
      // Compute half-angles.
      float halfRoll  = roll  * 0.5f;
@@ -94,10 +94,10 @@
   * @param pitch Pitch angle in degrees.
   * @param yaw   Yaw angle in degrees.
   */
- void ArduFliteAttitudeController::setDesiredEulerDegs(float roll, float pitch, float yaw) 
+ void ArduFliteAttitudeController::setDesiredEulerDegs(float pitch, float roll, float yaw) 
  {
      const float deg2rad = PI / 180.0f;
-     setDesiredEulerRads(roll * deg2rad, pitch * deg2rad, yaw * deg2rad);
+     setDesiredEulerRads(pitch * deg2rad, roll * deg2rad, yaw * deg2rad);
  }
  
  /**

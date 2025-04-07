@@ -4,41 +4,101 @@
 #include <Arduino.h>
 #include <ESP32Servo.h>
 
+// Wing design types.
+enum WingDesign {
+    CONVENTIONAL, // Separate elevator, rudder, and aileron(s)
+    DELTA_WING,   // Two elevons (mix pitch and roll)
+    V_TAIL        // Two ruddervators (mix pitch and yaw)
+};
+
+// Servo configuration structure.
+struct ServoConfig {
+    int pin;         // Digital pin for the servo.
+    int minPulse;    // Minimum pulse width in microseconds.
+    int maxPulse;    // Maximum pulse width in microseconds.
+    int neutral;     // Neutral (center) angle (typically ~90).
+    int deflection;  // Maximum deflection from neutral (e.g., 70 maps [-1,1] to [-70,70]).
+    bool invert;     // Inversion flag to flip the direction.
+};
+
 class ServoManager {
 public:
     /**
-     * Constructor.
-     * @param leftOrSingleAileronPin Digital pin for the left (or single) aileron servo.
-     * @param rightAileronPin Digital pin for the right aileron servo.
-     *                        Pass a negative value (e.g. -1) if using a single aileron.
-     * @param pitchPin Digital pin for the pitch servo.
-     * @param yawPin Digital pin for the yaw servo.
+     * @brief Constructor for a conventional wing design.
+     *
+     * Uses separate servos for elevator (pitch), rudder (yaw), and ailerons.
+     * If dualAilerons is true, both left and right aileron configurations must be provided.
+     * Otherwise, only the left (or single) aileron configuration is used.
      */
-    ServoManager(int leftOrSingleAileronPin, int rightAileronPin,
-                 int pitchPin, int yawPin);
+    ServoManager(WingDesign design,
+                 ServoConfig pitchConfig,
+                 ServoConfig yawConfig,
+                 ServoConfig leftAilConfig,
+                 ServoConfig rightAilConfig, // if not dual, this can be ignored.
+                 bool dualAilerons = true);
 
     /**
-     * Write control commands to the servos.
-     * @param rollCmd  Command for roll in the range [-1, +1]
-     * @param pitchCmd Command for pitch in the range [-1, +1]
-     * @param yawCmd   Command for yaw in the range [-1, +1]
+     * @brief Constructor for delta wing or V-tail designs.
+     *
+     * For these designs, only a pair of surfaces (elevons or ruddervators) are used.
+     */
+    ServoManager(WingDesign design,
+                 ServoConfig surfaceLeftConfig,
+                 ServoConfig surfaceRightConfig);
+
+    /**
+     * @brief Write control commands to the servos.
+     *
+     * The meaning of the control inputs changes with wing design:
+     * - CONVENTIONAL:
+     *     • pitchCmd maps to the elevator.
+     *     • yawCmd maps to the rudder.
+     *     • rollCmd maps to aileron deflection.
+     * - DELTA_WING:
+     *     • pitchCmd and rollCmd are mixed to form elevon deflections.
+     * - V_TAIL:
+     *     • pitchCmd and yawCmd are mixed to form ruddervator deflections.
+     *
+     * All command inputs are expected in the range [-1, +1].
      */
     void writeCommands(float rollCmd, float pitchCmd, float yawCmd);
+
+    // Setter methods to adjust inversion flags at runtime.
+    void setPitchInversion(bool invert);
+    void setYawInversion(bool invert);
+    void setLeftSurfaceInversion(bool invert);
+    void setRightSurfaceInversion(bool invert);
+
+    // (Optional) Setter methods to update entire configurations.
+    void setPitchConfig(const ServoConfig &config);
+    void setYawConfig(const ServoConfig &config);
+    void setLeftSurfaceConfig(const ServoConfig &config);
+    void setRightSurfaceConfig(const ServoConfig &config);
 
 private:
     // Helper: maps a float value from one range to another.
     static int mapFloatToInt(float val, float inMin, float inMax, int outMin, int outMax);
 
-    // Pin numbers
-    int pitchPin, yawPin;
-    int leftAilPin, rightAilPin;
+    // Wing design type.
+    WingDesign wingDesign;
 
-    // Mode: true if using dual aileron servos, false if using a single servo.
-    bool dualAilerons;
+    // For conventional wing designs.
+    ServoConfig pitchConfig;
+    ServoConfig yawConfig;
+    ServoConfig leftAilConfig;   // In conventional, this is the aileron (or single aileron).
+    ServoConfig rightAilConfig;  // Only used if dualAilerons is true.
+    bool dualAilerons;         // True if using two separate aileron servos.
 
-    // Servo objects for pitch, yaw, and ailerons.
-    Servo pitchServo, yawServo;
-    Servo singleAilServo, leftAilServo, rightAilServo;
+    // For delta wing or V-tail designs, we use these two surfaces.
+    // (For conventional designs these are the aileron servos.)
+    // We will refer to them as the left and right surfaces.
+    // In delta wing, they serve as elevons; in V-tail, as ruddervators.
+    
+    // Servo objects.
+    // For conventional design:
+    Servo pitchServo, yawServo;   // Elevator and rudder.
+    Servo singleAilServo;         // Used if dualAilerons is false.
+    Servo leftAilServo, rightAilServo; // Used if dualAilerons is true.
 };
 
 #endif // SERVO_MANAGER_H

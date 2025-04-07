@@ -24,7 +24,15 @@ ArduFliteMqttTelemetry telemetry(20.0f);          // 20 Hz telemetry frequency
 ArduFliteIMU myIMU;
 ArduFliteAttitudeController attitudeController;
 ArduFliteRateController rateController;
-ServoManager servoMgr(LEFT_AIL_PIN, RIGHT_AIL_PIN, PITCH_PIN, YAW_PIN);
+
+// Define the servo configurations.
+ServoConfig pitchCfg    = { PITCH_PIN, 500, 2500, 90, 70, false };
+ServoConfig yawCfg      = { YAW_PIN, 500, 2500, 90, 70, false };
+ServoConfig leftAilCfg  = { LEFT_AIL_PIN, 500, 2500, 90, 70, false };
+ServoConfig rightAilCfg = { RIGHT_AIL_PIN, 500, 2500, 90, 70, false };
+
+// Instantiate the ServoManager for a conventional wing design with dual ailerons.
+ServoManager servoMgr(CONVENTIONAL, pitchCfg, yawCfg, leftAilCfg, rightAilCfg, true);
 ArduFliteController arduflite(&myIMU, &attitudeController, &rateController, &servoMgr);
 
 // Callback for calibrate button.

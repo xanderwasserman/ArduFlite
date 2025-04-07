@@ -8,7 +8,7 @@ ArduFliteRateController::ArduFliteRateController()
       pidPitch( 0.015f,   0.007f,  0.000004f,     -1.0f,  1.0f),
       pidYaw(   0.015f,   0.007f,  0.000004f,     -1.0f,  1.0f),
       filteredRollOutput(0.0f), filteredPitchOutput(0.0f), filteredYawOutput(0.0f),
-      outputAlpha(0.05f) 
+      outputAlpha(0.01f) 
 {
     // Create the mutex to protect desired rate updates.
     rateMutex = xSemaphoreCreateMutex();

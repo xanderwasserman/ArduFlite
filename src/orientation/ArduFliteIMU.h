@@ -279,7 +279,7 @@ private:
 
     // Smoothing factors for low-pass filters (0 < alpha <= 1).
     float accelAlpha = 0.05f;  ///< Accelerometer low-pass filter coefficient.
-    float gyroAlpha  = 0.9f;   ///< Gyroscope low-pass filter coefficient.
+    float gyroAlpha  = 0.1f;   ///< Gyroscope low-pass filter coefficient.
     bool lpInitialized = false;///< Indicates whether the low-pass filters have been initialized.
 
     // Filtered (smoothed) sensor values.

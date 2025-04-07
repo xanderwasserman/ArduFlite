@@ -46,7 +46,8 @@ static FliteQuaternion removeYaw(const FliteQuaternion &q);
  * and pitch errors and using PID controllers to compute the necessary corrections.
  * A mutex is used to protect access to the desired orientation for thread safety.
  */
-class ArduFliteAttitudeController {
+class ArduFliteAttitudeController 
+{
 public:
     /**
      * @brief Constructor.

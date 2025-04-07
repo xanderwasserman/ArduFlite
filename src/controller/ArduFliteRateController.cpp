@@ -18,7 +18,8 @@ ArduFliteRateController::ArduFliteRateController()
 }
 
 // Set the desired angular rates (e.g., from the outer loop's output)
-void ArduFliteRateController::setDesiredRates(float rollRate, float pitchRate, float yawRate) {
+void ArduFliteRateController::setDesiredRates(float rollRate, float pitchRate, float yawRate) 
+{
     // Protect the update to desired rates.
     xSemaphoreTake(rateMutex, portMAX_DELAY);
 
@@ -31,7 +32,8 @@ void ArduFliteRateController::setDesiredRates(float rollRate, float pitchRate, f
 
 // Update the rate controller with the measured angular rates.
 // The error is computed as (desiredRate - measuredRate) for each axis.
-void ArduFliteRateController::update(float measuredRollRate, float measuredPitchRate, float measuredYawRate, float dt, float &rollOut, float &pitchOut, float &yawOut) {
+void ArduFliteRateController::update(float measuredRollRate, float measuredPitchRate, float measuredYawRate, float dt, float &rollOut, float &pitchOut, float &yawOut) 
+{
     // Prevent a too-small dt.
     if (dt < 1e-3f) dt = 1e-3f;
 
@@ -66,7 +68,8 @@ void ArduFliteRateController::update(float measuredRollRate, float measuredPitch
 }
 
 // Reset all PID controllers.
-void ArduFliteRateController::reset() {
+void ArduFliteRateController::reset() 
+{
     pidRoll.reset();
     pidPitch.reset();
     pidYaw.reset();

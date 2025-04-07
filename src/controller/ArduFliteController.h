@@ -14,7 +14,8 @@
  * - ASSIST_MODE: The pilot provides a desired attitude setpoint (SAFE-like).
  * - STABILIZED_MODE: The pilot directly provides angular rate setpoints.
  */
-enum ArduFliteMode {
+enum ArduFliteMode 
+{
     ASSIST_MODE,    ///< Pilot controls the attitude setpoint.
     STABILIZED_MODE ///< Pilot directly controls the rate setpoints.
 };
@@ -32,7 +33,8 @@ enum ArduFliteMode {
  *
  * Shared state (operating mode and pilot setpoints) is protected by a mutex.
  */
-class ArduFliteController {
+class ArduFliteController 
+{
 public:
     /**
      * @brief Constructs the overall ArduFlite controller.

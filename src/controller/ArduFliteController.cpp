@@ -59,7 +59,8 @@ void ArduFliteController::setMode(ArduFliteMode newMode)
  * 
  * @return ArduFliteMode The current mode (ASSIST_MODE or STABILIZED_MODE).
  */
-ArduFliteMode ArduFliteController::getMode() const {
+ArduFliteMode ArduFliteController::getMode() const 
+{
     ArduFliteMode m;
 
     xSemaphoreTake((SemaphoreHandle_t)ctrlMutex, portMAX_DELAY);
@@ -249,7 +250,8 @@ float ArduFliteController::getRollRateCmd()
     return value;
 }
 
-float ArduFliteController::getPitchRateCmd() {
+float ArduFliteController::getPitchRateCmd() 
+{
     float value;
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
     value = lastPitchRateCmd;
@@ -257,7 +259,8 @@ float ArduFliteController::getPitchRateCmd() {
     return value;
 }
 
-float ArduFliteController::getYawRateCmd() {
+float ArduFliteController::getYawRateCmd() 
+{
     float value;
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
     value = lastYawRateCmd;
@@ -265,7 +268,8 @@ float ArduFliteController::getYawRateCmd() {
     return value;
 }
 
-float ArduFliteController::getRollCmd() {
+float ArduFliteController::getRollCmd() 
+{
     float value;
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
     value = lastRollCmd;
@@ -273,7 +277,8 @@ float ArduFliteController::getRollCmd() {
     return value;
 }
 
-float ArduFliteController::getPitchCmd() {
+float ArduFliteController::getPitchCmd() 
+{
     float value;
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
     value = lastPitchCmd;
@@ -281,7 +286,8 @@ float ArduFliteController::getPitchCmd() {
     return value;
 }
 
-float ArduFliteController::getYawCmd() {
+float ArduFliteController::getYawCmd() 
+{
     float value;
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
     value = lastYawCmd;

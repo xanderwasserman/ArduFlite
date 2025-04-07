@@ -41,7 +41,8 @@
   *
   * @param qd The desired orientation as a quaternion.
   */
- void ArduFliteAttitudeController::setDesiredQuaternion(const FliteQuaternion &qd) {
+ void ArduFliteAttitudeController::setDesiredQuaternion(const FliteQuaternion &qd) 
+ {
      xSemaphoreTake(attitudeMutex, portMAX_DELAY);
      desiredQ = qd;
      xSemaphoreGive(attitudeMutex);
@@ -58,7 +59,8 @@
   * @param pitch Pitch angle in radians.
   * @param yaw   Yaw angle in radians.
   */
- void ArduFliteAttitudeController::setDesiredEulerRads(float roll, float pitch, float yaw) {
+ void ArduFliteAttitudeController::setDesiredEulerRads(float roll, float pitch, float yaw) 
+ {
      // Compute half-angles.
      float halfRoll  = roll  * 0.5f;
      float halfPitch = pitch * 0.5f;
@@ -92,7 +94,8 @@
   * @param pitch Pitch angle in degrees.
   * @param yaw   Yaw angle in degrees.
   */
- void ArduFliteAttitudeController::setDesiredEulerDegs(float roll, float pitch, float yaw) {
+ void ArduFliteAttitudeController::setDesiredEulerDegs(float roll, float pitch, float yaw) 
+ {
      const float deg2rad = PI / 180.0f;
      setDesiredEulerRads(roll * deg2rad, pitch * deg2rad, yaw * deg2rad);
  }
@@ -112,7 +115,8 @@
   * @param pitchOut  (Output) Control output for pitch.
   * @param yawOut    (Output) Control output for yaw.
   */
- void ArduFliteAttitudeController::update(const FliteQuaternion &measuredQ, float dt, float &rollOut, float &pitchOut, float &yawOut) {
+ void ArduFliteAttitudeController::update(const FliteQuaternion &measuredQ, float dt, float &rollOut, float &pitchOut, float &yawOut) 
+ {
      // Prevent a too-small timestep.
      if (dt < 1e-3f) dt = 1e-3f;
  
@@ -174,7 +178,8 @@
   * This method resets the integrators and derivative states for the roll, pitch,
   * and yaw PID controllers.
   */
- void ArduFliteAttitudeController::reset() {
+ void ArduFliteAttitudeController::reset() 
+ {
      pidRoll.reset();
      pidPitch.reset();
      pidYaw.reset();
@@ -193,7 +198,8 @@
   * @param q The input quaternion.
   * @return float The yaw angle in radians.
   */
- static float extractYaw(const FliteQuaternion &q) {
+ static float extractYaw(const FliteQuaternion &q) 
+ {
      return atan2(2.0f * (q.w * q.z + q.x * q.y),
                   1.0f - 2.0f * (q.y * q.y + q.z * q.z));
  }
@@ -204,7 +210,8 @@
   * @param angle The input angle in radians.
   * @return float The wrapped angle.
   */
- static float wrapAngle(float angle) {
+ static float wrapAngle(float angle) 
+ {
      while (angle > PI) angle -= TWO_PI;
      while (angle < -PI) angle += TWO_PI;
      return angle;
@@ -219,7 +226,8 @@
   * @param q The input quaternion.
   * @return FliteQuaternion The quaternion with yaw removed.
   */
- static FliteQuaternion removeYaw(const FliteQuaternion &q) {
+ static FliteQuaternion removeYaw(const FliteQuaternion &q) 
+ {
      float yaw = extractYaw(q);
      float halfYaw = -yaw * 0.5f;
      // Create a quaternion that undoes the yaw rotation.

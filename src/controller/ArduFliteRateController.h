@@ -13,7 +13,8 @@
  * All angular rates should be in the same units (e.g., degrees per second).
  * The final servo outputs are normalized to the range [-1, 1].
  */
-class ArduFliteRateController {
+class ArduFliteRateController 
+{
 public:
     // Constructor: Initializes the PID controllers with appropriate gains and output limits.
     ArduFliteRateController();

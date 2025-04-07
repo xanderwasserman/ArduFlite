@@ -28,25 +28,31 @@ ServoManager servoMgr(LEFT_AIL_PIN, RIGHT_AIL_PIN, PITCH_PIN, YAW_PIN);
 ArduFliteController arduflite(&myIMU, &attitudeController, &rateController, &servoMgr);
 
 // Callback for calibrate button.
-void onCalibrateHold() {
+void onCalibrateHold() 
+{
     Serial.println("Calibrating IMU...");
     myIMU.selfCalibrate();
 }
 
 // Callback for telemetry reset button.
-void onModeDoubleTap() {
+void onModeDoubleTap() 
+{
     Serial.println("Toggling Controller Mode...");
 
-    if (arduflite.getMode() == ASSIST_MODE) {
+    if (arduflite.getMode() == ASSIST_MODE) 
+    {
       arduflite.setMode(STABILIZED_MODE);
-    } else {
+    } 
+    else 
+    {
       arduflite.setMode(ASSIST_MODE);
     }
     
 }
 
 // Callback for telemetry reset button.
-void onResetTripleTap() {
+void onResetTripleTap() 
+{
     Serial.println("Resetting Telemetry layer...");
     telemetry.reset();
 }
@@ -55,7 +61,8 @@ HoldButton calibrateButton(USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, tr
 MultiTapButton resetButton(USER_BUTTON_PIN, 1000, 3, onResetTripleTap, true, 30);
 MultiTapButton modeButton(USER_BUTTON_PIN, 1000, 2, onModeDoubleTap, true, 30);
 
-void setup() {
+void setup() 
+{
   Serial.begin(115200);
   while (!Serial);
 
@@ -65,7 +72,8 @@ void setup() {
   // debugTelemetry.begin();
 
   // Initialize the IMU.
-  if (!myIMU.begin()) {
+  if (!myIMU.begin()) 
+  {
       Serial.println("IMU failed to init!");
       while (1);
   }
@@ -97,7 +105,8 @@ void setup() {
   Serial.println("ArduFlite Controller initialised.");
 }
 
-void loop() {
+void loop() 
+{
   // Main loop can handle telemetry and button updates.
   HoldButtonManager::updateAll();
   MultiTapButtonManager::updateAll();

@@ -44,6 +44,7 @@ void ArduFliteDebugSerialTelemetry::telemetryTask(void* pvParameters) {
         }
 
         Serial.print("\033[2J\033[H");
+        Serial.printf("In-flight: %s\n", localCopy.flight_state==0?"UNKNOW":localCopy.flight_state==1?"PREFLIGHT":localCopy.flight_state==2?"INFLIGHT":"LANDED");
         Serial.printf("Accel: %f, %f, %f\n", localCopy.accelX, localCopy.accelY, localCopy.accelZ);
         Serial.printf("Gyro: %f, %f, %f\n", localCopy.gyroX, localCopy.gyroY, localCopy.gyroZ);
         Serial.printf("Q: %f, %f, %f, %f\n", localCopy.qw, localCopy.qx, localCopy.qy, localCopy.qz);

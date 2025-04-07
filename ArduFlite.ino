@@ -87,8 +87,8 @@ void setup()
   }
 
   // Start with a level attitude (Assist mode).
-  arduflite.setDesiredEulerDegs(0.0, 0.0, 0.0);
-  arduflite.setPilotRateSetpoints(0.0, 0.0, 0.0);
+  arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
+  arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
 
   // Set the mode (default is ASSIST_MODE).
   arduflite.setMode(ASSIST_MODE);
@@ -115,16 +115,62 @@ void setup()
 
 void loop() 
 {
-  // Main loop can handle telemetry and button updates.
-  HoldButtonManager::updateAll();
-  MultiTapButtonManager::updateAll();
+    // Update buttons.
+    HoldButtonManager::updateAll();
+    MultiTapButtonManager::updateAll();
 
-  // Update telemetry data with the latest IMU and control information.
-  telemetryData.update(myIMU, arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(), arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd());
-  telemetry.publish(telemetryData);
-  // debugTelemetry.publish(telemetryData);
+    // Retrieve the current flight state from the IMU.
+    static FlightState lastState = UNKNOWN_STATE;
+    FlightState currentState = myIMU.getFlightState();
 
-  //TODO: update pilot setpoints via arduflite.setPilotRateSetpoints(...) or arduflite.setDesiredEulerDegs(...)
+    static unsigned long lastSetpointUpdate = millis();
+    unsigned long currentTime = millis();
 
-  vTaskDelay(pdMS_TO_TICKS(10));
+    // Only update the attitude setpoint if the aircraft is in-flight.
+    if (currentState == INFLIGHT && (currentTime - lastSetpointUpdate > 1000)) 
+    {
+        static int state = 0;
+        switch (state) 
+        {
+            case 0: 
+                // Set a level attitude.
+                arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
+                Serial.println("Setting attitude: level (0° roll)");
+                state++;
+                break;
+            case 1:
+                // Set a positive roll (e.g., 10°) to start a right roll.
+                arduflite.setDesiredEulerDegs(-2.0f, 10.0f, 0.0f);
+                Serial.println("Setting attitude: roll +10°");
+                state++;
+                break;
+            case 2:
+                // Set a negative pitch (e.g., -10°) to start a left roll.
+                arduflite.setDesiredEulerDegs(-2.0f, -10.0f, 0.0f);
+                Serial.println("Setting attitude: roll -10°");
+                state = 0;
+                break;
+        }
+        lastSetpointUpdate = currentTime;
+    }
+    else if (currentState == PREFLIGHT && lastState == UNKNOWN_STATE) 
+    {
+      lastState = currentState;
+      Serial.println("Aircraft is in PREFLIGHT state.");
+    }
+    else if (currentState == LANDED && lastState == INFLIGHT) 
+    {
+      lastState = currentState;
+      Serial.println("Aircraft has LANDED.");
+    }
+    
+    // Update telemetry with the latest sensor and control information.
+    telemetryData.update(myIMU,
+                         arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(),
+                         arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd(),
+                         currentState);
+    telemetry.publish(telemetryData);
+
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
+

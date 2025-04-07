@@ -8,6 +8,7 @@
  */
 
  #include "src/orientation/ArduFliteIMU.h"
+ #include <math.h>
 
  /**
   * @brief Constructor.
@@ -186,6 +187,9 @@
      roll = filter.getRoll();
      pitch = filter.getPitch();
      yaw = filter.getYaw();
+
+    // Update flight state based on the sensor data.
+    updateFlightState();
  
      xSemaphoreGive(imuMutex);
  }
@@ -505,3 +509,67 @@
      return ang;
  }
  
+ /**
+ * @brief Updates the flight state based on current sensor values.
+ */
+ void ArduFliteIMU::updateFlightState() {
+    // Calculate the magnitude of the low-pass filtered acceleration.
+    float a_mag = sqrt(filteredAccelX * filteredAccelX +
+                       filteredAccelY * filteredAccelY +
+                       filteredAccelZ * filteredAccelZ);
+    // Calculate the magnitude of the low-pass filtered gyro.
+    float g_mag = sqrt(filteredGyroX * filteredGyroX +
+                       filteredGyroY * filteredGyroY +
+                       filteredGyroZ * filteredGyroZ);
+
+    unsigned long now = millis();
+
+    // Define thresholds (adjust these values based on testing/calibration).
+    const float ACC_THRESHOLD = 0.1f;     // Tolerance around 1g.
+    const float GYRO_THRESHOLD = 5.0f;      // Maximum gyro rate (in deg/s) considered "stable".
+    const unsigned long STABLE_TIME = 2000; // Duration (ms) readings must remain stable to consider landed.
+
+    switch (flightState) {
+        case PREFLIGHT:
+            // If dynamic motion is detected, switch to INFLIGHT.
+            if (fabs(a_mag - 1.0f) > ACC_THRESHOLD) {
+                flightState = INFLIGHT;
+                flightStableStartTime = now;
+            }
+            break;
+
+        case INFLIGHT:
+            // If readings are stable (i.e. near 1g and low gyro) for at least STABLE_TIME,
+            // transition to LANDED. Otherwise, reset the timer.
+            if (fabs(a_mag - 1.0f) < ACC_THRESHOLD && g_mag < GYRO_THRESHOLD) {
+                if ((now - flightStableStartTime) >= STABLE_TIME) {
+                    flightState = LANDED;
+                }
+            } else {
+                flightStableStartTime = now;
+            }
+            break;
+
+        case LANDED:
+            // If the aircraft is picked up or thrown again (dynamic motion detected),
+            // transition back to INFLIGHT.
+            if (fabs(a_mag - 1.0f) > ACC_THRESHOLD) {
+                flightState = INFLIGHT;
+                flightStableStartTime = now;
+            }
+            break;
+
+        default:
+            // If somehow the state is invalid, default to PREFLIGHT.
+            flightState = PREFLIGHT;
+            break;
+    }
+}
+
+/**
+ * @brief Retrieves the current flight state.
+ * @return The flight state (PREFLIGHT, INFLIGHT, or LANDED).
+ */
+FlightState ArduFliteIMU::getFlightState() const {
+    return flightState;
+}

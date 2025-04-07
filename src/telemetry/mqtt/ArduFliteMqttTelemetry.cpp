@@ -146,6 +146,8 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters) {
         // Publish it
         if (self->mqttClient.connected()) {
             // You could optionally check return codes if needed
+            self->mqttClient.publish("arduflite/flight/state", String(localCopy.flight_state, 3).c_str());
+
             self->mqttClient.publish("arduflite/accel/x", String(localCopy.accelX, 3).c_str());
             self->mqttClient.publish("arduflite/accel/y", String(localCopy.accelY, 3).c_str());
             self->mqttClient.publish("arduflite/accel/z", String(localCopy.accelZ, 3).c_str());

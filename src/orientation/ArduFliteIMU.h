@@ -45,6 +45,16 @@
 #define IMU_ADDRESS                         0x68
 
 /**
+ * @brief A enumeration to hold our various flight states.
+ */
+enum FlightState {
+    UNKNOWN_STATE,
+    PREFLIGHT,  ///< The aircraft is on the ground before launch.
+    INFLIGHT,   ///< The aircraft is in motion (launched).
+    LANDED      ///< The aircraft has come to rest after flight.
+};
+
+/**
  * @brief A simple 3D vector structure.
  */
 struct Vector3 {
@@ -206,6 +216,12 @@ public:
      */
     EulerAngles getOrientation() const;
 
+    /**
+     * @brief Retrieves the current flight state.
+     * @return FlightState indicating PREFLIGHT, INFLIGHT, or LANDED.
+     */
+     FlightState getFlightState() const;
+
 private:
     /// IMU hardware instance.
     MPU6500 IMU;
@@ -290,6 +306,10 @@ private:
     /// Mutex to protect access to sensor data and filter state.
     SemaphoreHandle_t imuMutex;
 
+    // Variables for flight state detection.
+    FlightState flightState = PREFLIGHT;
+    unsigned long flightStableStartTime = 0; // Timestamp for when conditions became stable.
+
     /**
      * @brief Applies sensor orientation transformations.
      *
@@ -322,6 +342,11 @@ private:
      * filtered variables. Otherwise, an exponential moving average is applied.
      */
     void applyLowPassFilters();
+
+    /**
+     * @brief Updates the flight state based on filtered sensor data.
+     */
+     void updateFlightState();
 };
 
 #endif // ARDU_FLITE_IMU_H

@@ -11,8 +11,9 @@ struct TelemetryData {
     float pitch, roll, yaw;
     float rollRateCmd, pitchRateCmd, yawRateCmd;
     float rollCmd, pitchCmd, yawCmd;
+    int   flight_state;
 
-    void update(const ArduFliteIMU &myIMU, float rollRate_command, float pitchRate_command, float yawRate_command, float roll_command, float pitch_command, float yaw_command) {
+    void update(const ArduFliteIMU &myIMU, float rollRate_command, float pitchRate_command, float yawRate_command, float roll_command, float pitch_command, float yaw_command, FlightState state) {
         // Update accelerometer data
         Vector3 accel = myIMU.getAcceleration();
         accelX = accel.x;
@@ -46,6 +47,8 @@ struct TelemetryData {
         rollCmd  = roll_command;
         pitchCmd = pitch_command;
         yawCmd   = yaw_command;
+
+        flight_state = static_cast<int>(state);
     }
 };
 

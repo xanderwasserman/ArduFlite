@@ -2,7 +2,7 @@
 #define ARDU_FLITE_CLI_H
 
 #include <Arduino.h>
-#include "ArduFliteController.h"
+#include "src/controller/ArduFliteController.h"
 
 class ArduFliteCLI {
 public:

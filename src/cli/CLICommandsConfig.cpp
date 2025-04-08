@@ -1,5 +1,5 @@
-#include "CLICommands.h"
-#include "ArduFliteController.h"  // So we can access controller functions, if needed.
+#include "src/cli/CLICommands.h"
+#include "src/controller/ArduFliteController.h"  // So we can access controller functions, if needed.
 #include <FreeRTOS.h>
 #include <task.h>
 

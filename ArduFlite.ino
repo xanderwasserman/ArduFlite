@@ -36,6 +36,7 @@
 #include "src/telemetry/serial/ArduFliteDebugSerialTelemetry.h"
 #include "src/tests/AttitudeTests.h"
 #include "src/cli/ArduFliteCLI.h"
+#include "src/receiver/ArduFlitePwmReceiver.h"
 
 void printControlLoopStats();
 void onCalibrateHold();
@@ -62,6 +63,17 @@ ServoConfig rightAilCfg = { RIGHT_AIL_PIN,  500, 2500, 90, 70, true };
 // Instantiate the ServoManager for a conventional wing design with dual ailerons.
 ServoManager servoMgr(CONVENTIONAL, pitchCfg, yawCfg, leftAilCfg, rightAilCfg, true);
 ArduFliteController arduflite(&myIMU, &attitudeController, &rateController, &servoMgr);
+
+// Define configurations for each channel.
+ReceiverChannelConfig receiverConfigs[] = {
+    { ROLL_INPUT_PIN,       1000UL, 2000UL, BIPOLAR },  // Roll channel on pin 34
+    { PITCH_INPUT_PIN,      1000UL, 2000UL, BIPOLAR },  // Pitch channel on pin 35
+    { YAW_INPUT_PIN,        1000UL, 2000UL, BIPOLAR },  // Yaw channel on pin 36
+    { THROTTLE_INPUT_PIN,   1000UL, 2000UL, UNIPOLAR }  // Throttle channel on pin 39
+};
+const size_t numReceiverChannels = sizeof(receiverConfigs) / sizeof(receiverConfigs[0]);
+
+ArduFlitePwmReceiver pilotReceiver(receiverConfigs, numReceiverChannels);
 
 ArduFliteCLI myCLI(&arduflite, &myIMU);
 
@@ -95,6 +107,9 @@ void setup()
 
   // Start the overall control tasks.
   arduflite.startTasks();
+
+  // Start the PWM signal receiver.
+  pilotReceiver.begin();
 
   // Start the CLI task.
   myCLI.startTask();
@@ -151,6 +166,7 @@ void loop()
   //     runAttitudeTest_wiggle(arduflite);
   // }
   runAttitudeTest_wiggle(arduflite); //TODO: for bench testing
+  runReceiverTest_print(pilotReceiver, numReceiverChannels);
     
   // Update telemetry with the latest sensor and control information.
   telemetryData.update(myIMU,

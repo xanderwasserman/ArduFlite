@@ -35,6 +35,7 @@
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
 #include "src/telemetry/serial/ArduFliteDebugSerialTelemetry.h"
 #include "src/tests/AttitudeTests.h"
+#include "src/tests/ReceiverTests.h"
 #include "src/cli/ArduFliteCLI.h"
 #include "src/receiver/ArduFlitePwmReceiver.h"
 

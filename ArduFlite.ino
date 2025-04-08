@@ -13,6 +13,7 @@
 #include "src/telemetry/mqtt/ArduFliteMqttTelemetry.h"
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
 #include "src/telemetry/serial/ArduFliteDebugSerialTelemetry.h"
+#include "src/tests/AttitudeTests.h"
 
 // Global telemetry objects.
 TelemetryData telemetryData;
@@ -122,55 +123,30 @@ void loop()
     // Retrieve the current flight state from the IMU.
     static FlightState lastState = UNKNOWN_STATE;
     FlightState currentState = myIMU.getFlightState();
-
-    static unsigned long lastSetpointUpdate = millis();
-    unsigned long currentTime = millis();
-
-    // Only update the attitude setpoint if the aircraft is in-flight.
-    // if (currentState == INFLIGHT && (currentTime - lastSetpointUpdate > 2000)) 
-    if (currentTime - lastSetpointUpdate > 2000) 
-    {
-      int angle = 90;
-      static int state = 0;
-      switch (state) 
-      {
-          case 0: 
-              // Set a level attitude.
-              arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
-              Serial.println("Setting attitude: level (0° roll)");
-              state++;
+    
+    // Print transitions when they occur.
+    if (currentState != lastState) {
+      switch (currentState) {
+          case PREFLIGHT:
+              Serial.println("Aircraft is in PREFLIGHT state.");
               break;
-          case 1:
-              // Set a positive roll (e.g., 10°) to start a right roll.
-              arduflite.setDesiredEulerDegs(-2.0f, angle, 0.0f);
-              Serial.printf("Setting attitude: roll +%d°\n", angle);
-              state++;
+          case INFLIGHT:
+              Serial.println("Aircraft is in FLIGHT state.");
               break;
-          case 2: 
-            // Set a level attitude.
-            arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
-            Serial.println("Setting attitude: level (0° roll)");
-            state++;
-            break;
-          case 3:
-              // Set a negative pitch (e.g., -10°) to start a left roll.
-              arduflite.setDesiredEulerDegs(-2.0f, -angle, 0.0f);
-              Serial.printf("Setting attitude: roll -%d°\n", -angle);
-              state = 0;
+          case LANDED:
+              Serial.println("Aircraft has LANDED.");
+              break;
+          default:
               break;
       }
-      lastSetpointUpdate = currentTime;
-    }
-    else if (currentState == PREFLIGHT && lastState == UNKNOWN_STATE) 
-    {
       lastState = currentState;
-      Serial.println("Aircraft is in PREFLIGHT state.");
-    }
-    else if (currentState == LANDED && lastState == INFLIGHT) 
-    {
-      lastState = currentState;
-      Serial.println("Aircraft has LANDED.");
-    }
+  }
+
+  // Run the attitude test sequence only when in-flight.
+  // if (currentState == INFLIGHT) {
+  //     runAttitudeTest_wiggle(arduflite);
+  // }
+  runAttitudeTest_wiggle(arduflite); //TODO: for bench testing
     
     // Update telemetry with the latest sensor and control information.
     telemetryData.update(myIMU,

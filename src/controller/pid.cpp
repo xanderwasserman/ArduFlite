@@ -1,46 +1,39 @@
 #include "pid.h"
-#include <algorithm>
 
-PID::PID(float kp, float ki, float kd, float outMin, float outMax)
-    : kp(kp), ki(ki), kd(kd), outMin(outMin), outMax(outMax),
-      integral(0.0f), prevError(0.0f), maxIntegral(100.0f), 
-      derivativeAlpha(0.01f), filteredDerivative(0.0f)
+PID::PID(const PIDConfig& cfg): config(cfg)
 {
 }
 
 float PID::update(float error, float dt) {
-    if (dt < 1e-3f) dt = 1e-3f;
+    if (dt < 1e-3f)
+        dt = 1e-3f;
 
-    // Proportional term
-    float pTerm = kp * error;
+    // Proportional term.
+    float pTerm = config.kp * error;
 
-    // Candidate integral update
+    // Update and clamp the integral term to prevent windup.
     float newIntegral = integral + error * dt;
-    // Clamp the integrator to prevent windup.
-    newIntegral = std::clamp(newIntegral, -maxIntegral, maxIntegral);
-    float iTermCandidate = ki * newIntegral;
+    newIntegral = std::clamp(newIntegral, -config.maxIntegral, config.maxIntegral);
+    float iTermCandidate = config.ki * newIntegral;
 
-    // Derivative term (with slight low-pass filtering)
+    // Derivative term with low-pass filtering.
     float derivative = (error - prevError) / dt;
-    filteredDerivative = derivativeAlpha * derivative + (1.0f - derivativeAlpha) * filteredDerivative;
-    float dTerm = kd * filteredDerivative;
+    filteredDerivative = config.derivativeAlpha * derivative +
+                         (1.0f - config.derivativeAlpha) * filteredDerivative;
+    float dTerm = config.kd * filteredDerivative;
 
-    // Compute the unsaturated output
+    // Compute the unsaturated output.
     float unsatOutput = pTerm + iTermCandidate + dTerm;
-
     // Saturate the output.
-    float satOutput = std::clamp(unsatOutput, outMin, outMax);
+    float satOutput = std::clamp(unsatOutput, -config.outLimit, config.outLimit);
 
-    // Anti-windup: update the integrator only if:
-    // 1) The unsaturated output is within limits, or
-    // 2) The output is saturated, but the current error would reduce the saturation.
-    if ((unsatOutput >= outMin && unsatOutput <= outMax) ||
-        ((satOutput == outMax) && (error < 0)) ||
-        ((satOutput == outMin) && (error > 0))) {
+    // Anti-windup logic: Update the integral only if either output is not saturated
+    // or the error is driving the output back into the unsaturated range.
+    if ((unsatOutput >= -config.outLimit && unsatOutput <= config.outLimit) ||
+        ((satOutput == config.outLimit) && (error < 0)) ||
+        ((satOutput == -config.outLimit) && (error > 0))) {
         integral = newIntegral;
     }
-    // Otherwise, we do not update the integrator to prevent windup.
-
     prevError = error;
     return satOutput;
 }

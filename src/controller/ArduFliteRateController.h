@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "src/controller/pid.h"
+#include "src/controller/ControllerConfig.h"
 
 /**
  * @brief The ArduFliteRateController class implements an inner loop
@@ -34,9 +35,9 @@ public:
 
 private:
     // Desired angular rates (set by the outer loop)
-    float desiredRollRate;
-    float desiredPitchRate;
-    float desiredYawRate;
+    float desiredRollRate = 0.0f;
+    float desiredPitchRate = 0.0f;
+    float desiredYawRate = 0.0f;
 
     float filteredRollOutput = 0.0f;
     float filteredPitchOutput = 0.0f;

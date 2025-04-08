@@ -3,6 +3,7 @@
 
 #include "src/orientation/FliteQuaternion.h"
 #include "src/controller/pid.h"
+#include "src/controller/ControllerConfig.h"
 #include <Arduino.h>
 
 /**

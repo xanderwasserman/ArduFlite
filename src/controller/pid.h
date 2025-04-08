@@ -1,30 +1,54 @@
 #ifndef PID_H
 #define PID_H
 
+#include <algorithm>
+
+/**
+ * @brief Structure to hold the PID controller configuration.
+ */
+struct PIDConfig {
+    float kp;              ///< Proportional gain.
+    float ki;              ///< Integral gain.
+    float kd;              ///< Derivative gain.
+    float outLimit;        ///< Max output magnitude (saturation upper and lower bound).
+    float maxIntegral;     ///< Maximum allowed integral value (anti-windup).
+    float derivativeAlpha; ///< Low-pass filter coefficient for the derivative.
+};
+
 class PID {
 public:
-    PID(float kp, float ki, float kd, float outMin, float outMax);
+    /**
+     * @brief Constructs a PID controller using the provided configuration.
+     * 
+     * @param cfg The configuration structure containing all tunable PID parameters.
+     */
+    PID(const PIDConfig& cfg);
 
-    // Updates the PID controller and returns the control output.
+    /**
+     * @brief Updates the PID controller.
+     * 
+     * @param error The current error value.
+     * @param dt Time step in seconds.
+     * @return The computed control output.
+     */
     float update(float error, float dt);
 
-    // Resets the integrator and previous error.
+    /**
+     * @brief Resets the integrator and previous error.
+     */
     void reset();
 
-    // Setters for the integrator limit and derivative filter coefficient.
-    void setMaxIntegral(float max) { maxIntegral = max; }
-    void setDerivativeAlpha(float alpha) { derivativeAlpha = alpha; }
+    // Setters to update the configuration at runtime.
+    void setConfig(const PIDConfig &cfg) { config = cfg; }
+    void setMaxIntegral(float max) { config.maxIntegral = max; }
+    void setDerivativeAlpha(float alpha) { config.derivativeAlpha = alpha; }
 
 private:
-    float kp, ki, kd;
-    float outMin, outMax;
-
-    float integral;
-    float prevError;
-
-    float filteredDerivative = 0.0;
-    float derivativeAlpha = 0.01; 
-    float maxIntegral;
+    PIDConfig config;   ///< Holds all the tunable PID configuration parameters.
+    
+    float integral = 0.0f;         ///< Accumulated integral error.
+    float prevError = 0.0f;        ///< Previous error (for derivative calculation).
+    float filteredDerivative 0.0f; ///< Derivative term, low-pass filtered.
 };
 
 #endif // PID_H

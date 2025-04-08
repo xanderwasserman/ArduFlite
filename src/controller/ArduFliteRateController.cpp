@@ -3,17 +3,16 @@
 // Constructor with initial PID parameters.
 // The output limits are set to -1.0 and +1.0 so that the final servo commands remain normalized.
 ArduFliteRateController::ArduFliteRateController()
-    : desiredRollRate(0.0f), desiredPitchRate(0.0f), desiredYawRate(0.0f),
-      pidRoll(  0.015f,   0.007f,  0.000004f,     -1.0f,  1.0f),
-      pidPitch( 0.015f,   0.007f,  0.000004f,     -1.0f,  1.0f),
-      pidYaw(   0.015f,   0.007f,  0.000004f,     -1.0f,  1.0f),
-      filteredRollOutput(0.0f), filteredPitchOutput(0.0f), filteredYawOutput(0.0f),
-      outputAlpha(0.01f) 
+    : pidRoll(RateControllerConfig::DEFAULT_ROLL_PID),
+      pidPitch(RateControllerConfig::DEFAULT_PITCH_PID),
+      pidYaw(RateControllerConfig::DEFAULT_YAW_PID),
+      outputAlpha(RateControllerConfig::outLpAlpha)
 {
     // Create the mutex to protect desired rate updates.
     rateMutex = xSemaphoreCreateMutex();
     if (rateMutex == NULL) {
         // Handle error accordingly (e.g., print an error message)
+        Serial.println("Failed to create ArduFliteRateController mutex!");
     }
 }
 

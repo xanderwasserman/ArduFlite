@@ -16,6 +16,6 @@
 * That prints the PWM inputs.
 * @param pilotReceiver Reference to the ArduFlitePwmReceiver instance.
 */
-void runReceiverTest_print(ArduFlitePwmReceiver &pilotReceiver);
+void runReceiverTest_print(ArduFlitePwmReceiver &pilotReceiver, size_t channels);
 
 #endif //RECEIVER_TESTS_H

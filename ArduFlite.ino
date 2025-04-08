@@ -42,7 +42,7 @@ ServoConfig rightAilCfg = { RIGHT_AIL_PIN,  500, 2500, 90, 70, true };
 ServoManager servoMgr(CONVENTIONAL, pitchCfg, yawCfg, leftAilCfg, rightAilCfg, true);
 ArduFliteController arduflite(&myIMU, &attitudeController, &rateController, &servoMgr);
 
-ArduFliteCLI myCLI(&arduflite);
+ArduFliteCLI myCLI(&arduflite, &myIMU);
 
 HoldButton calibrateButton(USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
 MultiTapButton resetButton(USER_BUTTON_PIN, 1000, 3, onResetTripleTap, true, 30);

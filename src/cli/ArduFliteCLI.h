@@ -10,7 +10,7 @@ public:
      * @brief Constructs the CLI.
      * @param controller A pointer to the controller, whose statistics and state we want to query.
      */
-    ArduFliteCLI(ArduFliteController* controller);
+    ArduFliteCLI(ArduFliteController* controller, ArduFliteIMU* imu);
 
     /**
      * @brief Starts the CLI task.

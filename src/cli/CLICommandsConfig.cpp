@@ -1,6 +1,4 @@
 #include "CLICommandsConfig.h"
-#include <FreeRTOS.h>
-#include <task.h>
 
 // Global pointer for the controller (accessible in command functions).
 ArduFliteController* globalController = nullptr;

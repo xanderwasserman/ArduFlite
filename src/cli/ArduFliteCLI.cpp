@@ -1,6 +1,6 @@
 #include "src/cli/ArduFliteCLI.h"
 #include "src/cli/CLICommands.h"
-#include "src/cli/CLICommandsConfig.cpp"  // or include a separate header that declares the externs
+#include "src/cli/CLICommandsConfig.h"
 
 ArduFliteCLI::ArduFliteCLI(ArduFliteController* controller)
     : controller(controller)

@@ -1,34 +1,15 @@
-#include "src/cli/CLICommands.h"
-#include "src/controller/ArduFliteController.h"  // So we can access controller functions, if needed.
+#include "CLICommandsConfig.h"
+#include <FreeRTOS.h>
+#include <task.h>
 
-// Forward declarations of command functions.
-void cmdHelp(const String &args);
-void cmdStats(const String &args);
-void cmdTasks(const String &args);
-void cmdSetMode(const String &args);
+// Global pointer for the controller (accessible in command functions).
+ArduFliteController* globalController = nullptr;
 
-// Global pointer for CLI command functions to access the controller,
-// this can be set from the CLI task or a CLI initialization function.
-static ArduFliteController* globalController = nullptr;
-
-/**
- * @brief Allows the CLI task to set the controller pointer.
- */
 void setCLIController(ArduFliteController* controller) {
     globalController = controller;
 }
 
-// Define the command table.
-CLICommand cliCommands[] = {
-    { "help",    "Show help message",                           cmdHelp     },
-    { "stats",   "Show control loop statistics",                cmdStats    },
-    { "tasks",   "Show FreeRTOS task stats",                    cmdTasks    },
-    { "setmode", "Set mode; usage: setmode assist|stabilized",  cmdSetMode  }
-};
-
-const size_t numCLICommands = sizeof(cliCommands) / sizeof(cliCommands[0]);
-
-// Implementation of command functions:
+// Command functions:
 void cmdHelp(const String &args) {
     Serial.println("Available commands:");
     for (size_t i = 0; i < numCLICommands; i++) {
@@ -44,22 +25,20 @@ void cmdStats(const String &args) {
         Serial.println("Controller not set!");
         return;
     }
-    // Retrieve outer and inner loop stats.
-    LoopStats outer = globalController->getOuterLoopStats();
-    LoopStats inner = globalController->getInnerLoopStats();
+    // Retrieve and print stats.
+    LoopStats outerStats = globalController->getOuterLoopStats();
+    LoopStats innerStats = globalController->getInnerLoopStats();
     Serial.printf("Outer Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, samples: %lu\n",
-                  outer.avgDt, outer.maxDt, outer.overrunCount, outer.sampleCount);
+                  outerStats.avgDt, outerStats.maxDt, outerStats.overrunCount, outerStats.sampleCount);
     Serial.printf("Inner Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, samples: %lu\n",
-                  inner.avgDt, inner.maxDt, inner.overrunCount, inner.sampleCount);
+                  innerStats.avgDt, innerStats.maxDt, innerStats.overrunCount, innerStats.sampleCount);
 }
 
 void cmdTasks(const String &args) {
-    // Use FreeRTOS vTaskList to generate a table.
-    // Make sure configUSE_TRACE_FACILITY is set to 1 in FreeRTOSConfig.h.
-    char taskList[512];
-    vTaskList(taskList);
+    char taskListBuffer[512];
+    vTaskList(taskListBuffer);
     Serial.println("Task List:");
-    Serial.println(taskList);
+    Serial.println(taskListBuffer);
 }
 
 void cmdSetMode(const String &args) {
@@ -79,3 +58,13 @@ void cmdSetMode(const String &args) {
         Serial.println("Unknown mode. Use 'assist' or 'stabilized'.");
     }
 }
+
+// Define the command table.
+CLICommand cliCommands[] = {
+    { "help",    "Show help message",                         cmdHelp },
+    { "stats",   "Show control loop statistics",              cmdStats },
+    { "tasks",   "Show FreeRTOS task stats",                  cmdTasks },
+    { "setmode", "Set mode; usage: setmode assist|stabilized",  cmdSetMode }
+};
+
+const size_t numCLICommands = sizeof(cliCommands) / sizeof(cliCommands[0]);

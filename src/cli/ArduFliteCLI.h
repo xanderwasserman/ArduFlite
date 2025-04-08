@@ -25,6 +25,7 @@ public:
 
 private:
     ArduFliteController* controller;
+    ArduFliteIMU* imu;
 };
 
 #endif // ARDU_FLITE_CLI_H

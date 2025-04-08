@@ -2,9 +2,14 @@
 
 // Global pointer for the controller (accessible in command functions).
 ArduFliteController* globalController = nullptr;
+ArduFliteIMU* globalIMU = nullptr;
 
-void setCLIController(ArduFliteController* controller) {
+void setCliController(ArduFliteController* controller) {
     globalController = controller;
+}
+
+void setCliIMU(ArduFliteIMU* imu) {
+    globalIMU = imu;
 }
 
 // Command functions:
@@ -57,12 +62,35 @@ void cmdSetMode(const String &args) {
     }
 }
 
+void cmdCalibrateIMU(const String &args) {
+    if (!globalController || !globalIMU) {
+        Serial.println("CLI Controller or IMU reference not set!");
+        return;
+    }
+    // Accept either no arguments or "imu" as the argument.
+    String trimmed = args;
+    trimmed.trim();
+    trimmed.toLowerCase();
+    if (trimmed.length() == 0 || trimmed.equals("imu")) {
+        Serial.println("Starting IMU calibration...");
+        bool success = globalIMU->selfCalibrate();
+        if (success) {
+            Serial.println("IMU calibration complete.");
+        } else {
+            Serial.println("IMU calibration failed.");
+        }
+    } else {
+        Serial.println("Unknown calibration target. Use 'calibrate imu'.");
+    }
+}
+
 // Define the command table.
 CLICommand cliCommands[] = {
-    { "help",    "Show help message",                         cmdHelp },
-    { "stats",   "Show control loop statistics",              cmdStats },
-    { "tasks",   "Show FreeRTOS task stats",                  cmdTasks },
-    { "setmode", "Set mode; usage: setmode assist|stabilized",  cmdSetMode }
+    { "help",       "Show help message",                            cmdHelp         },
+    { "stats",      "Show control loop statistics",                 cmdStats        },
+    { "tasks",      "Show FreeRTOS task stats",                     cmdTasks        },
+    { "setmode",    "Set mode; usage: setmode assist|stabilized",   cmdSetMode      },
+    { "calibrate",  "Calibrate the IMU; usage: calibrate imu",      cmdCalibrateIMU }
 };
 
 const size_t numCLICommands = sizeof(cliCommands) / sizeof(cliCommands[0]);

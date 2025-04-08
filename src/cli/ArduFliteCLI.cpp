@@ -2,11 +2,12 @@
 #include "src/cli/CLICommands.h"
 #include "src/cli/CLICommandsConfig.h"
 
-ArduFliteCLI::ArduFliteCLI(ArduFliteController* controller)
-    : controller(controller)
+ArduFliteCLI::ArduFliteCLI(ArduFliteController* controller, ArduFliteIMU* imu)
+    : controller(controller), imu(imu)
 {
     // Set the global controller pointer for CLI commands.
-    setCLIController(controller);
+    setCliController(controller);
+    setCliIMU(imu);
 }
 
 void ArduFliteCLI::startTask() {

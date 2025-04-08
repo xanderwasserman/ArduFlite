@@ -1,8 +1,9 @@
 #ifndef CLI_COMMANDS_CONFIG_H
 #define CLI_COMMANDS_CONFIG_H
 
-#include "src/cli/CLICommands.h"  // Your CLICommands.h that defines CLICommand, etc.
-#include "src/controller/ArduFliteController.h"  // If needed for the command functions
+#include "src/cli/CLICommands.h" 
+#include "src/controller/ArduFliteController.h" 
+#include "src/orientation/ArduFliteIMU.h"
 
 // Declare the command table and its size as extern.
 extern CLICommand cliCommands[];
@@ -13,8 +14,10 @@ void cmdHelp(const String &args);
 void cmdStats(const String &args);
 void cmdTasks(const String &args);
 void cmdSetMode(const String &args);
+void cmdCalibrateIMU(const String &args);
 
 // Function to set the controller pointer (to be used by the CLI task)
-void setCLIController(ArduFliteController* controller);
+void setCliController(ArduFliteController* controller);
+void setCliIMU(ArduFliteIMU* imu);
 
 #endif // CLI_COMMANDS_CONFIG_H

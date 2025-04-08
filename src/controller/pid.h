@@ -46,9 +46,9 @@ public:
 private:
     PIDConfig config;   ///< Holds all the tunable PID configuration parameters.
     
-    float integral = 0.0f;         ///< Accumulated integral error.
-    float prevError = 0.0f;        ///< Previous error (for derivative calculation).
-    float filteredDerivative 0.0f; ///< Derivative term, low-pass filtered.
+    float integral              = 0.0f; ///< Accumulated integral error.
+    float prevError             = 0.0f; ///< Previous error (for derivative calculation).
+    float filteredDerivative    = 0.0f; ///< Derivative term, low-pass filtered.
 };
 
 #endif // PID_H

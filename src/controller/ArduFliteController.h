@@ -8,6 +8,17 @@
 #include <Arduino.h>
 
 /**
+ * @brief Control loop timing statistics.
+ */
+struct LoopStats {
+    float avgDt;         // Rolling average dt (in ms)
+    float maxDt;         // Maximum dt seen over the window (in ms)
+    unsigned long overrunCount; // Count of dt values that exceed the desired period
+    unsigned long sampleCount;  // Number of samples accumulated
+};
+
+
+/**
  * @brief Operating modes for the ArduFlite controller.
  *
  * The controller can operate in one of two modes:
@@ -104,6 +115,9 @@ public:
     float getPitchCmd(); 
     float getYawCmd();
 
+    LoopStats getOuterLoopStats();
+    LoopStats getInnerLoopStats();
+
 private:
     ArduFliteIMU* imu;                          ///< Pointer to the IMU instance.
     ArduFliteAttitudeController* attitudeCtrl;  ///< Pointer to the outer loop controller.
@@ -129,7 +143,15 @@ private:
     float lastPitchCmd = 0.0f;
     float lastYawCmd = 0.0f;
 
+    // Statistics for the outer and inner loops.
+    LoopStats outerLoopStats = {0, 0, 0, 0};
+    LoopStats innerLoopStats = {0, 0, 0, 0};
+
     SemaphoreHandle_t ctrlMutex;                ///< Mutex to protect shared state.
+
+    // Mutexes for thread-safe access to these stats.
+    SemaphoreHandle_t outerStatsMutex;
+    SemaphoreHandle_t innerStatsMutex;
 
     /**
      * @brief Outer loop FreeRTOS task function.
@@ -153,6 +175,14 @@ private:
      * @param parameters Pointer to the ArduFliteController instance.
      */
     static void InnerLoopTask(void* parameters);
+
+    /**
+     * @brief helper function to calculate control loop timing statistics.
+     *
+     * @param parameters The respective control loop's statistics struct, the change in time from the last loop execution,
+     * and the desired loop timing.
+     */
+    static void updateLoopStats(LoopStats &stats, unsigned long dtMicro, unsigned long desiredPeriodMicro);
 };
 
 #endif // ARDU_FLITE_CONTROLLER_H

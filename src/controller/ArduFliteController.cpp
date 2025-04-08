@@ -15,6 +15,9 @@
 
 #include "src/controller/ArduFliteController.h"
 #include <Arduino.h>
+
+#define OUTER_LOOP_DT 10
+#define INNER_LOOP_DT 2
  
 /**
  * @brief Constructor for ArduFliteController.
@@ -35,6 +38,18 @@ ArduFliteController::ArduFliteController(ArduFliteIMU* imu, ArduFliteAttitudeCon
     ctrlMutex = xSemaphoreCreateMutex();
     if (ctrlMutex == NULL) {
         Serial.println("Failed to create ArduFliteController mutex!");
+    }
+
+    // Create the mutex for protecting innerLoop stats.
+    innerStatsMutex = xSemaphoreCreateMutex();
+    if (innerStatsMutex == NULL) {
+        Serial.println("Failed to create innerLoop Stats mutex!");
+    }
+
+    // Create the mutex for protecting outerLoop stats.
+    outerStatsMutex = xSemaphoreCreateMutex();
+    if (outerStatsMutex == NULL) {
+        Serial.println("Failed to create outerLoop Stats mutex!");
     }
 }
  
@@ -139,8 +154,11 @@ void ArduFliteController::OuterLoopTask(void* parameters)
 {
     ArduFliteController* controller = static_cast<ArduFliteController*>(parameters);
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(10); // 10 ms period (100Hz)
+    const TickType_t xFrequency = pdMS_TO_TICKS(OUTER_LOOP_DT); // 10 ms period (100Hz)
     static unsigned long lastMicros = micros();
+
+    // Desired period in microseconds for the outer loop (10 ms = 10,000 µs)
+    const unsigned long desiredPeriodOuter = OUTER_LOOP_DT*1000UL;
     
     float rollRateCmd = 0, pitchRateCmd = 0, yawRateCmd = 0;
     ArduFliteMode currentMode;
@@ -149,8 +167,15 @@ void ArduFliteController::OuterLoopTask(void* parameters)
     for (;;) 
     {
         unsigned long currentMicros = micros();
-        float dt = (currentMicros - lastMicros) / 1000000.0f;
+        unsigned long dtMicro = currentMicros - lastMicros;
         lastMicros = currentMicros;
+
+        // Update outer loop statistics.
+        xSemaphoreTake(controller->outerStatsMutex, portMAX_DELAY);
+        updateLoopStats(controller->outerLoopStats, dtMicro, desiredPeriodOuter);
+        xSemaphoreGive(controller->outerStatsMutex);
+
+        float dt = dtMicro / 1000000.0f;
         if (dt < 1e-3f) dt = 1e-3f;
 
         // Protect reading of the mode and pilot setpoints.
@@ -207,15 +232,26 @@ void ArduFliteController::InnerLoopTask(void* parameters)
 {
     ArduFliteController* controller = static_cast<ArduFliteController*>(parameters);
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(2); // 2 ms period (500Hz)
+    const TickType_t xFrequency = pdMS_TO_TICKS(INNER_LOOP_DT); // 2 ms period (500Hz)
     static unsigned long lastMicros = micros();
+
+    // Desired period in microseconds for the outer loop (10 ms = 10,000 µs)
+    const unsigned long desiredPeriodInner = INNER_LOOP_DT*1000UL;
+
     float rollCmd, pitchCmd, yawCmd;
     
     for (;;) 
     {
         unsigned long currentMicros = micros();
-        float dt = (currentMicros - lastMicros) / 1000000.0f;
+        unsigned long dtMicro = currentMicros - lastMicros;
         lastMicros = currentMicros;
+
+        // Update inner loop statistics.
+        xSemaphoreTake(controller->innerStatsMutex, portMAX_DELAY);
+        updateLoopStats(controller->innerLoopStats, dtMicro, desiredPeriodInner);
+        xSemaphoreGive(controller->innerStatsMutex);
+
+        float dt = dtMicro / 1000000.0f;
         if (dt < 1e-3f) dt = 1e-3f;
         
         // Update IMU data.
@@ -293,4 +329,46 @@ float ArduFliteController::getYawCmd()
     value = lastYawCmd;
     xSemaphoreGive(ctrlMutex);
     return value;
+}
+
+void ArduFliteController::updateLoopStats(LoopStats &stats, unsigned long dtMicro, unsigned long desiredPeriodMicro) {
+    // Convert dt to milliseconds.
+    float dtMs = dtMicro / 1000.0f;
+    
+    // Update rolling average using an exponential moving average.
+    // If this is the first sample, initialize it.
+    const float alpha = 0.5f; // Smoothing factor (tweak as needed)
+    if (stats.sampleCount == 0) {
+        stats.avgDt = dtMs;
+    } else {
+        stats.avgDt = alpha * dtMs + (1.0f - alpha) * stats.avgDt;
+    }
+    
+    // Update max dt if current dt is higher.
+    if (dtMs > stats.maxDt) {
+        stats.maxDt = dtMs;
+    }
+    
+    // If this dt exceeds the desired period, count it as an overrun.
+    if (dtMicro > desiredPeriodMicro) {
+        stats.overrunCount++;
+    }
+    
+    stats.sampleCount++;  
+}
+
+LoopStats ArduFliteController::getOuterLoopStats() {
+    LoopStats statsCopy;
+    xSemaphoreTake(outerStatsMutex, portMAX_DELAY);
+    statsCopy = outerLoopStats;
+    xSemaphoreGive(outerStatsMutex);
+    return statsCopy;
+}
+
+LoopStats ArduFliteController::getInnerLoopStats() {
+    LoopStats statsCopy;
+    xSemaphoreTake(innerStatsMutex, portMAX_DELAY);
+    statsCopy = innerLoopStats;
+    xSemaphoreGive(innerStatsMutex);
+    return statsCopy;
 }

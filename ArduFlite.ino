@@ -36,35 +36,10 @@ ServoConfig rightAilCfg = { RIGHT_AIL_PIN, 500, 2500, 90, 70, true };
 ServoManager servoMgr(CONVENTIONAL, pitchCfg, yawCfg, leftAilCfg, rightAilCfg, true);
 ArduFliteController arduflite(&myIMU, &attitudeController, &rateController, &servoMgr);
 
-// Callback for calibrate button.
-void onCalibrateHold() 
-{
-    Serial.println("Calibrating IMU...");
-    myIMU.selfCalibrate();
-}
-
-// Callback for telemetry reset button.
-void onModeDoubleTap() 
-{
-    Serial.println("Toggling Controller Mode...");
-
-    if (arduflite.getMode() == ASSIST_MODE) 
-    {
-      arduflite.setMode(STABILIZED_MODE);
-    } 
-    else 
-    {
-      arduflite.setMode(ASSIST_MODE);
-    }
-    
-}
-
-// Callback for telemetry reset button.
-void onResetTripleTap() 
-{
-    Serial.println("Resetting Telemetry layer...");
-    telemetry.reset();
-}
+void printControlLoopStats();
+void onCalibrateHold();
+void onModeDoubleTap();
+void onResetTripleTap();
 
 HoldButton calibrateButton(USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
 MultiTapButton resetButton(USER_BUTTON_PIN, 1000, 3, onResetTripleTap, true, 30);
@@ -148,13 +123,60 @@ void loop()
   // }
   runAttitudeTest_wiggle(arduflite); //TODO: for bench testing
     
-    // Update telemetry with the latest sensor and control information.
-    telemetryData.update(myIMU,
-                         arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(),
-                         arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd(),
-                         currentState);
-    telemetry.publish(telemetryData);
+  // Update telemetry with the latest sensor and control information.
+  telemetryData.update(myIMU,
+                        arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(),
+                        arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd(),
+                        currentState);
+  telemetry.publish(telemetryData);
+  
+  printControlLoopStats();
 
-    vTaskDelay(pdMS_TO_TICKS(10));
+  vTaskDelay(pdMS_TO_TICKS(10));
 }
 
+// Callback for calibrate button.
+void onCalibrateHold() 
+{
+    Serial.println("Calibrating IMU...");
+    myIMU.selfCalibrate();
+}
+
+// Callback for telemetry reset button.
+void onModeDoubleTap() 
+{
+    Serial.println("Toggling Controller Mode...");
+
+    if (arduflite.getMode() == ASSIST_MODE) 
+    {
+      arduflite.setMode(STABILIZED_MODE);
+    } 
+    else 
+    {
+      arduflite.setMode(ASSIST_MODE);
+    }
+    
+}
+
+// Callback for telemetry reset button.
+void onResetTripleTap() 
+{
+    Serial.println("Resetting Telemetry layer...");
+    telemetry.reset();
+}
+
+void printControlLoopStats()
+{
+  // Periodically, for instance every 1 second, retrieve and print stats.
+  static unsigned long lastPrint = millis();
+  if (millis() - lastPrint > 1000) {
+      LoopStats outerStats = arduflite.getOuterLoopStats();
+      LoopStats innerStats = arduflite.getInnerLoopStats();
+      
+      Serial.printf("Outer Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu\n",
+                    outerStats.avgDt, outerStats.maxDt, outerStats.overrunCount);
+      Serial.printf("Inner Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu\n",
+                    innerStats.avgDt, innerStats.maxDt, innerStats.overrunCount);
+      lastPrint = millis();
+  }
+}

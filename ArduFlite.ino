@@ -163,11 +163,11 @@ void loop()
   }
 
   // Run the attitude test sequence only when in-flight.
-  // if (currentState == INFLIGHT) {
-  //     runAttitudeTest_wiggle(arduflite);
-  // }
-  runAttitudeTest_wiggle(arduflite); //TODO: for bench testing
-  runReceiverTest_print(pilotReceiver, numReceiverChannels);
+  if (currentState == INFLIGHT) {
+      runAttitudeTest_wiggle(arduflite);
+  }
+
+  // runReceiverTest_print(pilotReceiver, numReceiverChannels);
     
   // Update telemetry with the latest sensor and control information.
   telemetryData.update(myIMU,

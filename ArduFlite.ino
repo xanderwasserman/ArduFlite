@@ -83,7 +83,7 @@ void setup()
   resetButton.begin();
   modeButton.begin();
 
-  Serial.println("Available Button Functions:")
+  Serial.println("Available Button Functions:");
 
   HoldButtonManager::registerButton(calibrateButton);
   Serial.println("  3s hold - calibrate IMU.");
@@ -136,7 +136,7 @@ void loop()
                         arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(),
                         arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd(),
                         currentState);
-                        
+
   telemetry.publish(telemetryData);
 
   vTaskDelay(pdMS_TO_TICKS(10));

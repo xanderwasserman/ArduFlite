@@ -37,14 +37,13 @@ void ArduFliteMqttTelemetry::begin() {
     }
 
     // Create the FreeRTOS task that will handle WiFi + MQTT
-    BaseType_t result = xTaskCreatePinnedToCore(
+    BaseType_t result = xTaskCreate(
         telemetryTask,
         "MqttTelemetryTask",
         8192,           // stack size
         this,           // task parameter
         1,              // priority
-        &taskHandle,    // store the handle
-        1               // run on core 1 (ESP32)
+        &taskHandle    // store the handle
     );
 
     if (result != pdPASS) {

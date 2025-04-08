@@ -18,14 +18,13 @@ void ArduFliteDebugSerialTelemetry::begin() {
     telemetryMutex = xSemaphoreCreateMutex();
 
     // Create a FreeRTOS task to print periodically
-    xTaskCreatePinnedToCore(
+    xTaskCreate(
         telemetryTask,
         "DebugTelemetryTask",
         4096,      // stack size
         this,      // parameter
         1,         // priority
-        NULL,
-        1          // run on core 1 (ESP32)
+        NULL
     );
 }
 

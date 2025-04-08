@@ -14,6 +14,12 @@
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
 #include "src/telemetry/serial/ArduFliteDebugSerialTelemetry.h"
 #include "src/tests/AttitudeTests.h"
+#include "src/cli/ArduFliteCLI.h"
+
+void printControlLoopStats();
+void onCalibrateHold();
+void onModeDoubleTap();
+void onResetTripleTap();
 
 // Global telemetry objects.
 TelemetryData telemetryData;
@@ -36,10 +42,7 @@ ServoConfig rightAilCfg = { RIGHT_AIL_PIN, 500, 2500, 90, 70, true };
 ServoManager servoMgr(CONVENTIONAL, pitchCfg, yawCfg, leftAilCfg, rightAilCfg, true);
 ArduFliteController arduflite(&myIMU, &attitudeController, &rateController, &servoMgr);
 
-void printControlLoopStats();
-void onCalibrateHold();
-void onModeDoubleTap();
-void onResetTripleTap();
+ArduFliteCLI cli(&arduflite);
 
 HoldButton calibrateButton(USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
 MultiTapButton resetButton(USER_BUTTON_PIN, 1000, 3, onResetTripleTap, true, 30);
@@ -71,6 +74,9 @@ void setup()
 
   // Start the overall control tasks.
   arduflite.startTasks();
+
+  // Start the CLI task.
+  cli.startTask();
 
   // Initialize and register buttons.
   calibrateButton.begin();
@@ -129,8 +135,6 @@ void loop()
                         arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd(),
                         currentState);
   telemetry.publish(telemetryData);
-  
-  printControlLoopStats();
 
   vTaskDelay(pdMS_TO_TICKS(10));
 }
@@ -163,20 +167,4 @@ void onResetTripleTap()
 {
     Serial.println("Resetting Telemetry layer...");
     telemetry.reset();
-}
-
-void printControlLoopStats()
-{
-  // Periodically, for instance every 1 second, retrieve and print stats.
-  static unsigned long lastPrint = millis();
-  if (millis() - lastPrint > 1000) {
-      LoopStats outerStats = arduflite.getOuterLoopStats();
-      LoopStats innerStats = arduflite.getInnerLoopStats();
-      
-      Serial.printf("Outer Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu\n",
-                    outerStats.avgDt, outerStats.maxDt, outerStats.overrunCount);
-      Serial.printf("Inner Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu\n",
-                    innerStats.avgDt, innerStats.maxDt, innerStats.overrunCount);
-      lastPrint = millis();
-  }
 }

@@ -1,7 +1,5 @@
 #include "src/cli/CLICommands.h"
 #include "src/controller/ArduFliteController.h"  // So we can access controller functions, if needed.
-#include <FreeRTOS.h>
-#include <task.h>
 
 // Forward declarations of command functions.
 void cmdHelp(const String &args);

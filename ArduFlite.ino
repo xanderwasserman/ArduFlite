@@ -22,21 +22,21 @@ void onModeDoubleTap();
 void onResetTripleTap();
 
 // Global telemetry objects.
-TelemetryData telemetryData;
-ArduFliteMqttTelemetry telemetry(20.0f);          // 20 Hz telemetry frequency
+TelemetryData               telemetryData;
+ArduFliteMqttTelemetry      telemetry(20.0f);          // 20 Hz telemetry frequency
 // ArduFliteDebugSerialTelemetry debugTelemetry(1.0f); // 1 Hz telemetry frequency
 // ArduFliteQSerialTelemetry telemetry(20.0f);
 
 // Create instances of the core components.
-ArduFliteIMU myIMU;
+ArduFliteIMU                myIMU;
 ArduFliteAttitudeController attitudeController;
-ArduFliteRateController rateController;
+ArduFliteRateController     rateController;
 
 // Define the servo configurations.
-ServoConfig pitchCfg    = { PITCH_PIN, 500, 2500, 90, 70, false };
-ServoConfig yawCfg      = { YAW_PIN, 500, 2500, 90, 70, false };
-ServoConfig leftAilCfg  = { LEFT_AIL_PIN, 500, 2500, 90, 70, false };
-ServoConfig rightAilCfg = { RIGHT_AIL_PIN, 500, 2500, 90, 70, true };
+ServoConfig pitchCfg    = { PITCH_PIN,      500, 2500, 90, 70, false };
+ServoConfig yawCfg      = { YAW_PIN,        500, 2500, 90, 70, false };
+ServoConfig leftAilCfg  = { LEFT_AIL_PIN,   500, 2500, 90, 70, false };
+ServoConfig rightAilCfg = { RIGHT_AIL_PIN,  500, 2500, 90, 70, true };
 
 // Instantiate the ServoManager for a conventional wing design with dual ailerons.
 ServoManager servoMgr(CONVENTIONAL, pitchCfg, yawCfg, leftAilCfg, rightAilCfg, true);
@@ -83,14 +83,16 @@ void setup()
   resetButton.begin();
   modeButton.begin();
 
+  Serial.println("Available Button Functions:")
+
   HoldButtonManager::registerButton(calibrateButton);
-  Serial.println("Press and hold the button for 3s at any time to calibrate the IMU.");
+  Serial.println("  3s hold - calibrate IMU.");
 
   MultiTapButtonManager::registerButton(resetButton);
-  Serial.println("Triple tap the button at any time to reset the telemetry layer.");
+  Serial.println("  3x tap - reset telemetry layer.");
 
   MultiTapButtonManager::registerButton(modeButton);
-  Serial.println("Double tap the button at any time to change the ArduFlite Mode.");
+  Serial.println("  2x tap - toggle ArduFlite Mode.");
 
   Serial.println("ArduFlite Controller initialised.");
 }
@@ -134,6 +136,7 @@ void loop()
                         arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(),
                         arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd(),
                         currentState);
+                        
   telemetry.publish(telemetryData);
 
   vTaskDelay(pdMS_TO_TICKS(10));

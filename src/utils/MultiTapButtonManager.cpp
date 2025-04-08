@@ -1,3 +1,11 @@
+/**
+ * MultiTapButtonManager.cpp
+ *
+ * ArduFlite - Advanced Flight Controller Framework
+ * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ *
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
 #include "src/utils/MultiTapButtonManager.h"
 
 MultiTapButton* MultiTapButtonManager::_buttons[MAX_MULTI_TAP_BUTTONS] = { nullptr };

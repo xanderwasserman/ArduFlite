@@ -1,4 +1,11 @@
 /**
+ * ArduFliteAttitudeController.cpp
+ *
+ * ArduFlite - Advanced Flight Controller Framework
+ * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ *
+ * Licensed under the MIT License. See LICENSE file for details.
+ *
  * @file ArduFliteAttitudeController.cpp
  * @brief Implements the attitude (outer loop) controller for ArduFlite.
  *

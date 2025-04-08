@@ -1,4 +1,11 @@
 /**
+ * ArduFliteController.cpp
+ *
+ * ArduFlite - Advanced Flight Controller Framework
+ * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ *
+ * Licensed under the MIT License. See LICENSE file for details.
+ *
  * @file ArduFliteController.cpp
  * @brief Implements the overall controller for ArduFlite which combines
  *        the attitude (outer loop) and rate (inner loop) controllers.

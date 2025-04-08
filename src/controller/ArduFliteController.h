@@ -1,3 +1,11 @@
+/**
+ * ArduFliteController.h
+ *
+ * ArduFlite - Advanced Flight Controller Framework
+ * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ *
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
 #ifndef ARDU_FLITE_CONTROLLER_H
 #define ARDU_FLITE_CONTROLLER_H
 

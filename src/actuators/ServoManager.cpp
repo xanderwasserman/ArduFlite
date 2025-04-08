@@ -1,3 +1,11 @@
+/**
+ * ServoManager.cpp
+ *
+ * ArduFlite - Advanced Flight Controller Framework
+ * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ *
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
 #include "ServoManager.h"
 
 // Helper: maps a float value from [inMin, inMax] to [outMin, outMax].

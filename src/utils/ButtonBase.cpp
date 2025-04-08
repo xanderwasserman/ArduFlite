@@ -1,5 +1,11 @@
-// ButtonBase.cpp
-
+/**
+ * ButtonBase.cpp
+ *
+ * ArduFlite - Advanced Flight Controller Framework
+ * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ *
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
 #include "src/utils/ButtonBase.h"
 
 ButtonBase::ButtonBase(int pin, bool usePullup, unsigned long debounceMs)

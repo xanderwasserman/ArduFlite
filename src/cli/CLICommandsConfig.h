@@ -1,8 +1,8 @@
 #ifndef CLI_COMMANDS_CONFIG_H
 #define CLI_COMMANDS_CONFIG_H
 
-#include "CLICommands.h"  // Your CLICommands.h that defines CLICommand, etc.
-#include "ArduFliteController.h"  // If needed for the command functions
+#include "src/controller/CLICommands.h"  // Your CLICommands.h that defines CLICommand, etc.
+#include "src/controller/ArduFliteController.h"  // If needed for the command functions
 
 // Declare the command table and its size as extern.
 extern CLICommand cliCommands[];

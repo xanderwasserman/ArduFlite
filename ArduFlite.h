@@ -16,8 +16,8 @@
 // PWM input pins
 #define ROLL_INPUT_PIN          34
 #define PITCH_INPUT_PIN         35
-#define YAW_INPUT_PIN           35
-#define THROTTLE_INPUT_PIN      35
+#define YAW_INPUT_PIN           36
+#define THROTTLE_INPUT_PIN      39
 
 // Servo output pins
 #define LEFT_AIL_PIN            17

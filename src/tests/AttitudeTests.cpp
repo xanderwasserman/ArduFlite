@@ -9,7 +9,7 @@
 #include "src/tests/AttitudeTests.h"
 #include <Arduino.h>
 
-#define WIGGLE_ANGLE    15
+#define WIGGLE_ANGLE    30
 #define WIGGLE_TIME     3000 //3s
 
 void runAttitudeTest_wiggle(ArduFliteController &arduflite)

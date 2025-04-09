@@ -29,7 +29,7 @@ ArduFlite is a highly modular and real-time flight control framework designed fo
   - Supports a dedicated CLI for on-demand diagnostics, configuration, and telemetry retrieval.
 
 - **Flexible and Dynamic Configuration**
-  - Centralized configuration headers (e.g., `ControllerConfig.h`) allow easy tuning of PID gains and system parameters.
+  - Centralized configuration headers (e.g., `ControllerConfiguration.h`) allow easy tuning of PID gains and system parameters.
   - Dynamic, real-time adjustments are available through a modular CLI that supports commands like `setmode`, `calibrate`, and various telemetry queries.
 
 
@@ -75,7 +75,7 @@ ArduFlite employs a cascade control structure:
     Open the project in your preferred IDE (e.g., Arduino IDE or PlatformIO).
 
 3. Configure Hardware & Parameters:
-    Update pin assignments and PID gains in the configuration header files (e.g., ControllerConfig.h, CLICommandsConfig.h) as needed.
+    Update pin assignments and PID gains in the configuration header files (e.g., ControllerConfiguration.h, CLICommandsConfig.h) as needed.
 
 4. Upload the Code:
     Compile and upload the firmware to your ESP32.

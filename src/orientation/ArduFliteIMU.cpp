@@ -44,8 +44,8 @@ ArduFliteIMU::ArduFliteIMU() {
 bool ArduFliteIMU::begin() {
     // For ESP32, initialize EEPROM.
     EEPROM.begin(EEPROM_SIZE);
-    Wire.begin();
-    Wire.setClock(400000); // Set I2C clock to 400 kHz.
+    Wire.begin(I2CConfig::I2C_SDA_PIN, I2CConfig::I2C_SCL_PIN);
+    Wire.setClock(I2CConfig::I2C_CLOCK_SPEED); 
 
     // Initialize IMU with calibration data.
     int err = IMU.init(calib, IMU_ADDRESS);

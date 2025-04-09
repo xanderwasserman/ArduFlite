@@ -21,7 +21,7 @@
  */
 #include <Arduino.h>
 
-#include "ArduFlite.h"
+#include "include/ArduFlite.h"
 #include "src/utils/HoldButton.h"
 #include "src/utils/HoldButtonManager.h"
 #include "src/utils/MultiTapButton.h"
@@ -56,10 +56,10 @@ ArduFliteAttitudeController attitudeController;
 ArduFliteRateController     rateController;
 
 // Define the servo configurations.
-ServoConfig pitchCfg    = { PITCH_PIN,      500, 2500, 90, 70, false };
-ServoConfig yawCfg      = { YAW_PIN,        500, 2500, 90, 70, false };
-ServoConfig leftAilCfg  = { LEFT_AIL_PIN,   500, 2500, 90, 70, false };
-ServoConfig rightAilCfg = { RIGHT_AIL_PIN,  500, 2500, 90, 70, true };
+ServoConfig pitchCfg    = { PwmOutputConfig::PITCH_PIN,      500, 2500, 90, 70, false };
+ServoConfig yawCfg      = { PwmOutputConfig::YAW_PIN,        500, 2500, 90, 70, false };
+ServoConfig leftAilCfg  = { PwmOutputConfig::LEFT_AIL_PIN,   500, 2500, 90, 70, false };
+ServoConfig rightAilCfg = { PwmOutputConfig::RIGHT_AIL_PIN,  500, 2500, 90, 70, true };
 
 // Instantiate the ServoManager for a conventional wing design with dual ailerons.
 ServoManager servoMgr(CONVENTIONAL, pitchCfg, yawCfg, leftAilCfg, rightAilCfg, true);
@@ -67,10 +67,10 @@ ArduFliteController arduflite(&myIMU, &attitudeController, &rateController, &ser
 
 // Define configurations for each channel.
 ReceiverChannelConfig receiverConfigs[] = {
-    { ROLL_INPUT_PIN,       1000UL, 2000UL, BIPOLAR },  // Roll channel on pin 34
-    { PITCH_INPUT_PIN,      1000UL, 2000UL, BIPOLAR },  // Pitch channel on pin 35
-    { YAW_INPUT_PIN,        1000UL, 2000UL, BIPOLAR },  // Yaw channel on pin 36
-    { THROTTLE_INPUT_PIN,   1000UL, 2000UL, UNIPOLAR }  // Throttle channel on pin 39
+    { PwmInputConfig::ROLL_INPUT_PIN,       1000UL, 2000UL, BIPOLAR },  // Roll channel on pin 34
+    { PwmInputConfig::PITCH_INPUT_PIN,      1000UL, 2000UL, BIPOLAR },  // Pitch channel on pin 35
+    { PwmInputConfig::YAW_INPUT_PIN,        1000UL, 2000UL, BIPOLAR },  // Yaw channel on pin 36
+    { PwmInputConfig::THROTTLE_INPUT_PIN,   1000UL, 2000UL, UNIPOLAR }  // Throttle channel on pin 39
 };
 const size_t numReceiverChannels = sizeof(receiverConfigs) / sizeof(receiverConfigs[0]);
 
@@ -78,16 +78,16 @@ ArduFlitePwmReceiver pilotReceiver(receiverConfigs, numReceiverChannels);
 
 ArduFliteCLI myCLI(&arduflite, &myIMU);
 
-HoldButton calibrateButton(USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
-MultiTapButton resetButton(USER_BUTTON_PIN, 1000, 3, onResetTripleTap, true, 30);
-MultiTapButton modeButton(USER_BUTTON_PIN, 1000, 2, onModeDoubleTap, true, 30);
+HoldButton calibrateButton(ButtonInputConfig::USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
+MultiTapButton resetButton(ButtonInputConfig::USER_BUTTON_PIN, 1000, 3, onResetTripleTap, true, 30);
+MultiTapButton modeButton(ButtonInputConfig::USER_BUTTON_PIN, 1000, 2, onModeDoubleTap, true, 30);
 
 void setup() 
 {
   Serial.begin(115200);
   while (!Serial);
 
-  pinMode(USER_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(ButtonInputConfig::USER_BUTTON_PIN, INPUT_PULLUP);
 
   telemetry.begin();
   // debugTelemetry.begin();

@@ -11,7 +11,7 @@
 
 #include <Arduino.h>
 #include "src/controller/pid.h"
-#include "src/controller/ControllerConfig.h"
+#include "include/ControllerConfiguration.h"
 
 /**
  * @brief The ArduFliteRateController class implements an inner loop

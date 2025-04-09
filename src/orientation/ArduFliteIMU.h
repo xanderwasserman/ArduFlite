@@ -15,6 +15,7 @@
 #include <EEPROM.h>
 #include <Adafruit_AHRS.h>
 #include "src/orientation/FliteQuaternion.h"
+#include "include/PinConfiguration.h"
 
 //==============================================================
 // IMU type selection

@@ -180,3 +180,33 @@ void ServoManager::setRightSurfaceConfig(const ServoConfig &config) {
         rightAilServo.attach(rightAilConfig.pin, rightAilConfig.minPulse, rightAilConfig.maxPulse);
     }
 }
+
+/**
+ * @brief Runs a self-test routine by wiggling control surfaces.
+ *
+ * Moves the control surfaces to their full positive, full negative, and neutral positions
+ * in sequence over multiple cycles, ensuring the servo outputs respond correctly.
+ * This is useful for verifying hardware functionality during startup or in the field.
+ */
+void ServoManager::testControlSurfaces() 
+{
+    const int numCycles = 3;    // Number of test cycles
+    const int delayTime = 500;    // Delay (in milliseconds) between commands
+
+    Serial.println("Beginning control surface test...");
+
+    for (int i = 0; i < numCycles; i++) {
+        // Command maximum deflection (normalized value 1.0)
+        writeCommands(1.0f, 1.0f, 1.0f);
+        delay(delayTime);
+
+        // Command minimum deflection (normalized value -1.0)
+        writeCommands(-1.0f, -1.0f, -1.0f);
+        delay(delayTime);
+
+        // Command neutral position (normalized value 0.0)
+        writeCommands(0.0f, 0.0f, 0.0f);
+        delay(delayTime);
+    }
+    Serial.println("Control surface test complete.");
+}

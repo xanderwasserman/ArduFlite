@@ -71,6 +71,15 @@ public:
      */
     void writeCommands(float rollCmd, float pitchCmd, float yawCmd);
 
+    /**
+     * @brief Runs a self-test routine by wiggling control surfaces.
+     *
+     * Moves the control surfaces to their full positive, full negative, and neutral positions
+     * in sequence over multiple cycles, ensuring the servo outputs respond correctly.
+     * This is useful for verifying hardware functionality during startup or in the field.
+     */
+    void ServoManager::testControlSurfaces();
+
     // Setter methods to adjust inversion flags at runtime.
     void setPitchInversion(bool invert);
     void setYawInversion(bool invert);

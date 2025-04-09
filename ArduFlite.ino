@@ -89,6 +89,8 @@ void setup()
 
   pinMode(ButtonInputConfig::USER_BUTTON_PIN, INPUT_PULLUP);
 
+  servoMgr.testControlSurfaces();
+
   telemetry.begin();
   // debugTelemetry.begin();
 

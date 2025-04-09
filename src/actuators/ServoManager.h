@@ -78,7 +78,7 @@ public:
      * in sequence over multiple cycles, ensuring the servo outputs respond correctly.
      * This is useful for verifying hardware functionality during startup or in the field.
      */
-    void ServoManager::testControlSurfaces();
+    void testControlSurfaces();
 
     // Setter methods to adjust inversion flags at runtime.
     void setPitchInversion(bool invert);

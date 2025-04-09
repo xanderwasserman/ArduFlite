@@ -184,11 +184,11 @@ void loop()
 void onCalibrateHold() 
 {
     Serial.println("Calibrating IMU...");
-    arduflite->pauseTasks();     // Pause control loop tasks
+    arduflite.pauseTasks();     // Pause control loop tasks
     myIMU.pauseTask();           // Pause the IMU update task
     myIMU.selfCalibrate();       // Run calibration
     myIMU.resumeTask();          // Resume the IMU update task
-    arduflite->resumeTasks();    // Resume control loop tasks
+    arduflite.resumeTasks();    // Resume control loop tasks
 }
 
 // Callback for telemetry reset button.

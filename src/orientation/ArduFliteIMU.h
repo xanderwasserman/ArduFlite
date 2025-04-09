@@ -115,8 +115,8 @@ struct ArduFliteIMUOffsets {
 * @brief Structure for storing calibration data in EEPROM.
 */
 struct StoredCalibData {
-    uint32_t magic;
-    ArduFliteIMUOffsets offsets;
+    uint32_t magic;                 //< Magic number used for data validation.
+    ArduFliteIMUOffsets offsets;    //< Calibration offsets.
 };
 
 /// Magic number to validate calibration data.
@@ -142,41 +142,66 @@ class ArduFliteIMU {
 public:
     /**
     * @brief Constructor.
+    *
+    * Initializes calibration offsets to zero and creates a mutex to protect access
+    * to sensor data and the filter state.
     */
     ArduFliteIMU();
 
     /**
     * @brief Initializes the IMU hardware and sensor fusion filter.
-    * @return true if successful, false otherwise.
+    *
+    * Configures I2C and EEPROM, initializes the IMU with calibration data,
+    * sets sensor ranges, loads calibration offsets from EEPROM (or calibrates if not found),
+    * and warms up the orientation filter.
+    *
+    * @return true if initialization is successful, false otherwise.
     */
     bool begin();
 
     /**
     * @brief Performs a calibration routine.
+    *
+    * This method gathers raw sensor data over a fixed period, computes the average
+    * offsets, and saves these offsets to EEPROM.
+    *
     * @return true if calibration is successful, false otherwise.
     */
     bool calibrate();
  
     /**
     * @brief Performs self-calibration of the IMU.
+    *
+    * Similar to calibrate(), this method gathers data for approximately 10 seconds
+    * and computes the calibration offsets.
+    *
     * @return true if self-calibration succeeds, false otherwise.
     */
     bool selfCalibrate();
 
     /**
     * @brief Sets the calibration offsets.
-    * @param ofs New calibration offsets.
+    *
+    * Updates the internal calibration offsets.
+    *
+    * @param ofs The calibration offsets to apply.
     */
     void setOffsets(const ArduFliteIMUOffsets &ofs);
 
     /**
     * @brief Retrieves the current calibration offsets.
-    * @param ofs Reference to where the offsets will be stored.
+    *
+    * @param ofs Reference to an ArduFliteIMUOffsets structure where offsets will be stored.
     */
     void getOffsets(ArduFliteIMUOffsets &ofs) const;
 
     /**
-    * @brief Updates sensor data and orientation filter.
+    * @brief Updates the IMU sensor data and orientation filter.
+    *
+    * Reads raw accelerometer, gyroscope, magnetometer and barometer data, subtracts calibration offsets,
+    * applies orientation transformations and low-pass filtering, updates the orientation
+    * filter, and retrieves the latest quaternion and Euler angles.
+    *
     * @param dt Time step in seconds.
     */
     void update(float dt);
@@ -245,9 +270,11 @@ private:
     float filteredGyroX, filteredGyroY, filteredGyroZ;
     float filteredMagX, filteredMagY, filteredMagZ;
     float pitch = 0.0f, roll = 0.0f, yaw = 0.0f;
-    AccelData accelData;
-    GyroData  gyroData;
-    MagData   magData;
+
+    // Data structures to hold raw sensor readings.
+    AccelData accelData;    //< Structure to store accelerometer data.
+    GyroData  gyroData;     //< Structure to store gyroscope data.
+    MagData   magData;      //< Structure to store magnetometer data.
 
     SemaphoreHandle_t imuMutex;
 
@@ -260,12 +287,61 @@ private:
     Adafruit_BMP280 bmp280;
 #endif
 
-    void saveOffsetsToEEPROM(const ArduFliteIMUOffsets &ofs);
+    /**
+    * @brief Loads calibration offsets from EEPROM.
+    *
+    * Retrieves stored calibration data and verifies its validity using a magic number.
+    *
+    * @param dest Reference to an ArduFliteIMUOffsets structure where the offsets will be stored.
+    * @return true if valid calibration data is loaded, false otherwise.
+    */
     bool loadOffsetsFromEEPROM(ArduFliteIMUOffsets &dest);
+
+    /**
+    * @brief Saves calibration offsets to EEPROM.
+    *
+    * Writes the provided calibration offsets to EEPROM and commits the changes.
+    *
+    * @param ofs The calibration offsets to save.
+    */
+    void saveOffsetsToEEPROM(const ArduFliteIMUOffsets &ofs);
+
+    /**
+    * @brief Applies sensor orientation transformations.
+    *
+    * Adjusts raw sensor data according to the defined IMU orientation.
+    */
     void applyOrientation();
+
+    /**
+    * @brief Applies calibration offsets from EEPROM.
+    *
+    * Loads calibration offsets from EEPROM and applies them. If no valid data is found,
+    * self-calibration may be initiated.
+    *
+    * @return true if calibration offsets are successfully applied, false otherwise.
+    */
     bool applyCalibrations();
+
+    /**
+    * @brief Initializes the orientation filter.
+    *
+    * Warms up the filter by running several update iterations so that stable orientation
+    * estimates are produced.
+    */
     void initFilter();
+
+    /**
+    * @brief Applies low-pass filters to the raw sensor data.
+    *
+    * If the filters are not yet initialized, raw sensor data is assigned directly to the
+    * filtered variables. Otherwise, an exponential moving average is applied.
+    */
     void applyLowPassFilters();
+
+    /**
+    * @brief Updates the flight state based on filtered sensor data.
+    */
     void updateFlightState();
 };
 

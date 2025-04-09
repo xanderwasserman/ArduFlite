@@ -88,7 +88,88 @@ bool ArduFliteIMU::begin() {
 #else
     Serial.println("FastIMU (MPU-6500) initialized!");
 #endif
+
+    // Start the dedicated IMU update task.
+    startTask();
+
     return true;
+}
+
+/**
+ * @brief Starts the dedicated IMU update task.
+ *
+ * This function creates a FreeRTOS task that periodically calls update() on the IMU
+ * at the period defined by IMU_UPDATE_INTERVAL_MS (in milliseconds). This task runs
+ * independently from the control loop tasks.
+ */
+void ArduFliteIMU::startTask() 
+{
+    // Create an IMU task that runs at the desired update frequency.
+    // For example, if you want to update every 5 ms (~200Hz), use a period of 5ms.
+    const TickType_t taskPeriod = pdMS_TO_TICKS(5); 
+    xTaskCreate(imuTask, "IMU Task", 4096, this, 4, &imuTaskHandle);
+}
+
+/**
+ * @brief Suspends the dedicated IMU update task.
+ *
+ * Suspends the IMU task so that sensor readings are paused during critical operations,
+ * such as calibration. This ensures that no new sensor data is processed while changes
+ * are being made.
+ */
+void ArduFliteIMU::pauseTask() 
+{
+    if (imuTaskHandle != NULL) {
+        vTaskSuspend(imuTaskHandle);
+        Serial.println("IMU Task paused.");
+    }
+}
+ 
+ /**
+  * @brief Resumes the dedicated IMU update task.
+  *
+  * Resumes the previously suspended IMU task, allowing sensor data to be updated again.
+  */
+void ArduFliteIMU::resumeTask() 
+{
+    if (imuTaskHandle != NULL) {
+        vTaskResume(imuTaskHandle);
+        Serial.println("IMU Task resumed.");
+    }
+}
+
+/**
+ * @brief FreeRTOS task function for IMU updates.
+ *
+ * This static function is the entry point for the IMU update task. It continuously
+ * calculates the time delta (dt) between iterations, calls the update() method with
+ * this dt, and then delays until the next scheduled execution time.
+ *
+ * @param parameters Pointer to the ArduFliteIMU instance.
+ */
+void ArduFliteIMU::imuTask(void* parameters) 
+{
+    ArduFliteIMU* imuInstance = static_cast<ArduFliteIMU*>(parameters);
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    unsigned long lastMicros = micros();
+
+    // Define the task period; here, 5ms corresponds to roughly 200Hz.
+    const TickType_t xFrequency = pdMS_TO_TICKS(IMU_UPDATE_INTERVAL_MS);
+
+    while (true) 
+    {
+        unsigned long currentMicros = micros();
+        unsigned long dtMicro = currentMicros - lastMicros;
+        lastMicros = currentMicros;
+
+        float dt = dtMicro / 1000000.0f;
+        if (dt < 1e-3f) dt = 1e-3f;
+
+        imuInstance->update(dt);
+
+        // Delay until the next iteration.
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
 }
  
 /**

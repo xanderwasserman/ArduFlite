@@ -47,8 +47,8 @@ void onResetTripleTap();
 // Global telemetry objects.
 TelemetryData               telemetryData;
 ArduFliteMqttTelemetry      telemetry(20.0f);          // 20 Hz telemetry frequency
-// ArduFliteDebugSerialTelemetry debugTelemetry(1.0f); // 1 Hz telemetry frequency
-// ArduFliteQSerialTelemetry telemetry(20.0f);
+// ArduFliteDebugSerialTelemetry    debugTelemetry(1.0f); // 1 Hz telemetry frequency
+// ArduFliteQSerialTelemetry        telemetry(20.0f);
 
 // Create instances of the core components.
 ArduFliteIMU                myIMU;
@@ -184,7 +184,11 @@ void loop()
 void onCalibrateHold() 
 {
     Serial.println("Calibrating IMU...");
-    myIMU.selfCalibrate();
+    arduflite->pauseTasks();     // Pause control loop tasks
+    myIMU.pauseTask();           // Pause the IMU update task
+    myIMU.selfCalibrate();       // Run calibration
+    myIMU.resumeTask();          // Resume the IMU update task
+    arduflite->resumeTasks();    // Resume control loop tasks
 }
 
 // Callback for telemetry reset button.

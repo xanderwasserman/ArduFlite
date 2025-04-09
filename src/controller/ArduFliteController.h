@@ -116,6 +116,16 @@ public:
      */
     ArduFliteMode getMode() const;
 
+    /**
+    * @brief Suspends the control tasks (outer and inner loop).
+    */
+    void pauseTasks();
+
+    /**
+    * @brief Resumes the control tasks (outer and inner loop).
+    */
+    void resumeTasks();
+
     float getRollRateCmd();
     float getPitchRateCmd();
     float getYawRateCmd();

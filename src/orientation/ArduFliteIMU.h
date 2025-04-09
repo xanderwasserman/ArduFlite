@@ -64,6 +64,8 @@
 
 /// I2C address for the MPU-6500 (the MPU-9250 typically shares the same I2C address).
 #define IMU_ADDRESS                         0x68
+
+#define IMU_UPDATE_INTERVAL_MS              5
  
 //==============================================================
 // Data structures and enums
@@ -161,6 +163,11 @@ public:
     bool begin();
 
     /**
+    * @brief Starts a dedicated FreeRTOS task to periodically update the IMU.
+    */
+    void startTask();
+
+    /**
     * @brief Performs a calibration routine.
     *
     * This method gathers raw sensor data over a fixed period, computes the average
@@ -225,8 +232,19 @@ public:
     * @return Altitude in meters.
     */
     float getAltitude() const;
+
+    /**
+    * @brief Suspends the IMU update task.
+    */
+    void pauseTask();
+
+    /**
+    * @brief Resumes the IMU update task.
+    */
+    void resumeTask();
  
 private:
+    TaskHandle_t imuTaskHandle; // Handle for the IMU task
 
 #if IMU_TYPE == IMU_TYPE_MPU9250
     MPU9259 IMU;
@@ -287,6 +305,13 @@ private:
 #if IMU_TYPE == IMU_TYPE_MPU9250
     Adafruit_BMP280 bmp280;
 #endif
+
+    /**
+    * @brief Static FreeRTOS task function for IMU updates.
+    *
+    * @param parameters A pointer to the current ArduFliteIMU instance.
+    */
+    static void imuTask(void* parameters);
 
     /**
     * @brief Loads calibration offsets from EEPROM.

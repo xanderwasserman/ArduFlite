@@ -145,6 +145,42 @@ void ArduFliteController::startTasks()
     xTaskCreate(OuterLoopTask, "OuterLoop", 4096, this, 2, &outerTaskHandle);
     xTaskCreate(InnerLoopTask, "InnerLoop", 4096, this, 3, &innerTaskHandle);
 }
+
+/**
+ * @brief Suspends the control tasks (outer and inner loop).
+ *
+ * This function suspends the FreeRTOS tasks responsible for the control loops,
+ * effectively pausing the attitude and rate controllers. This is useful during
+ * operations such as calibration when you want a consistent sensor reading without
+ * interference from the control loops.
+ */
+void ArduFliteController::pauseTasks() 
+{
+    if (outerTaskHandle != NULL) {
+        vTaskSuspend(outerTaskHandle);
+    }
+    if (innerTaskHandle != NULL) {
+        vTaskSuspend(innerTaskHandle);
+    }
+    Serial.println("Control tasks paused.");
+}
+
+/**
+ * @brief Resumes the control tasks (outer and inner loop).
+ *
+ * This function resumes the previously suspended control tasks so that the
+ * attitude and rate controllers continue their normal operation.
+ */
+void ArduFliteController::resumeTasks() 
+{
+    if (outerTaskHandle != NULL) {
+        vTaskResume(outerTaskHandle);
+    }
+    if (innerTaskHandle != NULL) {
+        vTaskResume(innerTaskHandle);
+    }
+    Serial.println("Control tasks resumed.");
+}
  
 /**
  * @brief Outer loop task.
@@ -261,8 +297,6 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         float dt = dtMicro / 1000000.0f;
         if (dt < 1e-3f) dt = 1e-3f;
         
-        // Update IMU data.
-        controller->imu->update(dt);
         // Retrieve measured angular rates from the IMU.
         Vector3 gyro = controller->imu->getGyro();
         

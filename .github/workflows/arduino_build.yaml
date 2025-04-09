@@ -34,6 +34,7 @@ jobs:
           arduino-cli lib install "FastIMU"
           arduino-cli lib install "Adafruit AHRS"
           arduino-cli lib install "ESP32Servo"
+          arduino-cli lib install "Adafruit_BMP280"
 
       # Step 5: Compile the sketch
       - name: Compile the Arduino sketch for ESP32

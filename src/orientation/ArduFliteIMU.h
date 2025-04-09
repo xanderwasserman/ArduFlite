@@ -260,6 +260,8 @@ private:
     Adafruit_BMP280 bmp280;
 #endif
 
+    void saveOffsetsToEEPROM(const ArduFliteIMUOffsets &ofs);
+    bool loadOffsetsFromEEPROM(ArduFliteIMUOffsets &dest);
     void applyOrientation();
     bool applyCalibrations();
     void initFilter();

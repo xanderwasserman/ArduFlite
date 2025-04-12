@@ -58,8 +58,8 @@ ArduFliteRateController     rateController;
 // Define the servo configurations.
 ServoConfig pitchCfg    = { PwmOutputConfig::PITCH_PIN,      500, 2500, 90, 70, false };
 ServoConfig yawCfg      = { PwmOutputConfig::YAW_PIN,        500, 2500, 90, 70, false };
-ServoConfig leftAilCfg  = { PwmOutputConfig::LEFT_AIL_PIN,   500, 2500, 90, 70, false };
-ServoConfig rightAilCfg = { PwmOutputConfig::RIGHT_AIL_PIN,  500, 2500, 90, 70, true };
+ServoConfig leftAilCfg  = { PwmOutputConfig::LEFT_AIL_PIN,   500, 2500, 90, 70, true };
+ServoConfig rightAilCfg = { PwmOutputConfig::RIGHT_AIL_PIN,  500, 2500, 90, 70, false };
 
 // Instantiate the ServoManager for a conventional wing design with dual ailerons.
 ServoManager servoMgr(CONVENTIONAL, pitchCfg, yawCfg, leftAilCfg, rightAilCfg, true);
@@ -102,7 +102,7 @@ void setup()
   }
 
   // Start with a level attitude (Assist mode).
-  arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
+  arduflite.setDesiredEulerDegs(-1.0f, 0.0f, 0.0f);
   arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
 
   // Set the mode (default is ASSIST_MODE).
@@ -151,7 +151,7 @@ void loop()
         switch (currentState) {
             case PREFLIGHT:
                 Serial.println("Aircraft is in PREFLIGHT state.");
-                arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
+                arduflite.setDesiredEulerDegs(-1.0f, 0.0f, 0.0f);
                 arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
                 break;
             case INFLIGHT:
@@ -159,7 +159,7 @@ void loop()
                 break;
             case LANDED:
                 Serial.println("Aircraft has LANDED.");
-                arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
+                arduflite.setDesiredEulerDegs(-1.0f, 0.0f, 0.0f);
                 arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
                 break;
             default:

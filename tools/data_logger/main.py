@@ -27,7 +27,9 @@ TOPIC_MAPPING = {
     "arduflite/command_rate/yawCmd": "commandsRate_yawCmd",
     "arduflite/command_servo/rollCmd": "commands_rollCmd",
     "arduflite/command_servo/pitchCmd": "commands_pitchCmd",
-    "arduflite/command_servo/yawCmd": "commands_yawCmd"
+    "arduflite/command_servo/yawCmd": "commands_yawCmd",
+    "arduflite/flight/altitude": "flight_altitude",
+    "arduflite/flight/state": "flight_state"
 }
 
 CSV_ORDER = ["timestamp", "quaternion_w", "quaternion_x", "quaternion_y", "quaternion_z",
@@ -35,7 +37,8 @@ CSV_ORDER = ["timestamp", "quaternion_w", "quaternion_x", "quaternion_y", "quate
              "gyro_x", "gyro_y", "gyro_z",
              "orientation_pitch", "orientation_roll", "orientation_yaw",
              "commandsRate_rollCmd", "commandsRate_pitchCmd", "commandsRate_yawCmd",
-             "commands_rollCmd", "commands_pitchCmd", "commands_yawCmd"]
+             "commands_rollCmd", "commands_pitchCmd", "commands_yawCmd",
+             "flight_altitude", "flight_state"]
 
 # Global storage for the latest values.
 data_values = { key: 0.0 for key in CSV_ORDER if key != "timestamp" }
@@ -119,25 +122,35 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Flight Data Logger")
-        self.resize(200, 200)  # Slightly increased window size for the bigger button
+        # For touchscreen devices, starting in full screen can be useful.
+        self.showFullScreen()
+        # Alternatively, you can use fixed size:
+        # self.resize(800, 600)
+        
+        # Central widget and layout with padding for touch.
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
         layout = QtWidgets.QVBoxLayout(central)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
 
-        # Status indicators
+        # Status indicators with larger font sizes for improved readability.
         self.brokerLabel = QtWidgets.QLabel("Broker: Not Connected")
         self.dataLabel = QtWidgets.QLabel("Data: No Recent Data")
+        label_font = QtGui.QFont()
+        label_font.setPointSize(18)
+        self.brokerLabel.setFont(label_font)
+        self.dataLabel.setFont(label_font)
         ledLayout = QtWidgets.QHBoxLayout()
         ledLayout.addWidget(self.brokerLabel)
         ledLayout.addWidget(self.dataLabel)
         layout.addLayout(ledLayout)
 
-        # Logging button
+        # Logging button with bigger touch area and appropriate colors
         self.logButton = QtWidgets.QPushButton("Start Logging")
-        # Increase button size
-        self.logButton.setMinimumSize(150, 50)
-        # Set initial style (green for start)
-        self.logButton.setStyleSheet("background-color: green; font-size: 16px; padding: 10px;")
+        self.logButton.setMinimumSize(150, 100)  # Increased button size for touch
+        # Initial style: green background for "start logging"
+        self.logButton.setStyleSheet("background-color: green; font-size: 20px; padding: 15px;")
         layout.addWidget(self.logButton)
         self.logButton.clicked.connect(self.toggle_logging)
 
@@ -160,13 +173,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self.dataLogger.recording:
             self.dataLogger.start()
             self.logButton.setText("Stop Logging")
-            # Set button to red when logging is active.
-            self.logButton.setStyleSheet("background-color: red; font-size: 16px; padding: 10px;")
+            # Change to red background when logging is active.
+            self.logButton.setStyleSheet("background-color: red; font-size: 20px; padding: 15px;")
         else:
             self.dataLogger.stop()
             self.logButton.setText("Start Logging")
-            # Set button to green when logging is stopped.
-            self.logButton.setStyleSheet("background-color: green; font-size: 16px; padding: 10px;")
+            # Change to green background when logging has stopped.
+            self.logButton.setStyleSheet("background-color: green; font-size: 20px; padding: 15px;")
 
     def record_data(self):
         if self.dataLogger.recording:
@@ -179,18 +192,18 @@ class MainWindow(QtWidgets.QMainWindow):
     def update_connection_status(self, connected):
         if connected:
             self.brokerLabel.setText("Broker: Connected")
-            self.brokerLabel.setStyleSheet("QLabel { color : green; }")
+            self.brokerLabel.setStyleSheet("color: green;")
         else:
             self.brokerLabel.setText("Broker: Not Connected")
-            self.brokerLabel.setStyleSheet("QLabel { color : red; }")
+            self.brokerLabel.setStyleSheet("color: red;")
 
     def update_data_status(self):
         if time.time() - last_message_time < 2:
             self.dataLabel.setText("Data: Received")
-            self.dataLabel.setStyleSheet("QLabel { color : blue; }")
+            self.dataLabel.setStyleSheet("color: blue;")
         else:
             self.dataLabel.setText("Data: No Recent Data")
-            self.dataLabel.setStyleSheet("QLabel { color : gray; }")
+            self.dataLabel.setStyleSheet("color: gray;")
 
 # ----- Main -----
 def main():

@@ -372,26 +372,32 @@ float ArduFliteController::getYawCmd()
     return value;
 }
 
-void ArduFliteController::updateLoopStats(LoopStats &stats, unsigned long dtMicro, unsigned long desiredPeriodMicro) {
+void ArduFliteController::updateLoopStats(LoopStats &stats, unsigned long dtMicro, unsigned long desiredPeriodMicro) 
+{
     // Convert dt to milliseconds.
     float dtMs = dtMicro / 1000.0f;
     
     // Update rolling average using an exponential moving average.
     // If this is the first sample, initialize it.
     const float alpha = 0.5f; // Smoothing factor (tweak as needed)
-    if (stats.sampleCount == 0) {
+    if (stats.sampleCount == 0) 
+    {
         stats.avgDt = dtMs;
-    } else {
+    } 
+    else 
+    {
         stats.avgDt = alpha * dtMs + (1.0f - alpha) * stats.avgDt;
     }
     
     // Update max dt if current dt is higher.
-    if (dtMs > stats.maxDt) {
+    if (dtMs > stats.maxDt) 
+    {
         stats.maxDt = dtMs;
     }
     
     // If this dt exceeds the desired period, count it as an overrun.
-    if (dtMicro > desiredPeriodMicro) {
+    if (dtMicro > desiredPeriodMicro * 1.1f) // add 10% buffer
+    {
         stats.overrunCount++;
     }
     

@@ -148,24 +148,29 @@ void loop()
     
     // Print transitions when they occur.
     if (currentState != lastState) {
-      switch (currentState) {
-          case PREFLIGHT:
-              Serial.println("Aircraft is in PREFLIGHT state.");
-              break;
-          case INFLIGHT:
-              Serial.println("Aircraft is in FLIGHT state.");
-              break;
-          case LANDED:
-              Serial.println("Aircraft has LANDED.");
-              break;
-          default:
-              break;
+        switch (currentState) {
+            case PREFLIGHT:
+                Serial.println("Aircraft is in PREFLIGHT state.");
+                arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
+                arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
+                break;
+            case INFLIGHT:
+                Serial.println("Aircraft is in FLIGHT state.");
+                break;
+            case LANDED:
+                Serial.println("Aircraft has LANDED.");
+                arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
+                arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
+                break;
+            default:
+                break;
       }
       lastState = currentState;
   }
 
   // Run the attitude test sequence only when in-flight.
-  if (currentState == INFLIGHT) {
+  if (currentState == INFLIGHT) 
+  {
       runAttitudeTest_wiggle(arduflite);
   }
 

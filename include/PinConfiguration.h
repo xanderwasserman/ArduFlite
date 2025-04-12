@@ -12,8 +12,8 @@
 namespace I2CConfig {
 
     // I2C pins for IMU
-    constexpr int I2C_SDA_PIN           = 8;
-    constexpr int I2C_SCL_PIN           = 9;
+    constexpr int I2C_SDA_PIN           = 21;
+    constexpr int I2C_SCL_PIN           = 22;
     constexpr int I2C_CLOCK_SPEED       = 400000; // Set I2C clock to 400 kHz.
 
 } // namespace I2CConfig

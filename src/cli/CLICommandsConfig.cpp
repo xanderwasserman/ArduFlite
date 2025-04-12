@@ -39,10 +39,10 @@ void cmdStats(const String &args) {
     // Retrieve and print stats.
     LoopStats outerStats = globalController->getOuterLoopStats();
     LoopStats innerStats = globalController->getInnerLoopStats();
-    Serial.printf("Outer Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, samples: %lu\n",
-                  outerStats.avgDt, outerStats.maxDt, outerStats.overrunCount, outerStats.sampleCount);
-    Serial.printf("Inner Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, samples: %lu\n",
-                  innerStats.avgDt, innerStats.maxDt, innerStats.overrunCount, innerStats.sampleCount);
+    Serial.printf("Outer Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu\n",
+                  outerStats.avgDt, outerStats.maxDt, outerStats.overrunCount, (outerStats.overrunCount/outerStats.sampleCount)*100);
+    Serial.printf("Inner Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu\n",
+                  innerStats.avgDt, innerStats.maxDt, innerStats.overrunCount, (innerStats.overrunCount/innerStats.sampleCount)*100);
 }
 
 void cmdTasks(const String &args) {

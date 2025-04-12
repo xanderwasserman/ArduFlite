@@ -9,18 +9,14 @@
 #include "src/tests/AttitudeTests.h"
 #include <Arduino.h>
 
-#define WIGGLE_ANGLE    30
-#define WIGGLE_TIME     3000 //3s
-
-void runAttitudeTest_wiggle(ArduFliteController &arduflite)
+void runAttitudeTest_wiggle(ArduFliteController &arduflite, float angle, float time)
 {
     static unsigned long lastSetpointUpdate = millis();
     unsigned long currentTime = millis();
     
-    if (currentTime - lastSetpointUpdate > WIGGLE_TIME) 
+    if (currentTime - lastSetpointUpdate > time) 
     {
         static int state = 0;
-        int angle = WIGGLE_ANGLE;
 
         switch (state) 
         {
@@ -31,7 +27,7 @@ void runAttitudeTest_wiggle(ArduFliteController &arduflite)
                 break;
             case 1:
                 arduflite.setDesiredEulerDegs(-2.0f, angle, 0.0f);
-                Serial.printf("Test: Roll +%d°\n", angle);
+                Serial.printf("Test: Roll +%f°\n", angle);
                 state++;
                 break;
             case 2:
@@ -41,7 +37,7 @@ void runAttitudeTest_wiggle(ArduFliteController &arduflite)
                 break;
             case 3:
                 arduflite.setDesiredEulerDegs(-2.0f, -angle, 0.0f);
-                Serial.printf("Test: Roll -%d°\n", angle);
+                Serial.printf("Test: Roll -%f°\n", angle);
                 state = 0;
                 break;
             default:

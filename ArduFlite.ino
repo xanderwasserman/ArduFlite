@@ -169,10 +169,10 @@ void loop()
   }
 
   // Run the attitude test sequence only when in-flight.
-  if (currentState == INFLIGHT) 
-  {
-      runAttitudeTest_wiggle(arduflite);
-  }
+//   if (currentState == INFLIGHT) 
+//   {
+//       runAttitudeTest_wiggle(arduflite, 15, 2000);
+//   }
 
   // runReceiverTest_print(pilotReceiver, numReceiverChannels);
     

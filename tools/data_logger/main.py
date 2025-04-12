@@ -124,7 +124,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("Flight Data Logger")
         # For touchscreen devices, starting in full screen can be useful.
         self.showFullScreen()
-        # Alternatively, you can use fixed size:
+        # Alternatively, you can use a fixed size:
         # self.resize(800, 600)
         
         # Central widget and layout with padding for touch.
@@ -146,7 +146,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ledLayout.addWidget(self.dataLabel)
         layout.addLayout(ledLayout)
 
-        # Logging button with bigger touch area and appropriate colors
+        # Logging button with bigger touch area and appropriate colors.
         self.logButton = QtWidgets.QPushButton("Start Logging")
         self.logButton.setMinimumSize(150, 100)  # Increased button size for touch
         # Initial style: green background for "start logging"
@@ -154,7 +154,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.logButton)
         self.logButton.clicked.connect(self.toggle_logging)
 
-        # Timers for UI update and logging
+        # Timers for UI update and logging.
         self.uiTimer = QtCore.QTimer(self)
         self.uiTimer.timeout.connect(self.update_ui)
         self.uiTimer.start(500)
@@ -208,6 +208,8 @@ class MainWindow(QtWidgets.QMainWindow):
 # ----- Main -----
 def main():
     app = QtWidgets.QApplication(sys.argv)
+    # Force a style that respects the stylesheet (Fusion is a common choice).
+    app.setStyle("Fusion")
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())

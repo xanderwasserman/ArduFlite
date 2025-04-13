@@ -235,6 +235,8 @@ void ArduFliteController::OuterLoopTask(void* parameters)
             FliteQuaternion currentQ = controller->imu->getQuaternion();
             controller->attitudeCtrl->update(currentQ, dt, rollRateCmd, pitchRateCmd, yawRateCmd);
 
+            yawRateCmd   = 0; //! This is so that the yaw is not influenced by the attitude controller, but only by the rate controller. We just want to go in a straight line for now.
+
             xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
             controller->lastRollRateCmd  = rollRateCmd;
             controller->lastPitchRateCmd = pitchRateCmd;
@@ -246,8 +248,7 @@ void ArduFliteController::OuterLoopTask(void* parameters)
             // In Stabilized mode, use pilot-provided rate setpoints.
             rollRateCmd  = localPilotRoll;
             pitchRateCmd = localPilotPitch;
-            // yawRateCmd   = localPilotYaw; //!commented out as we don't have a heading reference, so rather just react to gyro
-            yawRateCmd   = 0;
+            yawRateCmd   = localPilotYaw;
 
             xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
             controller->lastRollRateCmd  = rollRateCmd;

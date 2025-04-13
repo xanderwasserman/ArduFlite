@@ -9,7 +9,7 @@ def main():
     data_store = DataStore(window_seconds=30)
 
     # Initialize the MQTT client with the broker address and port.
-    mqtt_client = MqttClient("192.168.100.14", 1883, data_store)
+    mqtt_client = MqttClient("bananapi", 1883, data_store)
     mqtt_client.connect()
 
     # Start the Qt application.

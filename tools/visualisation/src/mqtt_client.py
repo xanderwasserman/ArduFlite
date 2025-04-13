@@ -26,25 +26,27 @@ class MqttClient:
         Subscribe to all required topics.
         """
         topics = [
-            ("arduflite/quaternion/w", 0),
-            ("arduflite/quaternion/x", 0),
-            ("arduflite/quaternion/y", 0),
-            ("arduflite/quaternion/z", 0),
-            ("arduflite/accel/x", 0),
-            ("arduflite/accel/y", 0),
-            ("arduflite/accel/z", 0),
-            ("arduflite/gyro/x", 0),
-            ("arduflite/gyro/y", 0),
-            ("arduflite/gyro/z", 0),
-            ("arduflite/orientation/pitch", 0),
-            ("arduflite/orientation/roll", 0),
-            ("arduflite/orientation/yaw", 0),
-            ("arduflite/command_rate/rollRateCmd", 0),
-            ("arduflite/command_rate/pitchRateCmd", 0),
-            ("arduflite/command_rate/yawRateCmd", 0),
-            ("arduflite/command_servo/rollCmd", 0),
-            ("arduflite/command_servo/pitchCmd", 0),
-            ("arduflite/command_servo/yawCmd", 0)
+            ("arduflite/imu/quaternion/w", 0),
+            ("arduflite/imu/quaternion/x", 0),
+            ("arduflite/imu/quaternion/y", 0),
+            ("arduflite/imu/quaternion/z", 0),
+            ("arduflite/imu/accel/x", 0),
+            ("arduflite/imu/accel/y", 0),
+            ("arduflite/imu/accel/z", 0),
+            ("arduflite/imu/gyro/x", 0),
+            ("arduflite/imu/gyro/y", 0),
+            ("arduflite/imu/gyro/z", 0),
+            ("arduflite/imu/barometer/altitude", 0),
+            ("arduflite/imu/flight/state", 0),
+            ("arduflite/imu/orientation/pitch", 0),
+            ("arduflite/imu/orientation/roll", 0),
+            ("arduflite/imu/orientation/yaw", 0),
+            ("arduflite/controller/attitude/roll", 0),
+            ("arduflite/controller/attitude/pitch", 0),
+            ("arduflite/controller/attitude/yaw", 0),
+            ("arduflite/controller/rate/roll", 0),
+            ("arduflite/controller/rate/pitch", 0),
+            ("arduflite/controller/rate/yaw", 0)
         ]
         for topic, qos in topics:
             client.subscribe(topic, qos)
@@ -64,11 +66,18 @@ class MqttClient:
         # Split topic "arduflite/category/variable" into its parts.
         parts = topic.split('/')
         if len(parts) < 3:
+            print("Too few message parts!")
             return
 
         # parts[0] is "arduflite", parts[1] is the category, parts[2] is the variable.
-        category = parts[1]
-        variable = parts[2]
+        category = parts[2]
+        variable = parts[3]
         # Update the corresponding category in the data store.
         if category in self.data_store.data:
             self.data_store.update(category, variable, value)
+        else:
+            print(f"Item not in data store: {category}:{variable}")
+            
+    def publish_command(self, topic, payload):
+        self.client.publish(topic, payload)
+

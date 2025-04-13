@@ -388,17 +388,17 @@ class AircraftVisualizer(gl.GLViewWidget):
 
             # Get command values (default to 0 if not available)
             # Commands are in the range -1 to 1; scale them so that ±1 is 90° deflection.
-            rollCmd = self.data_store.data["command_servo"]["rollCmd"] or 0.0
-            pitchCmd = self.data_store.data["command_servo"]["pitchCmd"] or 0.0
-            yawCmd = self.data_store.data["command_servo"]["yawCmd"] or 0.0
+            rate_controller_roll = self.data_store.data["rate"]["roll"] or 0.0
+            rate_controller_pitch = self.data_store.data["rate"]["pitch"] or 0.0
+            rate_controller_yaw = self.data_store.data["rate"]["yaw"] or 0.0
 
             max_deflection = np.radians(90)  # 90° maximum for all control surfaces
 
             # Compute actual deflection angles.
-            left_aileron_angle = -rollCmd * max_deflection
-            right_aileron_angle = rollCmd * max_deflection
-            elevator_angle = -pitchCmd * max_deflection
-            rudder_angle = yawCmd * max_deflection
+            left_aileron_angle = -rate_controller_roll * max_deflection
+            right_aileron_angle = rate_controller_roll * max_deflection
+            elevator_angle = -rate_controller_pitch * max_deflection
+            rudder_angle = rate_controller_yaw * max_deflection
 
             # Update left aileron.
             # Hinge at the trailing edge of the left wing (x = 0.0).

@@ -43,6 +43,7 @@ void printControlLoopStats();
 void onCalibrateHold();
 void onModeDoubleTap();
 void onResetTripleTap();
+void resetSystemCommand();
 
 // Global telemetry objects.
 TelemetryData               telemetryData;
@@ -84,56 +85,58 @@ MultiTapButton modeButton(ButtonInputConfig::USER_BUTTON_PIN, 1000, 2, onModeDou
 
 void setup() 
 {
-  Serial.begin(115200);
-  while (!Serial);
+    Serial.begin(115200);
+    while (!Serial);
 
-  pinMode(ButtonInputConfig::USER_BUTTON_PIN, INPUT_PULLUP);
+    pinMode(ButtonInputConfig::USER_BUTTON_PIN, INPUT_PULLUP);
 
-  servoMgr.testControlSurfaces();
+    servoMgr.testControlSurfaces();
 
-  telemetry.begin();
-  // debugTelemetry.begin();
+    telemetry.registerCalibrateCallback(onCalibrateHold);
+    telemetry.registerResetCallback(resetSystemCommand);
+    telemetry.begin();
+    // debugTelemetry.begin();
 
-  // Initialize the IMU.
-  if (!myIMU.begin()) 
-  {
-      Serial.println("IMU failed to init!");
-      while (1);
-  }
+    // Initialize the IMU.
+    if (!myIMU.begin()) 
+    {
+        Serial.println("IMU failed to init!");
+        while (1);
+    }
 
-  // Start with a level attitude (Assist mode).
-  arduflite.setDesiredEulerDegs(-1.0f, 0.0f, 0.0f);
-  arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
+    // Start with a level attitude (Assist mode).
+    arduflite.setDesiredEulerDegs(-1.0f, 0.0f, 0.0f);
+    arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
 
-  // Set the mode (default is ASSIST_MODE).
-  arduflite.setMode(ASSIST_MODE);
+    // Set the mode (default is ASSIST_MODE).
+    arduflite.setMode(ASSIST_MODE);
 
-  // Start the overall control tasks.
-  arduflite.startTasks();
+    // Start the overall control tasks.
+    arduflite.startTasks();
 
-  // Start the PWM signal receiver.
-  pilotReceiver.begin();
+    // Start the PWM signal receiver.
+    pilotReceiver.begin();
 
-  // Start the CLI task.
-  myCLI.startTask();
+    // Start the CLI task.
+    myCLI.startTask();
 
-  // Initialize and register buttons.
-  calibrateButton.begin();
-  resetButton.begin();
-  modeButton.begin();
+    // Initialize and register buttons.
+    calibrateButton.begin();
+    resetButton.begin();
+    modeButton.begin();
 
-  Serial.println("Available Button Functions:");
+    Serial.println("Available Button Functions:");
 
-  HoldButtonManager::registerButton(calibrateButton);
-  Serial.println("  3s hold - calibrate IMU.");
+    HoldButtonManager::registerButton(calibrateButton);
+    Serial.println("  3s hold - calibrate IMU.");
 
-  MultiTapButtonManager::registerButton(resetButton);
-  Serial.println("  3x tap - reset telemetry layer.");
+    MultiTapButtonManager::registerButton(resetButton);
+    Serial.println("  3x tap - reset telemetry layer.");
 
-  MultiTapButtonManager::registerButton(modeButton);
-  Serial.println("  2x tap - toggle ArduFlite Mode.");
+    MultiTapButtonManager::registerButton(modeButton);
+    Serial.println("  2x tap - toggle ArduFlite Mode.");
 
-  Serial.println("ArduFlite Controller initialised.");
+    Serial.println("ArduFlite Controller initialised.");
 }
 
 void loop() 
@@ -147,8 +150,10 @@ void loop()
     FlightState currentState = myIMU.getFlightState();
     
     // Print transitions when they occur.
-    if (currentState != lastState) {
-        switch (currentState) {
+    if (currentState != lastState) 
+    {
+        switch (currentState) 
+        {
             case PREFLIGHT:
                 Serial.println("Aircraft is in PREFLIGHT state.");
                 arduflite.setDesiredEulerDegs(-1.0f, 0.0f, 0.0f);
@@ -156,6 +161,7 @@ void loop()
                 break;
             case INFLIGHT:
                 Serial.println("Aircraft is in FLIGHT state.");
+                // TODO: when entering flight, set the current heading as the yaw setpoint
                 break;
             case LANDED:
                 Serial.println("Aircraft has LANDED.");
@@ -164,27 +170,31 @@ void loop()
                 break;
             default:
                 break;
-      }
-      lastState = currentState;
-  }
+        }
+        lastState = currentState;
+    }
 
-  // Run the attitude test sequence only when in-flight.
-//   if (currentState == INFLIGHT) 
-//   {
-//       runAttitudeTest_wiggle(arduflite, 15, 2000);
-//   }
+    /* //TODO
+    // Run the attitude test sequence only when in-flight.
+    if (currentState == INFLIGHT) 
+    {
+        runAttitudeTest_wiggle(arduflite, 15, 2000);
+    }
+    */
 
-  // runReceiverTest_print(pilotReceiver, numReceiverChannels);
-    
-  // Update telemetry with the latest sensor and control information.
-  telemetryData.update(myIMU,
-                        arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(),
-                        arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd(),
-                        currentState);
+    /* //TODO
+    runReceiverTest_print(pilotReceiver, numReceiverChannels);
+    */
+        
+    // Update telemetry with the latest sensor and control information.
+    telemetryData.update(myIMU,
+                            arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(),
+                            arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd(),
+                            currentState);
 
-  telemetry.publish(telemetryData);
+    telemetry.publish(telemetryData);
 
-  vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 // Callback for calibrate button.
@@ -219,4 +229,10 @@ void onResetTripleTap()
 {
     Serial.println("Resetting Telemetry layer...");
     telemetry.reset();
+}
+
+void resetSystemCommand() 
+{
+    Serial.println("Executing reset callback...");
+    ESP.restart();
 }

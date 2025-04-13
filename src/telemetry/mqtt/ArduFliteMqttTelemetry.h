@@ -23,8 +23,15 @@ public:
     void begin() override;
     void publish(const TelemetryData& data) override;
     void reset() override;
+    void registerCalibrateCallback(CommandCallback callback) override;
+    void registerResetCallback(CommandCallback callback) override;
 
 private:
+    static ArduFliteMqttTelemetry* instance;
+
+    CommandCallback calibrateCallback = nullptr;
+    CommandCallback resetCallback = nullptr;
+
     // This single task will do WiFi setup + telemetry loop
     static void telemetryTask(void* pvParameters);
 
@@ -59,4 +66,5 @@ private:
     // Use Preferences to load/save custom MQTT settings
     void loadPreferences();
     void savePreferences();
+    static void mqttCallback(char* topic, byte* payload, unsigned int length);
 };

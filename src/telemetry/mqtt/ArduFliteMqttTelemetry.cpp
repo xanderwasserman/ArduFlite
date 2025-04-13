@@ -9,6 +9,8 @@
 #include "ArduFliteMqttTelemetry.h"
 #include <Arduino.h>
 
+ArduFliteMqttTelemetry* ArduFliteMqttTelemetry::instance = nullptr;
+
 ArduFliteMqttTelemetry::ArduFliteMqttTelemetry(float frequencyHz)
   : custom_mqtt_server("server", "MQTT Server", mqttServer.c_str(), 40)
   , custom_mqtt_port("port", "MQTT Port", String(mqttPort).c_str(), 6)
@@ -28,13 +30,20 @@ ArduFliteMqttTelemetry::ArduFliteMqttTelemetry(float frequencyHz)
     custom_mqtt_port.setValue(String(mqttPort).c_str(), 6);
     custom_mqtt_user.setValue(mqttUser.c_str(), 32);
     custom_mqtt_pass.setValue(mqttPass.c_str(), 32);
+
+    instance = this;
 }
 
-void ArduFliteMqttTelemetry::begin() {
+void ArduFliteMqttTelemetry::begin() 
+{
      // If the task is already running, do nothing
-     if (taskHandle) {
+     if (taskHandle) 
+     {
         return;
     }
+
+    // Set the MQTT callback for incoming messages.
+    mqttClient.setCallback(mqttCallback);
 
     // Create the FreeRTOS task that will handle WiFi + MQTT
     BaseType_t result = xTaskCreate(
@@ -46,43 +55,63 @@ void ArduFliteMqttTelemetry::begin() {
         &taskHandle    // store the handle
     );
 
-    if (result != pdPASS) {
+    if (result != pdPASS) 
+    {
         Serial.println("Failed to create MqttTelemetryTask!");
     }
 }
 
-void ArduFliteMqttTelemetry::publish(const TelemetryData& data) {
+void ArduFliteMqttTelemetry::publish(const TelemetryData& data) 
+{
     // Store new data to a local buffer (pendingData),
     // so the telemetryTask can publish it in the background
-    if (telemetryMutex && xSemaphoreTake(telemetryMutex, 10) == pdTRUE) {
+    if (telemetryMutex && xSemaphoreTake(telemetryMutex, 10) == pdTRUE) 
+    {
         pendingData = data; 
         xSemaphoreGive(telemetryMutex);
     }
 }
 
-void ArduFliteMqttTelemetry::connectToMqtt() {
-    if (!mqttClient.connected()) {
+void ArduFliteMqttTelemetry::connectToMqtt() 
+{
+    if (!mqttClient.connected()) 
+    {
         Serial.printf("Connecting to MQTT with credentials:\nBroker: %s\nPort: %d\nUsername: %s\nPassword: %s\n", mqttServer.c_str(), mqttPort, mqttUser.c_str(), mqttPass.c_str());
-        if (mqttUser.length() > 0) {
-            if (mqttClient.connect("ArduFlite", mqttUser.c_str(), mqttPass.c_str())) {
+        if (mqttUser.length() > 0) 
+        {
+            if (mqttClient.connect("ArduFlite", mqttUser.c_str(), mqttPass.c_str())) 
+            {
                 Serial.println("connected with auth");
-            } else {
+            } 
+            else 
+            {
                 Serial.print("failed, rc=");
                 Serial.println(mqttClient.state());
             }
-        } else {
+        } 
+        else 
+        {
             // No user/pass
-            if (mqttClient.connect("ArduFlite")) {
+            if (mqttClient.connect("ArduFlite")) 
+            {
                 Serial.println("connected");
-            } else {
+            } 
+            else 
+            {
                 Serial.print("failed, rc=");
                 Serial.println(mqttClient.state());
             }
         }
+
+        // Subscribe to command topics after connection.
+        mqttClient.subscribe("arduflite/command/reset");
+        mqttClient.subscribe("arduflite/command/calibrate");
+
     }
 }
 
-void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters) {
+void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters) 
+{
     auto* self = static_cast<ArduFliteMqttTelemetry*>(pvParameters);
 
     // ----------------------
@@ -108,7 +137,8 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters) {
     // self->wifiManager.setConfigPortalTimeout(30); // e.g. 30s
 
     // Attempt to connect or open the config portal
-    if (!localManager.autoConnect("ArduFliteAP")) {
+    if (!localManager.autoConnect("ArduFliteAP")) 
+    {
         Serial.println("WiFi connection failed. Telemetry task will exit.");
         // If we want the task to keep trying, we could do a loop. Otherwise, stop.
         vTaskDelete(nullptr); // kill this task
@@ -135,7 +165,8 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters) {
     // ----------------------
     // 2) Main publish loop
     // ----------------------
-    while(true) {
+    while(true) 
+    {
         unsigned long startMillis = millis();
 
         // Make sure MQTT is connected
@@ -143,13 +174,15 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters) {
 
         TelemetryData localCopy;
         // Copy data under mutex
-        if (xSemaphoreTake(self->telemetryMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        if (xSemaphoreTake(self->telemetryMutex, pdMS_TO_TICKS(50)) == pdTRUE) 
+        {
             localCopy = self->pendingData;
             xSemaphoreGive(self->telemetryMutex);
         }
 
         // Publish it
-        if (self->mqttClient.connected()) {
+        if (self->mqttClient.connected()) 
+        {
             // You could optionally check return codes if needed
             self->mqttClient.publish("arduflite/imu/flight/state", String(localCopy.flight_state, 3).c_str());
             self->mqttClient.publish("arduflite/imu/barometer/altitude", String(localCopy.altitude, 3).c_str());
@@ -202,7 +235,8 @@ void ArduFliteMqttTelemetry::reset()
     wifiManager.resetSettings(); 
 
     // Stop the current telemetry task if running
-    if (taskHandle) {
+    if (taskHandle) 
+    {
         vTaskDelete(taskHandle);
         taskHandle = nullptr;
     }
@@ -217,7 +251,8 @@ void ArduFliteMqttTelemetry::reset()
 void ArduFliteMqttTelemetry::loadPreferences()
 {
     Preferences prefs;
-    if (!prefs.begin(PREF_NAMESPACE, true)) { // read-only mode
+    if (!prefs.begin(PREF_NAMESPACE, true))// read-only mode
+    { 
         Serial.println("[MQTT] Preferences not found, using defaults");
         return;
     }
@@ -236,7 +271,8 @@ void ArduFliteMqttTelemetry::loadPreferences()
 void ArduFliteMqttTelemetry::savePreferences()
 {
     Preferences prefs;
-    if (!prefs.begin(PREF_NAMESPACE, false)) { // read/write
+    if (!prefs.begin(PREF_NAMESPACE, false)) // read/write
+    { 
         Serial.println("[MQTT] Failed to open prefs for writing");
         return;
     }
@@ -248,4 +284,58 @@ void ArduFliteMqttTelemetry::savePreferences()
     prefs.end();
 
     Serial.println("[MQTT] Saved new config to NVS");
+}
+
+void ArduFliteMqttTelemetry::registerCalibrateCallback(CommandCallback callback) 
+{
+    calibrateCallback = callback;
+}
+
+void ArduFliteMqttTelemetry::registerResetCallback(CommandCallback callback) 
+{
+    resetCallback = callback;
+}
+
+// Static MQTT callback using the encapsulated instance.
+void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned int length) 
+{
+    if (instance == nullptr)
+        return;
+    
+    String message;
+    for (unsigned int i = 0; i < length; i++) 
+    {
+        message += (char)payload[i];
+    }
+    message.trim();
+
+    Serial.print("Received on ");
+    Serial.print(topic);
+    Serial.print(": ");
+    Serial.println(message);
+
+    if (message.equals("1")) 
+    {
+        String topicStr(topic);
+        topicStr.toLowerCase();
+        if (topicStr == "arduflite/command/reset") 
+        {
+            Serial.println("Reset command received.");
+            if (instance->resetCallback) 
+            {
+                instance->resetCallback();
+            } 
+            else 
+            {
+                ESP.restart();
+            }
+        } else if (topicStr == "arduflite/command/calibrate") 
+        {
+            Serial.println("Calibrate command received.");
+            if (instance->calibrateCallback) 
+            {
+                instance->calibrateCallback();
+            }
+        }
+    }
 }

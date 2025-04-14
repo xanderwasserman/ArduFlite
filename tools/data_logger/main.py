@@ -28,8 +28,8 @@ TOPIC_MAPPING = {
     "arduflite/controller/attitude/roll": "rate_controller_out_roll",
     "arduflite/ccontroller/attitude/pitch": "rate_controller_out_pitch",
     "arduflite/controller/attitude/yaw": "rate_controller_out_yaw",
-    "arduflite/flight/altitude": "flight_altitude",
-    "arduflite/flight/state": "flight_state"
+    "arduflite/imu/barometer/altitude": "flight_altitude",
+    "arduflite/imu/flight/state": "flight_state"
 }
 
 CSV_ORDER = ["timestamp", "quaternion_w", "quaternion_x", "quaternion_y", "quaternion_z",
@@ -154,6 +154,23 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.logButton)
         self.logButton.clicked.connect(self.toggle_logging)
 
+        # Create a horizontal layout for the additional command buttons.
+        commandLayout = QtWidgets.QHBoxLayout()
+        
+        self.resetButton = QtWidgets.QPushButton("Reset")
+        self.resetButton.setMinimumSize(150, 75)
+        self.resetButton.setStyleSheet("background-color: lightgray; font-size: 18px; padding: 10px;")
+        self.resetButton.clicked.connect(self.publish_reset)
+        commandLayout.addWidget(self.resetButton)
+        
+        self.calibrateButton = QtWidgets.QPushButton("Calibrate")
+        self.calibrateButton.setMinimumSize(150, 75)
+        self.calibrateButton.setStyleSheet("background-color: lightgray; font-size: 18px; padding: 10px;")
+        self.calibrateButton.clicked.connect(self.publish_calibrate)
+        commandLayout.addWidget(self.calibrateButton)
+        
+        layout.addLayout(commandLayout)
+
         # Timers for UI update and logging.
         self.uiTimer = QtCore.QTimer(self)
         self.uiTimer.timeout.connect(self.update_ui)
@@ -204,6 +221,16 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.dataLabel.setText("Data: No Recent Data")
             self.dataLabel.setStyleSheet("color: gray;")
+    
+    def publish_reset(self):
+        # Publish a payload of "1" to the reset topic.
+        self.mqttClient.client.publish("arduflite/command/reset", "1")
+        print("Reset command published.")
+    
+    def publish_calibrate(self):
+        # Publish a payload of "1" to the calibrate topic.
+        self.mqttClient.client.publish("arduflite/command/calibrate", "1")
+        print("Calibrate command published.")
 
 # ----- Main -----
 def main():

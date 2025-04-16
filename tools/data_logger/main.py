@@ -148,13 +148,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Logging button with bigger touch area and appropriate colors.
         self.logButton = QtWidgets.QPushButton("Start Logging")
-        self.logButton.setMinimumSize(150, 100)  # Increased button size for touch
-        # Initial style: green background for "start logging"
+        self.logButton.setMinimumSize(150, 100)
         self.logButton.setStyleSheet("background-color: green; font-size: 20px; padding: 15px;")
         layout.addWidget(self.logButton)
         self.logButton.clicked.connect(self.toggle_logging)
 
-        # Create a horizontal layout for the additional command buttons.
+        # Create a horizontal layout for the command buttons.
         commandLayout = QtWidgets.QHBoxLayout()
         
         self.resetButton = QtWidgets.QPushButton("Reset")
@@ -170,6 +169,16 @@ class MainWindow(QtWidgets.QMainWindow):
         commandLayout.addWidget(self.calibrateButton)
         
         layout.addLayout(commandLayout)
+        
+        # Add a toggle button for switching modes ("Assist" and "Stabilised").
+        self.modeToggleButton = QtWidgets.QPushButton("Assist")
+        self.modeToggleButton.setMinimumSize(150, 75)
+        # Initial style for Assist mode.
+        self.modeToggleButton.setStyleSheet("background-color: lightblue; font-size: 18px; padding: 10px;")
+        self.modeToggleButton.clicked.connect(self.toggle_mode)
+        layout.addWidget(self.modeToggleButton)
+        # Current mode state. "Assist" publishes payload 1; "Stabilised" publishes payload 2.
+        self.currentMode = "Assist"
 
         # Timers for UI update and logging.
         self.uiTimer = QtCore.QTimer(self)
@@ -190,12 +199,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self.dataLogger.recording:
             self.dataLogger.start()
             self.logButton.setText("Stop Logging")
-            # Change to red background when logging is active.
             self.logButton.setStyleSheet("background-color: red; font-size: 20px; padding: 15px;")
         else:
             self.dataLogger.stop()
             self.logButton.setText("Start Logging")
-            # Change to green background when logging has stopped.
             self.logButton.setStyleSheet("background-color: green; font-size: 20px; padding: 15px;")
 
     def record_data(self):
@@ -223,19 +230,33 @@ class MainWindow(QtWidgets.QMainWindow):
             self.dataLabel.setStyleSheet("color: gray;")
     
     def publish_reset(self):
-        # Publish a payload of "1" to the reset topic.
         self.mqttClient.client.publish("arduflite/command/reset", "1")
         print("Reset command published.")
     
     def publish_calibrate(self):
-        # Publish a payload of "1" to the calibrate topic.
         self.mqttClient.client.publish("arduflite/command/calibrate", "1")
         print("Calibrate command published.")
+    
+    def toggle_mode(self):
+        # Toggle between "Assist" and "Stabilised"
+        if self.currentMode == "Assist":
+            # Change to Stabilised mode.
+            self.currentMode = "Stabilised"
+            self.modeToggleButton.setText("Stabilised")
+            self.modeToggleButton.setStyleSheet("background-color: yellow; font-size: 18px; padding: 10px;")
+            self.mqttClient.client.publish("arduflite/command/mode", "2")
+            print("Mode changed to Stabilised, published payload 2.")
+        else:
+            # Change to Assist mode.
+            self.currentMode = "Assist"
+            self.modeToggleButton.setText("Assist")
+            self.modeToggleButton.setStyleSheet("background-color: blue; font-size: 18px; padding: 10px;")
+            self.mqttClient.client.publish("arduflite/command/mode", "1")
+            print("Mode changed to Assist, published payload 1.")
 
 # ----- Main -----
 def main():
     app = QtWidgets.QApplication(sys.argv)
-    # Force a style that respects the stylesheet (Fusion is a common choice).
     app.setStyle("Fusion")
     window = MainWindow()
     window.show()

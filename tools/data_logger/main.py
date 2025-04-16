@@ -148,7 +148,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Logging button with bigger touch area and appropriate colors.
         self.logButton = QtWidgets.QPushButton("Start Logging")
-        self.logButton.setMinimumSize(150, 100)
+        self.logButton.setMinimumSize(100, 75)
         self.logButton.setStyleSheet("background-color: green; font-size: 20px; padding: 15px;")
         layout.addWidget(self.logButton)
         self.logButton.clicked.connect(self.toggle_logging)
@@ -157,13 +157,13 @@ class MainWindow(QtWidgets.QMainWindow):
         commandLayout = QtWidgets.QHBoxLayout()
         
         self.resetButton = QtWidgets.QPushButton("Reset")
-        self.resetButton.setMinimumSize(150, 75)
+        self.resetButton.setMinimumSize(100, 50)
         self.resetButton.setStyleSheet("background-color: lightgray; font-size: 18px; padding: 10px;")
         self.resetButton.clicked.connect(self.publish_reset)
         commandLayout.addWidget(self.resetButton)
         
         self.calibrateButton = QtWidgets.QPushButton("Calibrate")
-        self.calibrateButton.setMinimumSize(150, 75)
+        self.calibrateButton.setMinimumSize(100, 50)
         self.calibrateButton.setStyleSheet("background-color: lightgray; font-size: 18px; padding: 10px;")
         self.calibrateButton.clicked.connect(self.publish_calibrate)
         commandLayout.addWidget(self.calibrateButton)
@@ -172,7 +172,7 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Add a toggle button for switching modes ("Assist" and "Stabilised").
         self.modeToggleButton = QtWidgets.QPushButton("Assist")
-        self.modeToggleButton.setMinimumSize(150, 75)
+        self.modeToggleButton.setMinimumSize(100, 50)
         # Initial style for Assist mode.
         self.modeToggleButton.setStyleSheet("background-color: lightblue; font-size: 18px; padding: 10px;")
         self.modeToggleButton.clicked.connect(self.toggle_mode)

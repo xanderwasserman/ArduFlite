@@ -10,7 +10,6 @@
 
 #include "src/telemetry/TelemetryData.h"
 
-typedef void (*CommandCallback)();
 class ArduFliteTelemetry {
 public:
     virtual ~ArduFliteTelemetry() {}
@@ -24,14 +23,4 @@ public:
     // Allows resetting or reconfiguration
     // (default is empty if a derived class doesn't need it)
     virtual void reset() {}
-
-    /**
-     * @brief Registers a callback for the calibrate command.
-     */
-    virtual void registerCalibrateCallback(CommandCallback callback) {}
-
-    /**
-     * @brief Registers a callback for the reset command.
-     */
-    virtual void registerResetCallback(CommandCallback callback) {}
 };

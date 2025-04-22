@@ -11,12 +11,13 @@
 
 ArduFliteMqttTelemetry* ArduFliteMqttTelemetry::instance = nullptr;
 
-ArduFliteMqttTelemetry::ArduFliteMqttTelemetry(float frequencyHz)
+ArduFliteMqttTelemetry::ArduFliteMqttTelemetry(float frequencyHz, CommandSystem* cmdSys)
   : custom_mqtt_server("server", "MQTT Server", mqttServer.c_str(), 40)
   , custom_mqtt_port("port", "MQTT Port", String(mqttPort).c_str(), 6)
   , custom_mqtt_user("user", "MQTT Username", mqttUser.c_str(), 32)
   , custom_mqtt_pass("pass", "MQTT Password", mqttPass.c_str(), 32)
-  , mqttClient(wifiClient)  // also call the PubSubClient ctor
+  , mqttClient(wifiClient)
+  , _cmdSys(cmdSys)
 {
     intervalMs = (1.0f / frequencyHz) * 1000.0f;
 
@@ -106,6 +107,7 @@ void ArduFliteMqttTelemetry::connectToMqtt()
         // Subscribe to command topics after connection.
         mqttClient.subscribe("arduflite/command/reset");
         mqttClient.subscribe("arduflite/command/calibrate");
+        mqttClient.subscribe("arduflite/command/mode");
 
     }
 }
@@ -286,22 +288,11 @@ void ArduFliteMqttTelemetry::savePreferences()
     Serial.println("[MQTT] Saved new config to NVS");
 }
 
-void ArduFliteMqttTelemetry::registerCalibrateCallback(CommandCallback callback) 
-{
-    calibrateCallback = callback;
-}
-
-void ArduFliteMqttTelemetry::registerResetCallback(CommandCallback callback) 
-{
-    resetCallback = callback;
-}
-
-// Static MQTT callback using the encapsulated instance.
+// Static MQTT callback for subscribed messages.
 void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned int length) 
 {
-    if (instance == nullptr)
-        return;
-    
+    if (!instance) return;
+
     String message;
     for (unsigned int i = 0; i < length; i++) 
     {
@@ -309,33 +300,53 @@ void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned i
     }
     message.trim();
 
-    Serial.print("Received on ");
-    Serial.print(topic);
-    Serial.print(": ");
-    Serial.println(message);
+    // Convert the topic to a String and to lower-case for case-insensitive comparison.
+    String topicStr(topic);
+    topicStr.toLowerCase();
+    
+    Serial.printf("Received on topic: %s: %s\n",topicStr, message);
 
-    if (message.equals("1")) 
+    if (topicStr =="arduflite/command/reset")
     {
-        String topicStr(topic);
-        topicStr.toLowerCase();
-        if (topicStr == "arduflite/command/reset") 
+        // For reset, check if payload equals "1".
+        if (message.equals("1")) 
         {
-            Serial.println("Reset command received.");
-            if (instance->resetCallback) 
-            {
-                instance->resetCallback();
-            } 
-            else 
-            {
-                ESP.restart();
-            }
-        } else if (topicStr == "arduflite/command/calibrate") 
-        {
-            Serial.println("Calibrate command received.");
-            if (instance->calibrateCallback) 
-            {
-                instance->calibrateCallback();
-            }
+            instance->pushSystemCommand(CMD_RESET);
         }
     }
+    else if (topicStr == "arduflite/command/calibrate")
+    {
+        // For calibrate, check if payload equals "1".
+        if (message.equals("1")) 
+        {
+            Serial.println("Calibrate command received.");
+            instance->pushSystemCommand(CMD_CALIBRATE);
+        }
+    }
+    else if (topicStr == "arduflite/command/mode")
+    {
+        // For mode command, convert payload to integer and switch.
+        int modeValue = message.toInt();
+        switch (modeValue) 
+        {
+            case 1:
+                Serial.println("Mode command received: Setting mode to ASSIST_MODE.");
+                instance->pushSystemCommand(CMD_MODE_ASSIST);
+                break;
+            case 2:
+                Serial.println("Mode command received: Setting mode to STABILIZED_MODE.");
+                instance->pushSystemCommand(CMD_MODE_STABILIZED);
+                break;
+            default:
+                Serial.println("Unknown mode command payload.");
+                break;
+        }
+    }
+}
+
+void ArduFliteMqttTelemetry::pushSystemCommand(SystemCommandType type) 
+{
+    if (!_cmdSys) return;
+    SystemCommand cmd{ type };
+    _cmdSys->pushCommand(cmd);
 }

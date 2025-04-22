@@ -14,24 +14,20 @@
 #include <Preferences.h>
 #include "src/telemetry/ArduFliteTelemetry.h"
 #include "src/telemetry/TelemetryData.h"
+#include "src/utils/CommandSystem.h"
+#include "src/controller/ArduFliteController.h"
 
 class ArduFliteMqttTelemetry : public ArduFliteTelemetry {
 public:
-    ArduFliteMqttTelemetry(float frequencyHz = 10.0f);
+    ArduFliteMqttTelemetry(float frequencyHz, CommandSystem* cmdSys);
     virtual ~ArduFliteMqttTelemetry() {}
 
     void begin() override;
     void publish(const TelemetryData& data) override;
     void reset() override;
-    void registerCalibrateCallback(CommandCallback callback) override;
-    void registerResetCallback(CommandCallback callback) override;
 
 private:
     static ArduFliteMqttTelemetry* instance;
-
-    CommandCallback calibrateCallback = nullptr;
-    CommandCallback resetCallback = nullptr;
-
     // This single task will do WiFi setup + telemetry loop
     static void telemetryTask(void* pvParameters);
 
@@ -60,6 +56,9 @@ private:
     SemaphoreHandle_t telemetryMutex = nullptr;
     TelemetryData     pendingData;
 
+    // Pointer to the shared command‐queue
+    CommandSystem* _cmdSys;    
+
     // FreeRTOS Task handle so we can kill/restart it on reset()
     TaskHandle_t      taskHandle     = nullptr;
 
@@ -67,4 +66,5 @@ private:
     void loadPreferences();
     void savePreferences();
     static void mqttCallback(char* topic, byte* payload, unsigned int length);
+    void pushSystemCommand(SystemCommandType type);
 };

@@ -22,10 +22,16 @@
 #include <Arduino.h>
 
 #include "include/ArduFlite.h"
+#include "include/ReceiverConfiguration.h"
+#include "include/PinConfiguration.h"
+#include "include/ControllerConfiguration.h"
+#include "include/ServoConfiguration.h"
+
 #include "src/utils/HoldButton.h"
 #include "src/utils/HoldButtonManager.h"
 #include "src/utils/MultiTapButton.h"
 #include "src/utils/MultiTapButtonManager.h"
+#include "src/utils/CommandSystem.h"
 #include "src/actuators/ServoManager.h"
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/controller/ArduFliteAttitudeController.h"
@@ -45,40 +51,33 @@ void onModeDoubleTap();
 void onResetTripleTap();
 void resetSystemCommand();
 
-// Global telemetry objects.
+// Declare system commands instnaces
+CommandSystem commandSystem;
+
+// Declare telemetry instnaces.
 TelemetryData               telemetryData;
-ArduFliteMqttTelemetry      telemetry(20.0f);          // 20 Hz telemetry frequency
-// ArduFliteDebugSerialTelemetry    debugTelemetry(1.0f); // 1 Hz telemetry frequency
+ArduFliteMqttTelemetry      telemetry(20.0f, &commandSystem);          // 20 Hz telemetry frequency
+// ArduFliteDebugSerialTelemetry    debugTelemetry(1.0f);               // 1 Hz telemetry frequency
 // ArduFliteQSerialTelemetry        telemetry(20.0f);
 
-// Create instances of the core components.
+// Declare instances of the core components.
 ArduFliteIMU                myIMU;
 ArduFliteAttitudeController attitudeController;
 ArduFliteRateController     rateController;
 
-// Define the servo configurations.
-ServoConfig pitchCfg    = { PwmOutputConfig::PITCH_PIN,      500, 2500, 90, 70, false };
-ServoConfig yawCfg      = { PwmOutputConfig::YAW_PIN,        500, 2500, 90, 70, false };
-ServoConfig leftAilCfg  = { PwmOutputConfig::LEFT_AIL_PIN,   500, 2500, 90, 70, true };
-ServoConfig rightAilCfg = { PwmOutputConfig::RIGHT_AIL_PIN,  500, 2500, 90, 70, false };
-
 // Instantiate the ServoManager for a conventional wing design with dual ailerons.
-ServoManager servoMgr(CONVENTIONAL, pitchCfg, yawCfg, leftAilCfg, rightAilCfg, true);
+ServoManager servoMgr(CONVENTIONAL, ServoSetupConfig::PITCH_CONFIG, ServoSetupConfig::YAW_CONFIG, ServoSetupConfig::LEFT_AIL_CONFIG, ServoSetupConfig::RIGHT_AIL_CONFIG, true);
+
+// Instantiate the Controllers
 ArduFliteController arduflite(&myIMU, &attitudeController, &rateController, &servoMgr);
 
-// Define configurations for each channel.
-ReceiverChannelConfig receiverConfigs[] = {
-    { PwmInputConfig::ROLL_INPUT_PIN,       1000UL, 2000UL, BIPOLAR },  // Roll channel on pin 34
-    { PwmInputConfig::PITCH_INPUT_PIN,      1000UL, 2000UL, BIPOLAR },  // Pitch channel on pin 35
-    { PwmInputConfig::YAW_INPUT_PIN,        1000UL, 2000UL, BIPOLAR },  // Yaw channel on pin 36
-    { PwmInputConfig::THROTTLE_INPUT_PIN,   1000UL, 2000UL, UNIPOLAR }  // Throttle channel on pin 39
-};
-const size_t numReceiverChannels = sizeof(receiverConfigs) / sizeof(receiverConfigs[0]);
+// Instantiate the Receiver
+ArduFlitePwmReceiver pilotReceiver(ReceiverSetupConfig::RECEIVER_CHANNELS, ReceiverSetupConfig::NR_RECEIVER_CHANNELS);
 
-ArduFlitePwmReceiver pilotReceiver(receiverConfigs, numReceiverChannels);
-
+// Instantiate the CLI
 ArduFliteCLI myCLI(&arduflite, &myIMU);
 
+// Instantiate the User Buttons
 HoldButton calibrateButton(ButtonInputConfig::USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
 MultiTapButton resetButton(ButtonInputConfig::USER_BUTTON_PIN, 1000, 3, onResetTripleTap, true, 30);
 MultiTapButton modeButton(ButtonInputConfig::USER_BUTTON_PIN, 1000, 2, onModeDoubleTap, true, 30);
@@ -90,10 +89,6 @@ void setup()
 
     pinMode(ButtonInputConfig::USER_BUTTON_PIN, INPUT_PULLUP);
 
-    servoMgr.testControlSurfaces();
-
-    telemetry.registerCalibrateCallback(onCalibrateHold);
-    telemetry.registerResetCallback(resetSystemCommand);
     telemetry.begin();
     // debugTelemetry.begin();
 
@@ -104,8 +99,10 @@ void setup()
         while (1);
     }
 
+    servoMgr.testControlSurfaces();
+
     // Start with a level attitude (Assist mode).
-    arduflite.setDesiredEulerDegs(-1.0f, 0.0f, 0.0f);
+    arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
     arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
 
     // Set the mode (default is ASSIST_MODE).
@@ -141,6 +138,9 @@ void setup()
 
 void loop() 
 {
+    // Process any pending commands.
+    commandSystem.processCommands(&arduflite, &myIMU);
+    
     // Update buttons.
     HoldButtonManager::updateAll();
     MultiTapButtonManager::updateAll();
@@ -156,16 +156,15 @@ void loop()
         {
             case PREFLIGHT:
                 Serial.println("Aircraft is in PREFLIGHT state.");
-                arduflite.setDesiredEulerDegs(-1.0f, 0.0f, 0.0f);
+                arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
                 arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
                 break;
             case INFLIGHT:
                 Serial.println("Aircraft is in FLIGHT state.");
-                // TODO: when entering flight, set the current heading as the yaw setpoint
                 break;
             case LANDED:
                 Serial.println("Aircraft has LANDED.");
-                arduflite.setDesiredEulerDegs(-1.0f, 0.0f, 0.0f);
+                arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
                 arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
                 break;
             default:
@@ -174,23 +173,21 @@ void loop()
         lastState = currentState;
     }
 
-    /* //TODO
+    //TODO
     // Run the attitude test sequence only when in-flight.
-    if (currentState == INFLIGHT) 
-    {
-        runAttitudeTest_wiggle(arduflite, 15, 2000);
-    }
-    */
+    // if (currentState == INFLIGHT) 
+    // {
+    //     runAttitudeTest_wiggle(arduflite, 15, 2000);
+    // }
 
-    /* //TODO
-    runReceiverTest_print(pilotReceiver, numReceiverChannels);
-    */
+    //TODO
+    // runReceiverTest_print(pilotReceiver, numReceiverChannels);
         
     // Update telemetry with the latest sensor and control information.
     telemetryData.update(myIMU,
-                            arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(),
-                            arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd(),
-                            currentState);
+                        arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(),
+                        arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd(),
+                        currentState);
 
     telemetry.publish(telemetryData);
 
@@ -229,10 +226,4 @@ void onResetTripleTap()
 {
     Serial.println("Resetting Telemetry layer...");
     telemetry.reset();
-}
-
-void resetSystemCommand() 
-{
-    Serial.println("Executing reset callback...");
-    ESP.restart();
 }

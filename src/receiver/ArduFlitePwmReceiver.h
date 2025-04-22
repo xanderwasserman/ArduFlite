@@ -11,19 +11,22 @@
 
 #include <Arduino.h>
 
-enum ReceiverChannelMode {
+enum ReceiverChannelMode 
+{
   UNIPOLAR, // Normalized output in [0, 1]
   BIPOLAR   // Normalized output in [-1, 1]
 };
 
-struct ReceiverChannelConfig {
+struct ReceiverChannelConfig 
+{
   uint8_t pin;              // Digital pin for the PWM signal
   unsigned long minPulse;   // Minimum pulse width in microseconds
   unsigned long maxPulse;   // Maximum pulse width in microseconds
   ReceiverChannelMode mode; // Mode for normalization
 };
 
-class ArduFlitePwmReceiver {
+class ArduFlitePwmReceiver 
+{
 public:
   /**
    * @brief Constructor for ArduFlitePwmReceiver.

@@ -18,16 +18,29 @@
 #include "include/PinConfiguration.h"
 
 //==============================================================
+// Barometer type selection
+//==============================================================
+#define BARO_TYPE_NONE      0
+#define BARO_TYPE_BMP280    1
+
+// Set the default Barometer type. Change this definition to BARO_TYPE_BMP280 to use the BMP280.
+#ifndef BARO_TYPE
+#define BARO_TYPE BARO_TYPE_NONE
+#endif
+
+//==============================================================
 // IMU type selection
 //==============================================================
 #define IMU_TYPE_MPU6500 0
 #define IMU_TYPE_MPU9250 1
-#ifndef IMU_TYPE
+
 // Set the default IMU type. Change this definition to IMU_TYPE_MPU9250 to use the 9250.
+// #define IMU_TYPE IMU_TYPE_MPU6500
+#ifndef IMU_TYPE
 #define IMU_TYPE IMU_TYPE_MPU6500
 #endif
 
-#if IMU_TYPE == IMU_TYPE_MPU9250
+#if BARO_TYPE == BARO_TYPE_BMP280
 #include <Adafruit_BMP280.h> // Include barometer library when using MPU9250
 #endif
 
@@ -112,6 +125,7 @@ struct ArduFliteIMUOffsets {
     float magX;
     float magY;
     float magZ;
+    float referencePressure = 1013.25f; //reference sea-level pressure
 };
  
 /**
@@ -247,7 +261,7 @@ private:
     TaskHandle_t imuTaskHandle; // Handle for the IMU task
 
 #if IMU_TYPE == IMU_TYPE_MPU9250
-    MPU9259 IMU;
+    MPU9250 IMU;
 #else
     MPU6500 IMU;
 #endif
@@ -278,16 +292,16 @@ private:
     float qz = 0.0f;
     float altitude = 0.0f;
 
-    float referencePressure = 1013.25f; //reference sea-level pressure
-
     float accelAlpha = 0.05f;
     float gyroAlpha  = 0.1f;
     float magAlpha  = 0.1f;
+    float altiAlpha  = 0.005f;
     bool lpInitialized = false;
 
-    float filteredAccelX, filteredAccelY, filteredAccelZ;
-    float filteredGyroX, filteredGyroY, filteredGyroZ;
-    float filteredMagX, filteredMagY, filteredMagZ;
+    float filteredAccelX, filteredAccelY, filteredAccelZ = 0.0f;
+    float filteredGyroX, filteredGyroY, filteredGyroZ = 0.0f;
+    float filteredMagX, filteredMagY, filteredMagZ = 0.0f;
+    float filteredAltitude = 0.0f;
     float pitch = 0.0f, roll = 0.0f, yaw = 0.0f;
 
     // Data structures to hold raw sensor readings.
@@ -301,8 +315,7 @@ private:
     FlightState flightState = PREFLIGHT;
     unsigned long flightStableStartTime = 0;
 
-    // For MPU9250, store a barometer instance and reading.
-#if IMU_TYPE == IMU_TYPE_MPU9250
+#if BARO_TYPE == BARO_TYPE_BMP280
     Adafruit_BMP280 bmp280;
 #endif
 

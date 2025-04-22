@@ -24,7 +24,18 @@
 */
 ArduFliteIMU::ArduFliteIMU() {
     // Initialize calibration offsets to zero.
-    offsets = {0, 0, 0, 0, 0, 0};
+    offsets = {
+        0.0f,  // accelX
+        0.0f,  // accelY
+        0.0f,  // accelZ
+        0.0f,  // gyroX
+        0.0f,  // gyroY
+        0.0f,  // gyroZ
+        0.0f,  // magX
+        0.0f,  // magY
+        0.0f,  // magZ
+        1013.25f // referencePressure (hPa)
+    };
 
     // Create the mutex for protecting sensor data.
     imuMutex = xSemaphoreCreateMutex();
@@ -70,12 +81,18 @@ bool ArduFliteIMU::begin() {
         return false;
     }
 
-#if IMU_TYPE == IMU_TYPE_MPU9250
+#if BARO_TYPE == BARO_TYPE_BMP280
     // Initialize BMP280 barometer. Change the address if necessary.
-    if (!bmp280.begin(0x76)) {
+    if (!bmp280.begin(0x76)) 
+    {
         Serial.println("Failed to initialize BMP280 barometer!");
-        // Continue with a barometerReading of 0.
-    } else {
+    } 
+    else 
+    {
+        // Immediately set our ground‑level reference pressure:
+        float p = bmp280.readPressure() / 100.0f;  // Pa → hPa
+        offsets.referencePressure = p;
+        Serial.printf("BMP280 reference pressure set to %f hPa.\n", p);
         Serial.println("BMP280 barometer initialized.");
     }
 #endif
@@ -271,6 +288,11 @@ void ArduFliteIMU::update(float dt)
         IMU.getMag(&magData);
     }
 
+    // For BMP280, update barometer reading.
+#if BARO_TYPE == BARO_TYPE_BMP280
+    altitude = bmp280.readAltitude(offsets.referencePressure); 
+#endif
+
     // Remove calibration offsets.
     accelX = accelData.accelX - offsets.accelX;
     accelY = accelData.accelY - offsets.accelY;
@@ -289,18 +311,14 @@ void ArduFliteIMU::update(float dt)
 #if FILTER_TYPE == FILTER_TYPE_MADGWICK
 
     #if IMU_TYPE == IMU_TYPE_MPU9250
-
     filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, 
                 filteredAccelX, filteredAccelY, filteredAccelZ, 
                 filteredMagX, filteredMagY, filteredMagZ, 
                 dt );
-
     #else 
-
     filter.updateIMU(filteredGyroX, filteredGyroY, filteredGyroZ, 
                 filteredAccelX, filteredAccelY, filteredAccelZ,  
                 dt);
-
     #endif
 
 #elif FILTER_TYPE == FILTER_TYPE_KALMAN
@@ -315,11 +333,6 @@ void ArduFliteIMU::update(float dt)
     roll = filter.getRoll();
     pitch = filter.getPitch();
     yaw = filter.getYaw();
-
-    // For MPU9250, update barometer reading.
-#if IMU_TYPE == IMU_TYPE_MPU9250
-    altitude = bmp280.readAltitude(referencePressure); 
-#endif
 
     // Update flight state based on the sensor data.
     updateFlightState();
@@ -383,7 +396,7 @@ bool ArduFliteIMU::selfCalibrate() {
         double gy = gyroData.gyroY;
         double gz = gyroData.gyroZ;
 
-#if IMU_TYPE == IMU_TYPE_MPU9250
+#if BARO_TYPE == BARO_TYPE_BMP280
         double baro = bmp280.readPressure() / 100.0f; // convert Pa to hPa
 #else
         double baro = 0.0f;
@@ -410,26 +423,28 @@ bool ArduFliteIMU::selfCalibrate() {
     double avgGx        = sumGx / samples;
     double avgGy        = sumGy / samples;
     double avgGz        = sumGz / samples;
-
-    if (sumBaro > 0.0f)referencePressure   = sumBaro / samples;
+    double avgBaro      = sumBaro / samples;
 
     Serial.println("Raw average readings:");
     Serial.printf("Accel: %.3f, %.3f, %.3f\n", avgAx, avgAy, avgAz);
     Serial.printf("Gyro: %.3f, %.3f, %.3f\n", avgGx, avgGy, avgGz);
-    Serial.printf("Pressure: %.3f\n", sumBaro);
+    Serial.printf("Pressure: %.3f\n", avgBaro);
 
     // Determine desired offsets.
     ArduFliteIMUOffsets newOfs;
-    newOfs.accelX = float(avgAx - 0.0);   // Desired X is 0.
-    newOfs.accelY = float(avgAy - 0.0);   // Desired Y is 0.
-    newOfs.accelZ = float(avgAz - 1.0);   // Desired Z is 1.
-    newOfs.gyroX  = float(avgGx);         // Desired gyro values are 0.
-    newOfs.gyroY  = float(avgGy);
-    newOfs.gyroZ  = float(avgGz);
+
+    newOfs.accelX               = float(avgAx - 0.0);   // Desired X is 0.
+    newOfs.accelY               = float(avgAy - 0.0);   // Desired Y is 0.
+    newOfs.accelZ               = float(avgAz - 1.0);   // Desired Z is 1.
+    newOfs.gyroX                = float(avgGx);         // Desired gyro values are 0.
+    newOfs.gyroY                = float(avgGy);
+    newOfs.gyroZ                = float(avgGz);
+    newOfs.referencePressure    = (float)avgBaro;
 
     Serial.println("Computed new offsets:");
     Serial.printf("Accel Offsets: %.3f, %.3f, %.3f\n", newOfs.accelX, newOfs.accelY, newOfs.accelZ);
     Serial.printf("Gyro Offsets: %.3f, %.3f, %.3f\n", newOfs.gyroX, newOfs.gyroY, newOfs.gyroZ);
+    Serial.printf("Pressure reference: %.3f\n", newOfs.referencePressure);
 
     // Store and save the calibration offsets.
     setOffsets(newOfs);
@@ -537,16 +552,17 @@ void ArduFliteIMU::applyLowPassFilters()
 {
     if (!lpInitialized) 
     {
-        filteredAccelX = accelX;
-        filteredAccelY = accelY;
-        filteredAccelZ = accelZ;
-        filteredGyroX  = gyroX;
-        filteredGyroY  = gyroY;
-        filteredGyroZ  = gyroZ;
-        filteredMagX   = magX;
-        filteredMagY   = magY;
-        filteredMagZ   = magZ;
-        lpInitialized  = true;
+        filteredAccelX      = accelX;
+        filteredAccelY      = accelY;
+        filteredAccelZ      = accelZ;
+        filteredGyroX       = gyroX;
+        filteredGyroY       = gyroY;
+        filteredGyroZ       = gyroZ;
+        filteredMagX        = magX;
+        filteredMagY        = magY;
+        filteredMagZ        = magZ;
+        filteredAltitude    = altitude;
+        lpInitialized       = true;
     } 
     else 
     {
@@ -561,6 +577,8 @@ void ArduFliteIMU::applyLowPassFilters()
         filteredMagX  = magAlpha * magX + (1.0f - magAlpha) * filteredMagX;
         filteredMagY  = magAlpha * magY + (1.0f - magAlpha) * filteredMagY;
         filteredMagZ  = magAlpha * magZ + (1.0f - magAlpha) * filteredMagZ;
+
+        filteredAltitude  = altiAlpha * altitude + (1.0f - altiAlpha) * filteredAltitude;
     }
 }
 
@@ -744,9 +762,9 @@ float ArduFliteIMU::getAltitude() const
 { 
     float alt;
     xSemaphoreTake(imuMutex, portMAX_DELAY);
-    alt = altitude;
+    alt = filteredAltitude;
     xSemaphoreGive(imuMutex);
-    return altitude; 
+    return alt; 
 }
  
  

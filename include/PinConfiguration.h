@@ -9,17 +9,32 @@
 #ifndef PIN_CONFIGURATION_H
 #define PIN_CONFIGURATION_H
 
-namespace I2CConfig {
+//==============================================================
+// Board type selection
+//==============================================================
+#define BOARD_TYPE_FIREBEETLE   0
+#define BOARD_TYPE_WEMOS        1
 
-    // I2C pins for IMU
+#ifndef BOARD_TYPE
+#define BOARD_TYPE BOARD_TYPE_FIREBEETLE
+#endif
+
+namespace I2CConfig 
+{
+    /* I2C pins for IMU */ 
+#if BOARD_TYPE == BOARD_TYPE_FIREBEETLE
     constexpr int I2C_SDA_PIN           = 21;
     constexpr int I2C_SCL_PIN           = 22;
+#elif BOARD_TYPE == BOARD_TYPE_WEMOS
+    constexpr int I2C_SDA_PIN           = 8;
+    constexpr int I2C_SCL_PIN           = 10;
+#endif
     constexpr int I2C_CLOCK_SPEED       = 400000; // Set I2C clock to 400 kHz.
 
 } // namespace I2CConfig
 
-namespace PwmInputConfig {
-
+namespace PwmInputConfig 
+{
     // PWM input pins from receiver
     constexpr int ROLL_INPUT_PIN        = 34;
     constexpr int PITCH_INPUT_PIN       = 35;
@@ -28,8 +43,8 @@ namespace PwmInputConfig {
 
 } // namespace PwmInputConfig
 
-namespace PwmOutputConfig {
-
+namespace PwmOutputConfig 
+{
     // Servo output pins to control surfaces
     constexpr int LEFT_AIL_PIN          = 17;
     constexpr int RIGHT_AIL_PIN         = 16;
@@ -38,11 +53,14 @@ namespace PwmOutputConfig {
 
 } // namespace PwmOutputConfig
 
-namespace ButtonInputConfig {
-
-    // Calibration Button definition
+namespace ButtonInputConfig 
+{
+    /* User Button definition */ 
+#if BOARD_TYPE == BOARD_TYPE_FIREBEETLE
     constexpr int USER_BUTTON_PIN       = 27;
-
+#elif BOARD_TYPE == BOARD_TYPE_WEMOS
+    constexpr int USER_BUTTON_PIN       = 9;
+#endif
 } // namespace PwmOutputConfig
 
 #endif // PIN_CONFIGURATION_H

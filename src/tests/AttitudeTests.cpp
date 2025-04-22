@@ -21,22 +21,22 @@ void runAttitudeTest_wiggle(ArduFliteController &arduflite, float angle, float t
         switch (state) 
         {
             case 0:
-                arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
+                arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
                 Serial.println("Test: Level attitude (0° roll)");
                 state++;
                 break;
             case 1:
-                arduflite.setDesiredEulerDegs(-2.0f, angle, 0.0f);
+                arduflite.setDesiredEulerDegs(0.0f, angle, 0.0f);
                 Serial.printf("Test: Roll +%f°\n", angle);
                 state++;
                 break;
             case 2:
-                arduflite.setDesiredEulerDegs(-2.0f, 0.0f, 0.0f);
+                arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
                 Serial.println("Test: Level attitude (0° roll)");
                 state++;
                 break;
             case 3:
-                arduflite.setDesiredEulerDegs(-2.0f, -angle, 0.0f);
+                arduflite.setDesiredEulerDegs(0.0f, -angle, 0.0f);
                 Serial.printf("Test: Roll -%f°\n", angle);
                 state = 0;
                 break;

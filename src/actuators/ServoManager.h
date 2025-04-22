@@ -80,6 +80,12 @@ public:
      */
     void testControlSurfaces();
 
+    /** 
+     * @brief Set maximum servo slew rate in degrees per second.
+     *        e.g. 300 means no servo moves faster than 300°/s.
+     */
+    void setMaxServoRate(float degPerSec) { maxServoDegPerSec = degPerSec; }
+
     // Setter methods to adjust inversion flags at runtime.
     void setPitchInversion(bool invert);
     void setYawInversion(bool invert);
@@ -116,6 +122,17 @@ private:
     Servo pitchServo, yawServo;   // Elevator and rudder.
     Servo singleAilServo;         // Used if dualAilerons is false.
     Servo leftAilServo, rightAilServo; // Used if dualAilerons is true.
+
+    // slew‑rate limiter state (last output angles in degrees)
+    float lastPitchAngleDeg  = 0.0f;
+    float lastYawAngleDeg    = 0.0f;
+    float lastLeftAngleDeg   = 0.0f;
+    float lastRightAngleDeg  = 0.0f;
+    float lastSingleAilDeg   = 0.0f;
+
+    // limiter configuration
+    float maxServoDegPerSec  = 300.0f;    // default cap: 300°/s
+    unsigned long lastUpdateMicros = 0;   // timestamp of last writeCommands()
 };
 
 #endif // SERVO_MANAGER_H

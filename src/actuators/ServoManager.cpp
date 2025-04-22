@@ -35,6 +35,16 @@ ServoManager::ServoManager(WingDesign design,
         leftAilServo.attach(leftAilConfig.pin, leftAilConfig.minPulse, leftAilConfig.maxPulse);
         rightAilServo.attach(rightAilConfig.pin, rightAilConfig.minPulse, rightAilConfig.maxPulse);
     }
+
+    lastUpdateMicros   = micros();
+    lastPitchAngleDeg  = pitchConfig.neutral;
+    lastYawAngleDeg    = yawConfig.neutral;
+    if (dualAilerons) {
+        lastLeftAngleDeg  = leftAilConfig.neutral;
+        lastRightAngleDeg = rightAilConfig.neutral;
+    } else {
+        lastSingleAilDeg  = leftAilConfig.neutral;
+    }
 }
 
 // Constructor for delta wing or V-tail designs.
@@ -47,81 +57,132 @@ ServoManager::ServoManager(WingDesign design,
     dualAilerons = true;
     leftAilServo.attach(leftAilConfig.pin, leftAilConfig.minPulse, leftAilConfig.maxPulse);
     rightAilServo.attach(rightAilConfig.pin, rightAilConfig.minPulse, rightAilConfig.maxPulse);
+
+    lastUpdateMicros  = micros();
+    // only initialize the aileron/elevon state:
+    lastLeftAngleDeg  = leftAilConfig.neutral;
+    lastRightAngleDeg = rightAilConfig.neutral;
 }
 
-void ServoManager::writeCommands(float rollCmd, float pitchCmd, float yawCmd) {
-    // Depending on the wing design, mix commands differently.
-    switch (wingDesign) {
-        case CONVENTIONAL: {
-            // Elevator (pitch control).
-            int pitchDeflect = mapFloatToInt(pitchCmd, -1.0f, 1.0f,
-                -pitchConfig.deflection, pitchConfig.deflection);
-            if (pitchConfig.invert) {
-                pitchDeflect = -pitchDeflect;
-            }
-            int pitchAngle = pitchConfig.neutral + pitchDeflect;
-            pitchServo.write(pitchAngle);
+void ServoManager::writeCommands(float rollCmd, float pitchCmd, float yawCmd) 
+{
+    // --- Compute loop dt (seconds) ---
+    unsigned long now = micros();
+    float dt = (now - lastUpdateMicros) * 1e-6f;
+    lastUpdateMicros = now;
 
-            // Rudder (yaw control).
-            int yawDeflect = mapFloatToInt(yawCmd, -1.0f, 1.0f,
-                -yawConfig.deflection, yawConfig.deflection);
-            if (yawConfig.invert) {
-                yawDeflect = -yawDeflect;
-            }
-            int yawAngle = yawConfig.neutral + yawDeflect;
-            yawServo.write(yawAngle);
+    // Maximum allowed change this cycle (degrees)
+    float maxDelta = maxServoDegPerSec * dt;
 
-            // Aileron(s) (roll control).
-            int rollDeflect = mapFloatToInt(rollCmd, -1.0f, 1.0f,
-                -leftAilConfig.deflection, leftAilConfig.deflection);
-            // For conventional, you might want one servo to move opposite to the other.
-            if (dualAilerons) {
-                int leftAngle = leftAilConfig.neutral + (leftAilConfig.invert ? -rollDeflect : rollDeflect);
-                int rightAngle = rightAilConfig.neutral + (rightAilConfig.invert ? rollDeflect : -rollDeflect);
-                leftAilServo.write(leftAngle);
-                rightAilServo.write(rightAngle);
-            } else {
-                int ailAngle = leftAilConfig.neutral + (leftAilConfig.invert ? -rollDeflect : rollDeflect);
-                singleAilServo.write(ailAngle);
+    switch (wingDesign) 
+    {
+        case CONVENTIONAL: 
+        {
+            // 1) Elevator (pitch control)
+            int rawPitch = mapFloatToInt(pitchCmd, -1.0f, 1.0f,
+                                        -pitchConfig.deflection, pitchConfig.deflection);
+            if (pitchConfig.invert) rawPitch = -rawPitch;
+            float desiredPitchAngle = pitchConfig.neutral + rawPitch;
+            // Slew‑limit
+            float limitedPitch = constrain(desiredPitchAngle,
+                                           lastPitchAngleDeg - maxDelta,
+                                           lastPitchAngleDeg + maxDelta);
+            lastPitchAngleDeg = limitedPitch;
+            pitchServo.write((int)limitedPitch);
+
+            // 2) Rudder (yaw control)
+            int rawYaw = mapFloatToInt(yawCmd, -1.0f, 1.0f,
+                                       -yawConfig.deflection, yawConfig.deflection);
+            if (yawConfig.invert) rawYaw = -rawYaw;
+            float desiredYawAngle = yawConfig.neutral + rawYaw;
+            float limitedYaw = constrain(desiredYawAngle,
+                                         lastYawAngleDeg - maxDelta,
+                                         lastYawAngleDeg + maxDelta);
+            lastYawAngleDeg = limitedYaw;
+            yawServo.write((int)limitedYaw);
+
+            // 3) Ailerons (roll control)
+            int rawRollDeflect = mapFloatToInt(rollCmd, -1.0f, 1.0f,
+                                               -leftAilConfig.deflection, leftAilConfig.deflection);
+            if (dualAilerons) 
+            {
+                float desiredLeft  = leftAilConfig.neutral + (leftAilConfig.invert ? -rawRollDeflect : rawRollDeflect);
+                float desiredRight = rightAilConfig.neutral + (rightAilConfig.invert ? rawRollDeflect : -rawRollDeflect);
+
+                float limitedLeft  = constrain(desiredLeft,
+                                               lastLeftAngleDeg  - maxDelta,
+                                               lastLeftAngleDeg  + maxDelta);
+                float limitedRight = constrain(desiredRight,
+                                               lastRightAngleDeg - maxDelta,
+                                               lastRightAngleDeg + maxDelta);
+
+                lastLeftAngleDeg  = limitedLeft;
+                lastRightAngleDeg = limitedRight;
+                leftAilServo.write((int)limitedLeft);
+                rightAilServo.write((int)limitedRight);
+            }
+            else 
+            {
+                float desiredAil = leftAilConfig.neutral + (leftAilConfig.invert ? -rawRollDeflect : rawRollDeflect);
+                float limitedAil = constrain(desiredAil,
+                                             lastSingleAilDeg - maxDelta,
+                                             lastSingleAilDeg + maxDelta);
+                lastSingleAilDeg = limitedAil;
+                singleAilServo.write((int)limitedAil);
             }
             break;
         }
-        case DELTA_WING: {
-            // For delta wings, the elevons mix pitch and roll.
-            // Typical mixing: leftElevon = pitch - roll, rightElevon = pitch + roll.
-            int leftMix = mapFloatToInt((pitchCmd - rollCmd), -2.0f, 2.0f,
-                -leftAilConfig.deflection, leftAilConfig.deflection);
-            int rightMix = mapFloatToInt((pitchCmd + rollCmd), -2.0f, 2.0f,
-                -rightAilConfig.deflection, rightAilConfig.deflection);
-            if (leftAilConfig.invert) {
-                leftMix = -leftMix;
-            }
-            if (rightAilConfig.invert) {
-                rightMix = -rightMix;
-            }
-            int leftElevon = leftAilConfig.neutral + leftMix;
-            int rightElevon = rightAilConfig.neutral + rightMix;
-            leftAilServo.write(leftElevon);
-            rightAilServo.write(rightElevon);
+
+        case DELTA_WING: 
+        {
+            // Elevon mixing: left = pitch – roll, right = pitch + roll
+            int rawLeftMix  = mapFloatToInt(pitchCmd - rollCmd, -2.0f, 2.0f,
+                                            -leftAilConfig.deflection, leftAilConfig.deflection);
+            int rawRightMix = mapFloatToInt(pitchCmd + rollCmd, -2.0f, 2.0f,
+                                            -rightAilConfig.deflection, rightAilConfig.deflection);
+            if (leftAilConfig.invert)  rawLeftMix  = -rawLeftMix;
+            if (rightAilConfig.invert) rawRightMix = -rawRightMix;
+
+            float desiredLeft  = leftAilConfig.neutral  + rawLeftMix;
+            float desiredRight = rightAilConfig.neutral + rawRightMix;
+
+            float limitedLeft  = constrain(desiredLeft,
+                                           lastLeftAngleDeg  - maxDelta,
+                                           lastLeftAngleDeg  + maxDelta);
+            float limitedRight = constrain(desiredRight,
+                                           lastRightAngleDeg - maxDelta,
+                                           lastRightAngleDeg + maxDelta);
+
+            lastLeftAngleDeg  = limitedLeft;
+            lastRightAngleDeg = limitedRight;
+            leftAilServo.write((int)limitedLeft);
+            rightAilServo.write((int)limitedRight);
             break;
         }
-        case V_TAIL: {
-            // For V-tail, the ruddervators mix pitch and yaw.
-            // Typical mixing: left = pitch + yaw, right = pitch - yaw.
-            int leftMix = mapFloatToInt((pitchCmd + yawCmd), -2.0f, 2.0f,
-                -leftAilConfig.deflection, leftAilConfig.deflection);
-            int rightMix = mapFloatToInt((pitchCmd - yawCmd), -2.0f, 2.0f,
-                -rightAilConfig.deflection, rightAilConfig.deflection);
-            if (leftAilConfig.invert) {
-                leftMix = -leftMix;
-            }
-            if (rightAilConfig.invert) {
-                rightMix = -rightMix;
-            }
-            int leftRuddervator = leftAilConfig.neutral + leftMix;
-            int rightRuddervator = rightAilConfig.neutral + rightMix;
-            leftAilServo.write(leftRuddervator);
-            rightAilServo.write(rightRuddervator);
+        case V_TAIL: 
+        {
+            // Ruddervator mixing: left = pitch + yaw, right = pitch – yaw
+            int rawLeftMix  = mapFloatToInt(pitchCmd + yawCmd, -2.0f, 2.0f,
+                                            -leftAilConfig.deflection, leftAilConfig.deflection);
+            int rawRightMix = mapFloatToInt(pitchCmd - yawCmd, -2.0f, 2.0f,
+                                            -rightAilConfig.deflection, rightAilConfig.deflection);
+            if (leftAilConfig.invert)  rawLeftMix  = -rawLeftMix;
+            if (rightAilConfig.invert) rawRightMix = -rawRightMix;
+
+            float desiredLeft  = leftAilConfig.neutral  + rawLeftMix;
+            float desiredRight = rightAilConfig.neutral + rawRightMix;
+
+            float limitedLeft  = constrain(desiredLeft,
+                                           lastLeftAngleDeg  - maxDelta,
+                                           lastLeftAngleDeg  + maxDelta);
+            float limitedRight = constrain(desiredRight,
+                                           lastRightAngleDeg - maxDelta,
+                                           lastRightAngleDeg + maxDelta);
+
+            lastLeftAngleDeg  = limitedLeft;
+            lastRightAngleDeg = limitedRight;
+            leftAilServo.write((int)limitedLeft);
+            rightAilServo.write((int)limitedRight);
             break;
         }
     }

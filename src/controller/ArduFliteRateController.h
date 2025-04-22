@@ -50,7 +50,7 @@ private:
     float filteredRollOutput = 0.0f;
     float filteredPitchOutput = 0.0f;
     float filteredYawOutput = 0.0f;
-    float outputAlpha = 0.01f;
+    float outputAlpha = 0.8f;
 
     // PID controllers for each axis.
     PID pidRoll, pidPitch, pidYaw;

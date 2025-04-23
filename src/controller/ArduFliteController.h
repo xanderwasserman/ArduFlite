@@ -126,11 +126,11 @@ public:
     */
     void resumeTasks();
 
-    EulerAngles getAttitudeSetpoint();
-    EulerAngles getRateSetpoint();
+    EulerAngles getAttitudeSetpoint() const;
+    EulerAngles getRateSetpoint() const;
 
-    EulerAngles getAttitudeCmd();
-    EulerAngles getRateCmd();
+    EulerAngles getAttitudeCmd() const;
+    EulerAngles getRateCmd() const;
 
     LoopStats getOuterLoopStats();
     LoopStats getInnerLoopStats();

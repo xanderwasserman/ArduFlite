@@ -317,7 +317,7 @@ void ArduFliteController::InnerLoopTask(void* parameters)
     }
 }
 
-EulerAngles ArduFliteController::getAttitudeSetpoint()
+EulerAngles ArduFliteController::getAttitudeSetpoint() const
 {
     EulerAngles value;
 
@@ -330,7 +330,7 @@ EulerAngles ArduFliteController::getAttitudeSetpoint()
     return value;
 }
 
-EulerAngles ArduFliteController::getRateSetpoint()
+EulerAngles ArduFliteController::getRateSetpoint() const
 {
     EulerAngles value;
 
@@ -343,7 +343,7 @@ EulerAngles ArduFliteController::getRateSetpoint()
     return value;
 }
 
-EulerAngles ArduFliteController::getAttitudeCmd() 
+EulerAngles ArduFliteController::getAttitudeCmd() const
 {
     EulerAngles value;
 
@@ -356,7 +356,7 @@ EulerAngles ArduFliteController::getAttitudeCmd()
     return value;
 }
  
-EulerAngles ArduFliteController::getRateCmd() 
+EulerAngles ArduFliteController::getRateCmd() const
 {
     EulerAngles value;
 

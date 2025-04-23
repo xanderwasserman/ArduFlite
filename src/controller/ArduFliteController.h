@@ -153,12 +153,12 @@ private:
     volatile float pilotYawAngleSetpoint;        ///< Pilot yaw angle setpoint for ASSIST_MODE.
 
     // Shared command variables
-    float lastRollRateCmd = 0.0f;
-    float lastPitchRateCmd = 0.0f;
-    float lastYawRateCmd = 0.0f;
-    float lastRollCmd = 0.0f;
-    float lastPitchCmd = 0.0f;
-    float lastYawCmd = 0.0f;
+    float lastAttitudeRollCmd = 0.0f;
+    float lastAttitudePitchCmd = 0.0f;
+    float lastAttitudeYawCmd = 0.0f;
+    float lastRateRollCmd = 0.0f;
+    float lastRatePitchCmd = 0.0f;
+    float lastRateYawCmd = 0.0f;
 
     // Statistics for the outer and inner loops.
     LoopStats outerLoopStats = {0, 0, 0, 0};

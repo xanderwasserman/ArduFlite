@@ -238,9 +238,9 @@ void ArduFliteController::OuterLoopTask(void* parameters)
             yawRateCmd   = 0; //! This is so that the yaw is not influenced by the attitude controller, but only by the rate controller. We just want to go in a straight line for now.
 
             xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
-            controller->lastRollRateCmd  = rollRateCmd;
-            controller->lastPitchRateCmd = pitchRateCmd;
-            controller->lastYawRateCmd   = yawRateCmd;
+            controller->lastAttitudeRollCmd  = rollRateCmd;
+            controller->lastAttitudePitchCmd = pitchRateCmd;
+            controller->lastAttitudeYawCmd   = yawRateCmd;
             xSemaphoreGive(controller->ctrlMutex);
         } 
         else 
@@ -251,9 +251,9 @@ void ArduFliteController::OuterLoopTask(void* parameters)
             yawRateCmd   = localPilotYaw;
 
             xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
-            controller->lastRollRateCmd  = rollRateCmd;
-            controller->lastPitchRateCmd = pitchRateCmd;
-            controller->lastYawRateCmd   = yawRateCmd;
+            controller->lastAttitudeRollCmd  = rollRateCmd;
+            controller->lastAttitudePitchCmd = pitchRateCmd;
+            controller->lastAttitudeYawCmd   = yawRateCmd;
             xSemaphoreGive(controller->ctrlMutex); 
         }
         
@@ -308,9 +308,9 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         controller->servoMgr->writeCommands(rollCmd, pitchCmd, yawCmd);
 
         xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
-        controller->lastRollCmd  = rollCmd;
-        controller->lastPitchCmd = pitchCmd;
-        controller->lastYawCmd   = yawCmd;
+        controller->lastRateRollCmd  = rollCmd;
+        controller->lastRatePitchCmd = pitchCmd;
+        controller->lastRateYawCmd   = yawCmd;
         xSemaphoreGive(controller->ctrlMutex);
 
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -343,27 +343,27 @@ EulerAngles ArduFliteController::getRateSetpoint() const
     return value;
 }
 
-EulerAngles ArduFliteController::getAttitudeCmd() const
-{
-    EulerAngles value;
-
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value.roll = lastRollCmd;
-    value.pitch = lastPitchCmd;
-    value.yaw = lastYawCmd;
-    xSemaphoreGive(ctrlMutex);
-    
-    return value;
-}
- 
 EulerAngles ArduFliteController::getRateCmd() const
 {
     EulerAngles value;
 
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value.roll = lastRollRateCmd;
-    value.pitch = lastPitchRateCmd;
-    value.yaw = lastYawRateCmd;
+    value.roll = lastRateRollCmd;
+    value.pitch = lastRatePitchCmd;
+    value.yaw = lastRateYawCmd;
+    xSemaphoreGive(ctrlMutex);
+    
+    return value;
+}
+ 
+EulerAngles ArduFliteController::getAttitudeCmd() const
+{
+    EulerAngles value;
+
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value.roll = lastAttitudeRollCmd;
+    value.pitch = lastAttitudePitchCmd;
+    value.yaw = lastAttitudeYawCmd;
     xSemaphoreGive(ctrlMutex);
 
     return value;

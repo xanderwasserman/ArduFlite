@@ -9,36 +9,57 @@ PORT = 1883
 
 # Define the required topics and the desired CSV column order.
 TOPIC_MAPPING = {
-    "arduflite/imu/quaternion/w":           "quaternion_w",
-    "arduflite/imu/quaternion/x":           "quaternion_x",
-    "arduflite/imu/quaternion/y":           "quaternion_y",
-    "arduflite/imu/quaternion/z":           "quaternion_z",
-    "arduflite/imu/accel/x":                "accel_x",
-    "arduflite/imu/accel/y":                "accel_y",
-    "arduflite/imu/accel/z":                "accel_z",
-    "arduflite/imu/gyro/x":                 "gyro_x",
-    "arduflite/imu/gyro/y":                 "gyro_y",
-    "arduflite/imu/gyro/z":                 "gyro_z",
-    "arduflite/imu/orientation/pitch":      "orientation_pitch",
-    "arduflite/imu/orientation/roll":       "orientation_roll",
-    "arduflite/imu/orientation/yaw":        "orientation_yaw",
-    "arduflite/imu/barometer/altitude":     "flight_altitude",
-    "arduflite/imu/flight/state":           "flight_state",
-    "arduflite/controller/rate/roll":       "rate_controller_out_roll",
-    "arduflite/controller/rate/pitch":      "rate_controller_out_pitch",
-    "arduflite/controller/rate/yaw":        "rate_controller_out_yaw",
-    "arduflite/controller/attitude/roll":   "attitude_controller_out_roll",
-    "arduflite/controller/attitude/pitch":  "attitude_controller_out_pitch",
-    "arduflite/controller/attitude/yaw":    "attitude_controller_out_yaw"
+    "arduflite/imu/quaternion/w":                       "quaternion_w",
+    "arduflite/imu/quaternion/x":                       "quaternion_x",
+    "arduflite/imu/quaternion/y":                       "quaternion_y",
+    "arduflite/imu/quaternion/z":                       "quaternion_z",
+
+    "arduflite/imu/accel/x":                            "accel_x",
+    "arduflite/imu/accel/y":                            "accel_y",
+    "arduflite/imu/accel/z":                            "accel_z",
+
+    "arduflite/imu/gyro/x":                             "gyro_x",
+    "arduflite/imu/gyro/y":                             "gyro_y",
+    "arduflite/imu/gyro/z":                             "gyro_z",
+
+    "arduflite/imu/orientation/pitch":                  "orientation_pitch",
+    "arduflite/imu/orientation/roll":                   "orientation_roll",
+    "arduflite/imu/orientation/yaw":                    "orientation_yaw",
+
+    "arduflite/imu/barometer/altitude":                 "flight_altitude",
+
+    "arduflite/imu/flight/state":                       "flight_state",
+    "arduflite/imu/flight/mode":                       "flight_mode",
+
+    "arduflite/controller-setpoint/rate/roll":          "rate_setpoint_roll",
+    "arduflite/controller-setpoint/rate/pitch":         "rate_setpoint_pitch",
+    "arduflite/controller-setpoint/rate/yaw":           "rate_setpoint_yaw",
+
+    "arduflite/controller-setpoint/attitude/roll":      "attitude_setpoint_roll",
+    "arduflite/controller-setpoint/attitude/pitch":     "attitude_setpoint_pitch",
+    "arduflite/controller-setpoint/attitude/yaw":       "attitude_setpoint_yaw",
+
+    "arduflite/controller/rate/roll":                   "rate_cmd_roll",
+    "arduflite/controller/rate/pitch":                  "rate_cmd_pitch",
+    "arduflite/controller/rate/yaw":                    "rate_cmd_yaw",
+
+    "arduflite/controller/attitude/roll":               "attitude_cmd_roll",
+    "arduflite/controller/attitude/pitch":              "attitude_cmd_pitch",
+    "arduflite/controller/attitude/yaw":                "attitude_cmd_yaw"
 }
 
 CSV_ORDER = ["timestamp", "quaternion_w", "quaternion_x", "quaternion_y", "quaternion_z",
              "accel_x", "accel_y", "accel_z",
              "gyro_x", "gyro_y", "gyro_z",
              "orientation_pitch", "orientation_roll", "orientation_yaw",
-             "attitude_controller_out_roll", "attitude_controller_out_pitch", "attitude_controller_out_yaw",
-             "rate_controller_out_roll", "rate_controller_out_pitch", "rate_controller_out_yaw",
-             "flight_altitude", "flight_state"]
+
+             "rate_setpoint_roll", "rate_setpoint_pitch", "rate_setpoint_yaw",
+             "attitude_setpoint_roll", "attitude_setpoint_pitch", "attitude_setpoint_yaw",
+
+             "rate_cmd_roll", "rate_cmd_pitch", "rate_cmd_yaw",
+             "attitude_cmd_roll", "attitude_cmd_pitch", "attitude_cmd_yaw",
+
+             "flight_altitude", "flight_state", "flight_mode"]
 
 # Global storage for the latest values.
 data_values = { key: 0.0 for key in CSV_ORDER if key != "timestamp" }

@@ -24,7 +24,7 @@ struct TelemetryData {
     int   flight_state;
     int   flight_mode;
 
-    void update(const ArduFliteIMU &myIMU, cont ArduFliteController &myController) 
+    void update(const ArduFliteIMU &myIMU, const ArduFliteController &myController) 
     {
         // Update accelerometer data
         accel = myIMU.getAcceleration();

@@ -304,10 +304,6 @@ private:
     float filteredAltitude = 0.0f;
     float pitch = 0.0f, roll = 0.0f, yaw = 0.0f;
 
-    // Timestamps for edge‐detection debouncing for flightState
-    unsigned long motionStartTime;
-    unsigned long flightStableStartTime;
-
     // Data structures to hold raw sensor readings.
     AccelData accelData;    //< Structure to store accelerometer data.
     GyroData  gyroData;     //< Structure to store gyroscope data.
@@ -318,6 +314,7 @@ private:
     // Flight state
     FlightState flightState = PREFLIGHT;
     unsigned long flightStableStartTime = 0;
+    unsigned long motionStartTime = 0;
 
 #if BARO_TYPE == BARO_TYPE_BMP280
     Adafruit_BMP280 bmp280;

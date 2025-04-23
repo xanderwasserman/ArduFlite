@@ -52,12 +52,12 @@ void ArduFliteDebugSerialTelemetry::telemetryTask(void* pvParameters) {
         Serial.print("\033[2J\033[H");
         Serial.printf("In-flight: %s\n", localCopy.flight_state==0?"UNKNOW":localCopy.flight_state==1?"PREFLIGHT":localCopy.flight_state==2?"INFLIGHT":"LANDED");
         Serial.printf("Altitude: %f\n", localCopy.altitude);
-        Serial.printf("Accel: %f, %f, %f\n", localCopy.accelX, localCopy.accelY, localCopy.accelZ);
-        Serial.printf("Gyro: %f, %f, %f\n", localCopy.gyroX, localCopy.gyroY, localCopy.gyroZ);
-        Serial.printf("Q: %f, %f, %f, %f\n", localCopy.qw, localCopy.qx, localCopy.qy, localCopy.qz);
-        Serial.printf("Orientation: %f, %f, %f\n", localCopy.pitch, localCopy.roll, localCopy.yaw);
-        Serial.printf("Rate Cmd: %f, %f, %f\n", localCopy.pitchRateCmd, localCopy.rollRateCmd, localCopy.yawRateCmd);
-        Serial.printf("Servo Cmd: %f, %f, %f\n", localCopy.pitchCmd, localCopy.rollCmd, localCopy.yawCmd);
+        Serial.printf("Accel: %f, %f, %f\n", localCopy.accel.x, localCopy.accel.y, localCopy.accel.z);
+        Serial.printf("Gyro: %f, %f, %f\n", localCopy.gyro.x, localCopy.gyro.y, localCopy.gyro.z);
+        Serial.printf("Q: %f, %f, %f, %f\n", localCopy.quat.w, localCopy.quat.x, localCopy.quat.y, localCopy.quat.z);
+        Serial.printf("Orientation: %f, %f, %f\n", localCopy.orientation.pitch, localCopy.orientation.roll, localCopy.orientation.yaw);
+        Serial.printf("Attitude Cmd: %f, %f, %f\n", localCopy.attitudeCmd.roll, localCopy.attitudeCmd.pitch, localCopy.attitudeCmd.yaw);
+        Serial.printf("Rate Cmd: %f, %f, %f\n", localCopy.rateCmd.roll, localCopy.rateCmd.pitch, localCopy.rateCmd.yaw);
 
         // Delay for the remainder of the interval
         unsigned long elapsed = millis() - startMs;

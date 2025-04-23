@@ -184,10 +184,7 @@ void loop()
     // runReceiverTest_print(pilotReceiver, numReceiverChannels);
         
     // Update telemetry with the latest sensor and control information.
-    telemetryData.update(myIMU,
-                        arduflite.getRollRateCmd(), arduflite.getPitchRateCmd(), arduflite.getYawRateCmd(),
-                        arduflite.getRollCmd(), arduflite.getPitchCmd(), arduflite.getYawCmd(),
-                        currentState);
+    telemetryData.update(myIMU, arduflite);
 
     telemetry.publish(telemetryData);
 

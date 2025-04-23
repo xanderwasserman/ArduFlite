@@ -189,30 +189,38 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters)
             self->mqttClient.publish("arduflite/imu/flight/state", String(localCopy.flight_state, 3).c_str());
             self->mqttClient.publish("arduflite/imu/barometer/altitude", String(localCopy.altitude, 3).c_str());
 
-            self->mqttClient.publish("arduflite/imu/accel/x", String(localCopy.accelX, 3).c_str());
-            self->mqttClient.publish("arduflite/imu/accel/y", String(localCopy.accelY, 3).c_str());
-            self->mqttClient.publish("arduflite/imu/accel/z", String(localCopy.accelZ, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/accel/x", String(localCopy.accel.x, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/accel/y", String(localCopy.accel.y, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/accel/z", String(localCopy.accel.z, 3).c_str());
 
-            self->mqttClient.publish("arduflite/imu/gyro/x", String(localCopy.gyroX, 3).c_str());
-            self->mqttClient.publish("arduflite/imu/gyro/y", String(localCopy.gyroY, 3).c_str());
-            self->mqttClient.publish("arduflite/imu/gyro/z", String(localCopy.gyroZ, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/gyro/x", String(localCopy.gyro.x, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/gyro/y", String(localCopy.gyro.y, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/gyro/z", String(localCopy.gyro.z, 3).c_str());
 
-            self->mqttClient.publish("arduflite/imu/quaternion/w", String(localCopy.qw, 4).c_str());
-            self->mqttClient.publish("arduflite/imu/quaternion/x", String(localCopy.qx, 4).c_str());
-            self->mqttClient.publish("arduflite/imu/quaternion/y", String(localCopy.qy, 4).c_str());
-            self->mqttClient.publish("arduflite/imu/quaternion/z", String(localCopy.qz, 4).c_str());
+            self->mqttClient.publish("arduflite/imu/quaternion/w", String(localCopy.quat.w, 4).c_str());
+            self->mqttClient.publish("arduflite/imu/quaternion/x", String(localCopy.quat.x, 4).c_str());
+            self->mqttClient.publish("arduflite/imu/quaternion/y", String(localCopy.quat.y, 4).c_str());
+            self->mqttClient.publish("arduflite/imu/quaternion/z", String(localCopy.quat.z, 4).c_str());
 
-            self->mqttClient.publish("arduflite/imu/orientation/pitch", String(localCopy.pitch, 2).c_str());
-            self->mqttClient.publish("arduflite/imu/orientation/roll", String(localCopy.roll, 2).c_str());
-            self->mqttClient.publish("arduflite/imu/orientation/yaw", String(localCopy.yaw, 2).c_str());
+            self->mqttClient.publish("arduflite/imu/orientation/pitch", String(localCopy.orientation.pitch, 2).c_str());
+            self->mqttClient.publish("arduflite/imu/orientation/roll", String(localCopy.orientation.roll, 2).c_str());
+            self->mqttClient.publish("arduflite/imu/orientation/yaw", String(localCopy.orientation.yaw, 2).c_str());
 
-            self->mqttClient.publish("arduflite/controller/rate/roll", String(localCopy.rollCmd, 3).c_str());
-            self->mqttClient.publish("arduflite/controller/rate/pitch", String(localCopy.pitchCmd, 3).c_str());
-            self->mqttClient.publish("arduflite/controller/rate/yaw", String(localCopy.yawCmd, 3).c_str());
+            self->mqttClient.publish("arduflite/controller-setpoint/rate/roll", String(localCopy.rateSetpoint.roll, 3).c_str());
+            self->mqttClient.publish("arduflite/controller-setpoint/rate/pitch", String(localCopy.rateSetpoint.pitch, 3).c_str());
+            self->mqttClient.publish("arduflite/controller-setpoint/rate/yaw", String(localCopy.rateSetpoint.yaw, 3).c_str());
 
-            self->mqttClient.publish("arduflite/controller/attitude/roll", String(localCopy.rollRateCmd, 3).c_str());
-            self->mqttClient.publish("arduflite/controller/attitude/pitch", String(localCopy.pitchRateCmd, 3).c_str());
-            self->mqttClient.publish("arduflite/controller/attitude/yaw", String(localCopy.yawRateCmd, 3).c_str());
+            self->mqttClient.publish("arduflite/controller-setpoint/attitude/roll", String(localCopy.attitudeSetpoint.roll, 3).c_str());
+            self->mqttClient.publish("arduflite/controller-setpoint/attitude/pitch", String(localCopy.attitudeSetpoint.pitch, 3).c_str());
+            self->mqttClient.publish("arduflite/controller-setpoint/attitude/yaw", String(localCopy.attitudeSetpoint.yaw, 3).c_str());
+            
+            self->mqttClient.publish("arduflite/controller/rate/roll", String(localCopy.rateCmd.roll, 3).c_str());
+            self->mqttClient.publish("arduflite/controller/rate/pitch", String(localCopy.rateCmd.pitch, 3).c_str());
+            self->mqttClient.publish("arduflite/controller/rate/yaw", String(localCopy.rateCmd.yaw, 3).c_str());
+
+            self->mqttClient.publish("arduflite/controller/attitude/roll", String(localCopy.attitudeCmd.roll, 3).c_str());
+            self->mqttClient.publish("arduflite/controller/attitude/pitch", String(localCopy.attitudeCmd.pitch, 3).c_str());
+            self->mqttClient.publish("arduflite/controller/attitude/yaw", String(localCopy.attitudeCmd.yaw, 3).c_str());
         }
 
         // Let PubSubClient handle incoming messages (if you care about subscriptions)

@@ -88,10 +88,10 @@
 * @brief Enumeration for various flight states.
 */
 enum FlightState {
-    UNKNOWN_STATE,
-    PREFLIGHT,  ///< The aircraft is on the ground before launch.
-    INFLIGHT,   ///< The aircraft is in motion (launched).
-    LANDED      ///< The aircraft has come to rest after flight.
+    UNKNOWN_STATE   = 0,
+    PREFLIGHT       = 1,    // The aircraft is on the ground before launch.
+    INFLIGHT        = 2,    // The aircraft is in motion (launched).
+    LANDED          = 3     // The aircraft has come to rest after flight.
 };
  
 /**
@@ -303,6 +303,10 @@ private:
     float filteredMagX, filteredMagY, filteredMagZ = 0.0f;
     float filteredAltitude = 0.0f;
     float pitch = 0.0f, roll = 0.0f, yaw = 0.0f;
+
+    // Timestamps for edge‐detection debouncing for flightState
+    unsigned long motionStartTime;
+    unsigned long flightStableStartTime;
 
     // Data structures to hold raw sensor readings.
     AccelData accelData;    //< Structure to store accelerometer data.

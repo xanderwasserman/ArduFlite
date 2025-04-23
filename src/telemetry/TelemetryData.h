@@ -13,51 +13,45 @@
 #include "src/orientation/ArduFliteIMU.h"
 
 struct TelemetryData {
-    float accelX, accelY, accelZ;
-    float gyroX, gyroY, gyroZ;
-    float qw, qx, qy, qz;
-    float pitch, roll, yaw;
-    float rollRateCmd, pitchRateCmd, yawRateCmd;
-    float rollCmd, pitchCmd, yawCmd;
-    int   flight_state;
+    Vector3 accel, gyro;
+    FliteQuaternion quat;
+    EulerAngles orientation;
+    EulerAngles attitudeSetpoint;
+    EulerAngles rateSetpoint;
+    EulerAngles attitudeCmd;
+    EulerAngles rateCmd;
     float altitude;
+    int   flight_state;
+    int   flight_mode;
 
-    void update(const ArduFliteIMU &myIMU, float rollRate_command, float pitchRate_command, float yawRate_command, float roll_command, float pitch_command, float yaw_command, FlightState state) {
+    void update(const ArduFliteIMU &myIMU, cont ArduFliteController &myController) 
+    {
         // Update accelerometer data
-        Vector3 accel = myIMU.getAcceleration();
-        accelX = accel.x;
-        accelY = accel.y;
-        accelZ = accel.z;
+        accel = myIMU.getAcceleration();
 
         // Update gyroscope data
-        Vector3 gyro = myIMU.getGyro();
-        gyroX = gyro.x;
-        gyroY = gyro.y;
-        gyroZ = gyro.z;
+        gyro = myIMU.getGyro();
 
         // Update quaternion data
-        FliteQuaternion q = myIMU.getQuaternion();
-        qw = q.w;
-        qx = q.x;
-        qy = q.y;
-        qz = q.z;
+        quat = myIMU.getQuaternion();
 
         // Update orientation data
-        EulerAngles orientation = myIMU.getOrientation();
-        pitch = orientation.pitch;
-        roll  = orientation.roll;
-        yaw   = orientation.yaw;
+        orientation = myIMU.getOrientation();
 
-        // Update command data
-        rollRateCmd  = rollRate_command;
-        pitchRateCmd = pitchRate_command;
-        yawRateCmd   = yawRate_command;
+        // Update attitude setpoint data
+        attitudeSetpoint = myController.getAttitudeSetpoint();
 
-        rollCmd  = roll_command;
-        pitchCmd = pitch_command;
-        yawCmd   = yaw_command;
+        // Update rate setpoint data
+        rateSetpoint = myController.getRateSetpoint();
 
-        flight_state = static_cast<int>(state);
+        // Update attitude command data
+        attitudeCmd = myController.getAttitudeCmd();
+
+        // Update rate command data
+        rateCmd = myController.getRateCmd();
+
+        flight_state = static_cast<int>(myIMU.getFlightState());
+        flight_mode = static_cast<int>( myController.getMode());
 
         altitude = myIMU.getAltitude();
     }

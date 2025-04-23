@@ -50,7 +50,7 @@ void ArduFliteQSerialTelemetry::telemetryTask(void* pvParameters) {
         }
 
         // Print the quaternion
-        Serial.printf("%f,%f,%f,%f\n", localCopy.qw, localCopy.qx, localCopy.qy, localCopy.qz);
+        Serial.printf("%f,%f,%f,%f\n", localCopy.quat.w, localCopy.quat.x, localCopy.quat.y, localCopy.quat.z);
 
         // Delay for the remainder of the interval
         unsigned long elapsed = millis() - startMs;

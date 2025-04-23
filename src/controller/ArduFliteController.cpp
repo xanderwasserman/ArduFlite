@@ -316,60 +316,56 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
+
+EulerAngles ArduFliteController::getAttitudeSetpoint()
+{
+    EulerAngles value;
+
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value.roll  = pilotRollAngleSetpoint;
+    value.pitch = pilotPitchAngleSetpoint;
+    value.yaw   = pilotYawAngleSetpoint;
+    xSemaphoreGive(ctrlMutex);
+
+    return value;
+}
+
+EulerAngles ArduFliteController::getRateSetpoint()
+{
+    EulerAngles value;
+
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value.roll  = pilotRollRateSetpoint;
+    value.pitch = pilotRollRateSetpoint;
+    value.yaw   = pilotRollRateSetpoint;
+    xSemaphoreGive(ctrlMutex);
+
+    return value;
+}
+
+EulerAngles ArduFliteController::getAttitudeCmd() 
+{
+    EulerAngles value;
+
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    value.roll = lastRollCmd;
+    value.pitch = lastPitchCmd;
+    value.yaw = lastYawCmd;
+    xSemaphoreGive(ctrlMutex);
+    
+    return value;
+}
  
-float ArduFliteController::getRollRateCmd() 
+EulerAngles ArduFliteController::getRateCmd() 
 {
-    float value;
+    EulerAngles value;
 
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value = lastRollRateCmd;
+    value.roll = lastRollRateCmd;
+    value.pitch = lastPitchRateCmd;
+    value.yaw = lastYawRateCmd;
     xSemaphoreGive(ctrlMutex);
 
-    return value;
-}
-
-float ArduFliteController::getPitchRateCmd() 
-{
-    float value;
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value = lastPitchRateCmd;
-    xSemaphoreGive(ctrlMutex);
-    return value;
-}
-
-float ArduFliteController::getYawRateCmd() 
-{
-    float value;
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value = lastYawRateCmd;
-    xSemaphoreGive(ctrlMutex);
-    return value;
-}
-
-float ArduFliteController::getRollCmd() 
-{
-    float value;
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value = lastRollCmd;
-    xSemaphoreGive(ctrlMutex);
-    return value;
-}
-
-float ArduFliteController::getPitchCmd() 
-{
-    float value;
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value = lastPitchCmd;
-    xSemaphoreGive(ctrlMutex);
-    return value;
-}
-
-float ArduFliteController::getYawCmd() 
-{
-    float value;
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value = lastYawCmd;
-    xSemaphoreGive(ctrlMutex);
     return value;
 }
 

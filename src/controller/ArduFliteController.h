@@ -35,8 +35,8 @@ struct LoopStats {
  */
 enum ArduFliteMode 
 {
-    ASSIST_MODE,    ///< Pilot controls the attitude setpoint.
-    STABILIZED_MODE ///< Pilot directly controls the rate setpoints.
+    ASSIST_MODE     = 0,    // Pilot controls the attitude setpoint.
+    STABILIZED_MODE = 1     // Pilot directly controls the rate setpoints.
 };
 
 /**
@@ -126,12 +126,11 @@ public:
     */
     void resumeTasks();
 
-    float getRollRateCmd();
-    float getPitchRateCmd();
-    float getYawRateCmd();
-    float getRollCmd();
-    float getPitchCmd(); 
-    float getYawCmd();
+    EulerAngles getAttitudeSetpoint();
+    EulerAngles getRateSetpoint();
+
+    EulerAngles getAttitudeCmd();
+    EulerAngles getRateCmd();
 
     LoopStats getOuterLoopStats();
     LoopStats getInnerLoopStats();

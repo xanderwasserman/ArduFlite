@@ -77,7 +77,7 @@ class MqttClient:
         else:
             print(f"[DataStore] Unknown channel: {source}/{category}/{variable}")
 
-    def publish_command(self, topic: str, payload: Any) -> None:
+    def publish_command(self, topic: str, payload: any) -> None:
         """
         Publish a command to the flight-controller.
         """

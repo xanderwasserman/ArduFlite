@@ -3,12 +3,16 @@ import numpy as np
 import pyqtgraph as pg
 import pyqtgraph.opengl as gl
 from pyqtgraph.Qt import QtCore
+from PyQt5.QtGui import QMatrix4x4
 
 def quat_to_matrix(w, x, y, z):
     """
     Convert normalized quaternion to a 3x3 rotation matrix.
+    If quaternion is zero-length (e.g. uninitialised), return identity.
     """
     n = math.sqrt(w*w + x*x + y*y + z*z)
+    if n == 0.0:
+        return np.eye(3)
     w, x, y, z = w/n, x/n, y/n, z/n
     return np.array([
         [1-2*(y*y+z*z),   2*(x*y - z*w),   2*(x*z + y*w)],
@@ -261,11 +265,11 @@ class AircraftVisualizer(gl.GLViewWidget):
 
     def update_visualization(self):
         """
-        Update the aircraft and control‐surface orientations using quaternion and
-        rate-command data from the DataStore.  Uses GPU transforms rather than
-        rebuilding meshes each frame.
+        Update the aircraft and control surfaces.
+        Applies a 4×4 quaternion‐based transform to the fuselage mesh,
+        then re‐applies hinge rotations + that same transform to each surface.
         """
-        # 1) Fetch and validate quaternion
+        # 1) Grab quaternion
         w = self.data_store.get_latest("imu", "quaternion", "w")
         x = self.data_store.get_latest("imu", "quaternion", "x")
         y = self.data_store.get_latest("imu", "quaternion", "y")
@@ -273,59 +277,40 @@ class AircraftVisualizer(gl.GLViewWidget):
         if None in (w, x, y, z):
             return
 
-        # 2) Build 3x3 rotation matrix directly from quaternion
-        M = quat_to_matrix(w, x, y, z)
+        # 2) Build 3×3 rotation from quaternion
+        M3 = quat_to_matrix(w, x, y, z)
 
-        # 3) Apply global rotation to the aircraft mesh
-        #    Build a 4×4 homogeneous matrix and set as the mesh transform
-        mat4 = np.eye(4)
-        mat4[:3, :3] = M
-        t = pg.Transform3D()
-        t.setMatrix(mat4.flatten())
+        # 3) Build 4×4 homogeneous matrix for Qt
+        M4 = np.eye(4, dtype=float)
+        M4[:3, :3] = M3
+        flat = M4.flatten().tolist()
+        qt_mat = QMatrix4x4(*flat)
+
+        # 4) Apply to fuselage mesh
         self.aircraft_mesh.resetTransform()
-        self.aircraft_mesh.setTransform(t)
+        self.aircraft_mesh.setTransform(qt_mat)
 
-        # 4) Fetch control‐surface commands (–1…+1)
+        # 5) Fetch rate‐loop commands for control‐surface deflections
         roll_cmd  = self.data_store.get_latest("controller", "rate", "roll")  or 0.0
         pitch_cmd = self.data_store.get_latest("controller", "rate", "pitch") or 0.0
         yaw_cmd   = self.data_store.get_latest("controller", "rate", "yaw")   or 0.0
 
         # 5) Compute deflection in degrees (±30° max)
-        max_defl_deg = 30.0
-        defl_roll_deg  = roll_cmd  * max_defl_deg
-        defl_pitch_deg = pitch_cmd * max_defl_deg
-        defl_yaw_deg   = yaw_cmd   * max_defl_deg
+        # ±30° max deflection
+        max_defl = 30.0
 
-        # 6) Helper to apply hinge‐based rotation then global transform
-        def apply_surface_transform(mesh, hinge, axis, angle_deg):
+        # Helper to set a single‐surface transform
+        def set_surface(mesh, hinge, axis, angle_deg):
             mesh.resetTransform()
+            # rotate about its hinge
             mesh.translate(*hinge)
             mesh.rotate(angle_deg, *axis)
             mesh.translate(*(-hinge))
-            mesh.setTransform(t, combine=True)
+            # then apply the global orientation
+            mesh.setTransform(qt_mat)
 
-        # 7) Update each control surface
-        apply_surface_transform(
-            self.left_aileron,
-            self.hinges["left_aileron"],
-            (0, 1, 0),
-            -defl_roll_deg
-        )
-        apply_surface_transform(
-            self.right_aileron,
-            self.hinges["right_aileron"],
-            (0, 1, 0),
-            +defl_roll_deg
-        )
-        apply_surface_transform(
-            self.elevator,
-            self.hinges["elevator"],
-            (0, 1, 0),
-            -defl_pitch_deg
-        )
-        apply_surface_transform(
-            self.rudder,
-            self.hinges["rudder"],
-            (0, 0, 1),
-            +defl_yaw_deg
-        )
+        # 6) Update each surface
+        set_surface(self.left_aileron,  self.hinges['left_aileron'],  (0,1,0), -roll_cmd  * max_defl)
+        set_surface(self.right_aileron, self.hinges['right_aileron'], (0,1,0),  roll_cmd  * max_defl)
+        set_surface(self.elevator,      self.hinges['elevator'],      (0,1,0), -pitch_cmd * max_defl)
+        set_surface(self.rudder,        self.hinges['rudder'],        (0,0,1),  yaw_cmd   * max_defl)

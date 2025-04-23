@@ -20,7 +20,7 @@ class DataStore:
                 "accel":      dict.fromkeys(("x","y","z"),       None),
                 "gyro":       dict.fromkeys(("x","y","z"),       None),
                 "orientation":dict.fromkeys(("pitch","roll","yaw"), None),
-                "flight":     {"state": None},
+                "flight":     {"state": None, "mode": None},
                 "barometer":  {"altitude": None},
             },
             "controller": {

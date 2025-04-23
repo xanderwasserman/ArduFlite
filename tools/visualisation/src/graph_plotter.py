@@ -21,7 +21,7 @@ class GraphPlotter(pg.PlotWidget):
             ("imu","gyro"):       (-300, 300),
             ("imu","orientation"):(-90, 90),
             ("controller","rate"):    (-1, 1),
-            ("controller","attitude"):(-50, 50),
+            ("controller","attitude"):(-70, 70),
         }
         rng = Y_RANGES.get((source, category))
         if rng:

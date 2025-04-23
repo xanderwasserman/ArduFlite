@@ -41,40 +41,60 @@ class MainWindow(QtWidgets.QMainWindow):
         grid.setContentsMargins(10, 10, 10, 10)
         grid.setSpacing(8)
 
-        # Set column stretches: center columns get more space
+        # Column/row stretches for responsive resizing
         for col in (2, 3, 4):
             grid.setColumnStretch(col, 2)
         for col in (0, 1, 5):
             grid.setColumnStretch(col, 1)
         grid.setRowStretch(7, 1)
 
-        # --- GroupBox: Sensors ---
+        # --- Sensors GroupBox ---
         sensor_box = QtWidgets.QGroupBox("Sensors")
         sensor_layout = QtWidgets.QVBoxLayout(sensor_box)
-        # Accel & Gyro multi-plots side by side
+        # Accel plotted above gyro
         accel = MultiPlotter(self.data_store, [
             {"source":"imu","category":"accel","variable":"x","name":"Accel X","pen":"r"},
             {"source":"imu","category":"accel","variable":"y","name":"Accel Y","pen":"g"},
             {"source":"imu","category":"accel","variable":"z","name":"Accel Z","pen":"b"},
         ])
         accel.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        sensor_layout.addWidget(accel)
         gyro = MultiPlotter(self.data_store, [
-            {"source":"imu","category":"gyro","variable":"x","name":"Gyro X","pen":"r"},
-            {"source":"imu","category":"gyro","variable":"y","name":"Gyro Y","pen":"g"},
-            {"source":"imu","category":"gyro","variable":"z","name":"Gyro Z","pen":"b"},
+            {"source":"imu","category":"gyro","variable":"x","name":"Gyro Roll","pen":"r"},
+            {"source":"imu","category":"gyro","variable":"y","name":"Gyro Pitch","pen":"g"},
+            {"source":"imu","category":"gyro","variable":"z","name":"Gyro Yaw","pen":"b"},
         ])
         gyro.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        h_split = QtWidgets.QHBoxLayout()
-        h_split.addWidget(accel)
-        h_split.addWidget(gyro)
-        sensor_layout.addLayout(h_split)
+        sensor_layout.addWidget(gyro)
         grid.addWidget(sensor_box, 0, 0, 2, 2)
+        
+        # --- Flight Status GroupBox ---
+        status_box = QtWidgets.QGroupBox("Flight Status")
+        status_layout = QtWidgets.QVBoxLayout(status_box)
+        alt = GraphPlotter(self.data_store, "imu", "barometer", "altitude")
+        alt.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        status_layout.addWidget(alt)
+        # 3D visualizer inside status box
+        self.visualizer = AircraftVisualizer(self.data_store)
+        self.visualizer.axis_inversion['roll']  = -1
+        self.visualizer.axis_inversion['pitch'] = -1
+        self.visualizer.axis_inversion['yaw']   = -1
+        self.visualizer.setMinimumHeight(400)
+        status_layout.addWidget(self.visualizer)
+        self.state_label = QtWidgets.QLabel("State: Unknown")
+        self.mode_label  = QtWidgets.QLabel("Mode: Unknown")
+        font = self.state_label.font()
+        font.setPointSize(12)
+        self.state_label.setFont(font)
+        self.mode_label .setFont(font)
+        status_layout.addWidget(self.state_label)
+        status_layout.addWidget(self.mode_label)
+        grid.addWidget(status_box, 2, 0, 1, 2)
 
-        # --- GroupBox: Attitude Loop ---
+        # --- Attitude Loop GroupBox ---
         att_box = QtWidgets.QGroupBox("Attitude Loop")
         att_layout = QtWidgets.QGridLayout(att_box)
         for i, axis in enumerate(("roll","pitch","yaw")):
-            # orientation vs setpoint
             mp = MultiPlotter(self.data_store, [
                 {"source":"imu","category":"orientation","variable":axis,"name":f"Orient {axis}","pen":"b"},
                 {"source":"controller-setpoint","category":"attitude","variable":axis,"name":f"SP {axis}","pen":"g"},
@@ -82,65 +102,50 @@ class MainWindow(QtWidgets.QMainWindow):
             mp.setTitle(f"Attitude {axis.capitalize()}")
             mp.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
             att_layout.addWidget(mp, 0, i)
-            # controller output separate
+
             gp = GraphPlotter(self.data_store, "controller", "attitude", axis)
-            gp.setTitle(f"Cmd_{axis}")
+            gp.setTitle(f"Cmd {axis.capitalize()} (deg/s)")
             gp.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
             att_layout.addWidget(gp, 1, i)
+
         grid.addWidget(att_box, 0, 2, 2, 3)
 
-        # --- GroupBox: Rate Loop ---
+        # --- Rate Loop GroupBox (fixed to IMU x/y/z) ---
         rate_box = QtWidgets.QGroupBox("Rate Loop")
         rate_layout = QtWidgets.QGridLayout(rate_box)
+        axis_map = {"roll":"x","pitch":"y","yaw":"z"}  # map axes → gyro channels
         for i, axis in enumerate(("roll","pitch","yaw")):
             mp = MultiPlotter(self.data_store, [
-                {"source":"imu","category":"gyro","variable":axis,"name":f"Gyro {axis}","pen":"b"},
+                {"source":"imu","category":"gyro","variable":axis_map[axis],"name":f"Gyro {axis}","pen":"b"},
                 {"source":"controller-setpoint","category":"rate","variable":axis,"name":f"SP {axis}","pen":"g"},
             ])
             mp.setTitle(f"Rate {axis.capitalize()}")
             mp.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
             rate_layout.addWidget(mp, 0, i)
+
             gp = GraphPlotter(self.data_store, "controller", "rate", axis)
-            gp.setTitle(f"CmdRate_{axis}")
+            gp.setTitle(f"CmdRate {axis.capitalize()} (–1…+1)")
             gp.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
             rate_layout.addWidget(gp, 1, i)
+
         grid.addWidget(rate_box, 2, 2, 2, 3)
 
-        # --- 3D Visualizer ---
-        self.visualizer = AircraftVisualizer(self.data_store)
-        self.visualizer.set_axis_inversion(-1, 1, -1)
-        grid.addWidget(self.visualizer, 4, 2, 4, 3)
-
-        # --- GroupBox: Flight Status ---
-        status_box = QtWidgets.QGroupBox("Flight Status")
-        status_layout = QtWidgets.QVBoxLayout(status_box)
-        alt = GraphPlotter(self.data_store, "imu", "barometer", "altitude")
-        alt.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        status_layout.addWidget(alt)
-        self.state_label = QtWidgets.QLabel("State: Unknown")
-        self.mode_label  = QtWidgets.QLabel("Mode: Unknown")
-        font = self.state_label.font()
-        font.setPointSize(12)
-        self.state_label.setFont(font)
-        self.mode_label.setFont(font)
-        status_layout.addWidget(self.state_label)
-        status_layout.addWidget(self.mode_label)
-        grid.addWidget(status_box, 4, 5, 2, 2)
-
-        # --- Control Buttons ---
-        btn_box = QtWidgets.QGroupBox("Controls")
-        btn_layout = QtWidgets.QHBoxLayout(btn_box)
+        # --- Controls Row (full width) ---
+        btn_layout = QtWidgets.QHBoxLayout()
         self.record_button = QtWidgets.QPushButton("Start Recording")
         self.record_button.setCheckable(True)
+        self.record_button.setMinimumHeight(40)
         self.record_button.toggled.connect(self.toggle_recording)
         btn_layout.addWidget(self.record_button)
         self.reset_button = QtWidgets.QPushButton("Reset")
+        self.reset_button.setMinimumHeight(40)
         self.reset_button.clicked.connect(self.send_reset_command)
         btn_layout.addWidget(self.reset_button)
         self.calibrate_button = QtWidgets.QPushButton("Calibrate")
+        self.calibrate_button.setMinimumHeight(40)
         self.calibrate_button.clicked.connect(self.send_calibrate_command)
         btn_layout.addWidget(self.calibrate_button)
-        grid.addWidget(btn_box, 7, 2, 1, 4)
+        grid.addLayout(btn_layout, 8, 0, 1, 6)
 
     def update_status_labels(self):
         st = self.data_store.get_latest("imu","flight","state") or 0

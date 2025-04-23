@@ -26,33 +26,23 @@ struct TelemetryData {
 
     void update(const ArduFliteIMU &myIMU, const ArduFliteController &myController) 
     {
-        // Update accelerometer data
+        // Update data from ArduFlite IMU
         accel = myIMU.getAcceleration();
-
-        // Update gyroscope data
         gyro = myIMU.getGyro();
-
-        // Update quaternion data
         quat = myIMU.getQuaternion();
-
-        // Update orientation data
         orientation = myIMU.getOrientation();
 
-        // Update attitude setpoint data
+        // Update data from ArduFlite Controller
         attitudeSetpoint = myController.getAttitudeSetpoint();
-
-        // Update rate setpoint data
         rateSetpoint = myController.getRateSetpoint();
-
-        // Update attitude command data
         attitudeCmd = myController.getAttitudeCmd();
-
-        // Update rate command data
         rateCmd = myController.getRateCmd();
 
+        // Update flight state and mode
         flight_state = static_cast<int>(myIMU.getFlightState());
         flight_mode = static_cast<int>( myController.getMode());
 
+        // Update additional flight data
         altitude = myIMU.getAltitude();
     }
 };

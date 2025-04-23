@@ -2,7 +2,7 @@
  * TelemetryData.h
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 08 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
@@ -11,6 +11,7 @@
 
 #include <Arduino.h>
 #include "src/orientation/ArduFliteIMU.h"
+#include "src/controller/ArduFliteController.h"
 
 struct TelemetryData {
     Vector3 accel, gyro;
@@ -24,27 +25,28 @@ struct TelemetryData {
     int   flight_state;
     int   flight_mode;
 
+    // Pull fresh values from IMU & Controller every cycle
     void update(const ArduFliteIMU &myIMU, const ArduFliteController &myController) 
     {
         // Update data from ArduFlite IMU
-        accel = myIMU.getAcceleration();
-        gyro = myIMU.getGyro();
-        quat = myIMU.getQuaternion();
-        orientation = myIMU.getOrientation();
+        accel               = myIMU.getAcceleration();
+        gyro                = myIMU.getGyro();
+        quat                = myIMU.getQuaternion();
+        orientation         = myIMU.getOrientation();
 
         // Update data from ArduFlite Controller
-        attitudeSetpoint = myController.getAttitudeSetpoint();
-        rateSetpoint = myController.getRateSetpoint();
-        attitudeCmd = myController.getAttitudeCmd();
-        rateCmd = myController.getRateCmd();
+        attitudeSetpoint    = myController.getAttitudeSetpoint();
+        rateSetpoint        = myController.getRateSetpoint();
+        attitudeCmd         = myController.getAttitudeCmd();
+        rateCmd             = myController.getRateCmd();
 
         // Update flight state and mode
-        flight_state = static_cast<int>(myIMU.getFlightState());
-        flight_mode = static_cast<int>( myController.getMode());
+        flight_state        = static_cast<int>(myIMU.getFlightState());
+        flight_mode         = static_cast<int>( myController.getMode());
 
         // Update additional flight data
-        altitude = myIMU.getAltitude();
+        altitude            = myIMU.getAltitude();
     }
 };
 
-#endif
+#endif // TELEMETRY_DATA_H

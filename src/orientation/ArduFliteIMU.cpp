@@ -585,8 +585,8 @@ void ArduFliteIMU::applyLowPassFilters()
 /**
  * @brief Updates the flight state based on current sensor values.
  */
-void ArduFliteIMU::updateFlightState() 
-{
+ void ArduFliteIMU::updateFlightState()
+ {
     // Calculate the magnitude of the low-pass filtered acceleration.
     float a_mag = sqrt(filteredAccelX * filteredAccelX +
                        filteredAccelY * filteredAccelY +
@@ -596,56 +596,67 @@ void ArduFliteIMU::updateFlightState()
                        filteredGyroY * filteredGyroY +
                        filteredGyroZ * filteredGyroZ);
 
-    unsigned long now = millis();
-
-    // Define thresholds (adjust these values based on testing/calibration).
-    const float ACC_THRESHOLD = 0.1f;     // Tolerance around 1g.
-    const float GYRO_THRESHOLD = 5.0f;      // Maximum gyro rate (in deg/s) considered "stable".
-    const unsigned long STABLE_TIME = 2000; // Duration (ms) readings must remain stable to consider landed.
-
-    switch (flightState) 
-    {
-        case PREFLIGHT:
-            // If dynamic motion is detected, switch to INFLIGHT.
-            if (fabs(a_mag - 1.0f) > ACC_THRESHOLD) 
-            {
-                flightState = INFLIGHT;
-                flightStableStartTime = now;
-            }
-            break;
-
-        case INFLIGHT:
-            // If readings are stable (i.e. near 1g and low gyro) for at least STABLE_TIME,
-            // transition to LANDED. Otherwise, reset the timer.
-            if (fabs(a_mag - 1.0f) < ACC_THRESHOLD && g_mag < GYRO_THRESHOLD) 
-            {
-                if ((now - flightStableStartTime) >= STABLE_TIME) 
-                {
-                    flightState = LANDED;
-                }
-            } 
-            else 
-            {
-                flightStableStartTime = now;
-            }
-            break;
-
-        case LANDED:
-            // If the aircraft is picked up or thrown again (dynamic motion detected),
-            // transition back to INFLIGHT.
-            if (fabs(a_mag - 1.0f) > ACC_THRESHOLD) 
-            {
-                flightState = INFLIGHT;
-                flightStableStartTime = now;
-            }
-            break;
-
-        default:
-            // If somehow the state is invalid, default to PREFLIGHT.
-            flightState = PREFLIGHT;
-            break;
-    }
-}
+     unsigned long now = millis();
+ 
+     // 2) thresholds & timing
+     const float ACC_MOV_THR      = 0.2f;   // >0.2g translation
+     const float GYRO_THROW_MAX   = 30.0f;  // <30 deg/s rotation during throw
+     const float GYRO_STABLE_THR  = 2.0f;   // <2 deg/s considered “steady”
+     const unsigned long DEBOUNCE  = 150;   // ms of continuous throw-like motion
+     const unsigned long STABLE_MS = 2000;  // ms to declare landed
+ 
+     switch (flightState)
+     {
+       case PREFLIGHT:
+         // detect a “throw” = strong accel spike + low rotation
+         if ( fabsf(a_mag - 1.0f) >  ACC_MOV_THR && g_mag < GYRO_THROW_MAX )
+         {
+             if ( now - motionStartTime > DEBOUNCE )
+             {
+                 flightState = INFLIGHT;
+                 flightStableStartTime = now;
+             }
+         }
+         else 
+         {
+             motionStartTime = now;
+         }
+         break;
+ 
+       case INFLIGHT:
+         // only land if *both* very steady *and* no altitude change
+         if ( fabsf(a_mag - 1.0f) < ACC_MOV_THR && g_mag < GYRO_STABLE_THR)
+         {
+             if ( now - flightStableStartTime >= STABLE_MS )
+                 flightState = LANDED;
+         }
+         else
+         {
+             flightStableStartTime = now;
+         }
+         break;
+ 
+       case LANDED:
+         // same “throw” test if you pick it up again
+         if ( fabsf(a_mag - 1.0f) >  ACC_MOV_THR && g_mag < GYRO_THROW_MAX )
+         {
+             if ( now - motionStartTime > DEBOUNCE )
+             {
+                 flightState = INFLIGHT;
+                 flightStableStartTime = now;
+             }
+         }
+         else
+         {
+             motionStartTime = now;
+         }
+         break;
+ 
+       default:
+         flightState = PREFLIGHT;
+         break;
+     }
+ } 
 
 /**
  * @brief Retrieves the current flight state.

@@ -3,50 +3,106 @@ import pyqtgraph as pg
 import time
 
 class GraphPlotter(pg.PlotWidget):
-    """
-    GraphPlotter displays a real-time time-series graph for a specific flight variable.
-    """
-    def __init__(self, data_store, category, variable, parent=None):
-        super(GraphPlotter, self).__init__(parent)
+    def __init__(self, data_store, source, category, variable, parent=None):
+        super().__init__(parent)
         self.data_store = data_store
-        self.category = category
-        self.variable = variable
-        self.setTitle(f"{category} {variable}")
-        self.setLabel('left', self.variable)
-        self.setLabel('bottom', 'Time (s)')
+        self.source     = source
+        self.category   = category
+        self.variable   = variable
+
+        self.setTitle(f"{source} / {category} / {variable}")
+        self.setLabel('left', variable)
+        self.setLabel('bottom', 'Time Ago (s)')
         self.curve = self.plot(pen='y')
-        
-        # Set fixed y-axis range depending on the category:
-        if self.category in ["accel", "rate"]:
-            self.setYRange(-1, 1)
-            self.enableAutoRange(axis='y', enable=False)
-        elif self.category in ["attitude"]:
-            self.setYRange(-50, 50)
-            self.enableAutoRange(axis='y', enable=False)
-        elif self.category == "orientation":
-            self.setYRange(-90, 90)
-            self.enableAutoRange(axis='y', enable=False)
-        elif self.category == "gyro":
-            self.setYRange(-180, 180)
+
+        # Example of data-driven Y ranges
+        Y_RANGES = {
+            ("imu","accel"):      (-2, 2),
+            ("imu","gyro"):       (-300, 300),
+            ("imu","orientation"):(-90, 90),
+            ("controller","rate"):    (-1, 1),
+            ("controller","attitude"):(-50, 50),
+        }
+        rng = Y_RANGES.get((source, category))
+        if rng:
+            self.setYRange(*rng)
             self.enableAutoRange(axis='y', enable=False)
         else:
-            # For other categories (e.g. gyro) you might allow auto range.
             self.enableAutoRange(axis='y', enable=True)
-        
-        # Timer for updating the plot every 100 ms
-        self.timer = QtCore.QTimer()
+
+        # Update every 100 ms
+        self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.update_plot)
         self.timer.start(100)
 
     def update_plot(self):
+        # 1) Pull history via DataStore API
+        history = self.data_store.get_history(
+            self.source, self.category, self.variable
+        )
+        if not history:
+            return
+
+        # 2) Split times/values and convert to seconds ago
+        times, values = zip(*history)
+        now = time.monotonic()
+        times = [now - t for t in times]
+
+        # 3) (Optional) downsample if too many points
+        if len(times) > 1000:
+            factor = len(times) // 1000
+            times  = times[::factor]
+            values = values[::factor]
+
+        # 4) Update the curve
+        self.curve.setData(times, values)
+
+class MultiPlotter(pg.PlotWidget):
+    """
+    MultiPlotter allows plotting multiple series on one time-series graph.
+    Each series is defined by a dict:
+      {source, category, variable, name, pen}
+    """
+    def __init__(self, data_store, series, parent=None):
         """
-        Retrieve historical data and update the plot.
+        :param data_store: instance of DataStore
+        :param series: list of dicts with keys:
+                       source, category, variable, name, pen
         """
-        key = f"{self.category}_{self.variable}"
-        history = list(self.data_store.history[key])
-        if history:
+        super().__init__(parent)
+        self.data_store = data_store
+        self.series = series
+
+        self.setLabel('left', 'Value')
+        self.setLabel('bottom', 'Time Ago (s)')
+
+        # Plot each series and store its curve
+        self.curves = []
+        self.legend = self.addLegend(offset=(10,10))
+        for s in self.series:
+            curve = self.plot([], [], pen=s.get('pen', 'w'), name=s.get('name'))
+            self.curves.append(curve)
+
+        # Update every 100 ms
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self.update_plot)
+        self.timer.start(100)
+
+    def update_plot(self):
+        now = time.monotonic()
+        for idx, s in enumerate(self.series):
+            history = self.data_store.get_history(s['source'], s['category'], s['variable'])
+            if not history:
+                # clear if no data
+                self.curves[idx].setData([], [])
+                continue
+
             times, values = zip(*history)
-            # Convert timestamps to relative time (seconds from current time)
-            current_time = time.time()
-            times = [t - current_time for t in times]
-            self.curve.setData(times, values)
+            times = [now - t for t in times]
+
+            if len(times) > 1000:
+                factor = len(times) // 1000
+                times  = times[::factor]
+                values = values[::factor]
+
+            self.curves[idx].setData(times, values)

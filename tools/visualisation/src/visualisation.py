@@ -4,71 +4,42 @@ import pyqtgraph as pg
 import pyqtgraph.opengl as gl
 from pyqtgraph.Qt import QtCore
 
-def quaternion_to_euler(w, x, y, z):
+def quat_to_matrix(w, x, y, z):
     """
-    Convert a quaternion (w, x, y, z) to Euler angles (roll, pitch, yaw) in degrees.
+    Convert normalized quaternion to a 3x3 rotation matrix.
     """
-    t0 = +2.0 * (w * x + y * z)
-    t1 = +1.0 - 2.0 * (x * x + y * y)
-    roll = np.degrees(np.arctan2(t0, t1))
-
-    t2 = +2.0 * (w * y - z * x)
-    t2 = np.clip(t2, -1.0, 1.0)
-    pitch = np.degrees(np.arcsin(t2))
-
-    t3 = +2.0 * (w * z + x * y)
-    t4 = +1.0 - 2.0 * (y * y + z * z)
-    yaw = np.degrees(np.arctan2(t3, t4))
-
-    return roll, pitch, yaw
+    n = math.sqrt(w*w + x*x + y*y + z*z)
+    w, x, y, z = w/n, x/n, y/n, z/n
+    return np.array([
+        [1-2*(y*y+z*z),   2*(x*y - z*w),   2*(x*z + y*w)],
+        [2*(x*y + z*w),   1-2*(x*x+z*z),   2*(y*z - x*w)],
+        [2*(x*z - y*w),   2*(y*z + x*w),   1-2*(x*x+y*y)]
+    ])
 
 class AircraftVisualizer(gl.GLViewWidget):
     """
     AircraftVisualizer renders a 3D filled aircraft mesh and a ground plane.
-    The aircraft orientation is updated based on quaternion data.
-    
-    Use set_axis_inversion(...) to flip the sign of roll/pitch/yaw if needed.
+    The aircraft orientation is updated based on quaternion data and control surface commands.
     """
     def __init__(self, data_store, parent=None):
-        super(AircraftVisualizer, self).__init__(parent)
+        super().__init__(parent)
         self.data_store = data_store
         self.setWindowTitle('Aircraft 3D Visualization')
-
-        # Axis inversion factors for roll, pitch, yaw. Set to +1 or -1.
-        self.axis_inversion = {
-            'roll': 1.0,
-            'pitch': 1.0,
-            'yaw': 1.0
-        }
-
-        # Adjust camera: closer distance, keeping a good elevation and azimuth.
+        self.axis_inversion = {'roll':1.0,'pitch':1.0,'yaw':1.0}
         self.setCameraPosition(distance=5, elevation=15, azimuth=30)
 
         self.init_ground()
         self.init_aircraft()
         self.init_control_surfaces()
 
-        # Timer for updating the visualization (20 Hz)
-        self.timer = QtCore.QTimer()
+        self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.update_visualization)
         self.timer.start(50)
 
-    def set_axis_inversion(self, roll_factor=1.0, pitch_factor=1.0, yaw_factor=1.0):
-        """
-        Set each factor to +1 or -1 to flip that axis if needed.
-        Example usage: visualizer.set_axis_inversion(-1, 1, 1)
-        """
-        self.axis_inversion['roll'] = roll_factor
-        self.axis_inversion['pitch'] = pitch_factor
-        self.axis_inversion['yaw'] = yaw_factor
-
     def init_ground(self):
-        """
-        Create and add a simple ground plane.
-        """
         grid = gl.GLGridItem()
-        grid.setSize(50, 50)
-        grid.setSpacing(1, 1)
+        grid.setSize(50,50)
+        grid.setSpacing(1,1)
         self.addItem(grid)
 
     def get_aircraft_mesh_data(self):
@@ -185,113 +156,98 @@ class AircraftVisualizer(gl.GLViewWidget):
         return all_vertices, all_faces, face_colors
 
     def init_aircraft(self):
-        """
-        Create a filled aircraft mesh and add it to the scene.
-        """
-        vertices, faces, face_colors = self.get_aircraft_mesh_data()
-        # Save original vertices for rotation.
-        self._orig_mesh_vertices = vertices.copy()
-        self._faces = faces
-        self._face_colors = face_colors
-
+        vertices, faces, colors = self.get_aircraft_mesh_data()
         self.aircraft_mesh = gl.GLMeshItem(
-            vertexes=vertices,
-            faces=faces,
-            faceColors=face_colors,
-            smooth=False,
-            shader='shaded',
-            drawEdges=True,
-            edgeColor=(0, 0, 0, 1)
+            vertexes=vertices, faces=faces, faceColors=colors,
+            smooth=False, shader='shaded', drawEdges=True, edgeColor=(0,0,0,1)
         )
+        self.aircraft_mesh.translate(0,0,0)
         self.addItem(self.aircraft_mesh)
 
     def init_control_surfaces(self):
         """
-        Create separate mesh items for the control surfaces:
-        left/right ailerons, elevator, and rudder.
-        Their geometry is defined in the aircraft coordinate system.
+        Create mesh items for the control surfaces (ailerons, elevator, rudder)
+        and record their hinge points for use in update_visualization().
         """
-        # Left Aileron (moved to the trailing edge of the left wing)
-        left_aileron_vertices = np.array([
+        # Dictionary mapping surface name → hinge point in aircraft coords
+        self.hinges = {}
+
+        # --- Left Aileron ---
+        left_verts = np.array([
             [-0.1, -0.6, 0.0],
             [-0.1, -1.2, 0.0],
-            [0.0,  -1.2, 0.0],
-            [0.0,  -0.6, 0.0]
+            [ 0.0, -1.2, 0.0],
+            [ 0.0, -0.6, 0.0]
         ])
-        left_aileron_faces = np.array([[0, 1, 2], [0, 2, 3]])
-        left_aileron_colors = np.array([[0.8, 0.0, 0.0, 1.0]] * left_aileron_faces.shape[0])
+        left_faces = np.array([[0, 1, 2], [0, 2, 3]])
+        left_colors = np.array([[0.8, 0.0, 0.0, 1.0]] * left_faces.shape[0])
         self.left_aileron = gl.GLMeshItem(
-            vertexes=left_aileron_vertices,
-            faces=left_aileron_faces,
-            faceColors=left_aileron_colors,
+            vertexes=left_verts,
+            faces=left_faces,
+            faceColors=left_colors,
             smooth=False,
             shader='shaded',
             drawEdges=True,
             edgeColor=(0, 0, 0, 1)
         )
         self.addItem(self.left_aileron)
-        self._orig_left_aileron = left_aileron_vertices.copy()
-        self._left_aileron_faces = left_aileron_faces
-        self._left_aileron_colors = left_aileron_colors
+        # Hinge at trailing edge midpoint
+        self.hinges['left_aileron'] = np.array([0.0, -0.6, 0.0])
 
-        # Right Aileron (moved to the trailing edge of the right wing)
-        right_aileron_vertices = np.array([
+        # --- Right Aileron ---
+        right_verts = np.array([
             [-0.1,  0.6, 0.0],
             [-0.1,  1.2, 0.0],
-            [0.0,   1.2, 0.0],
-            [0.0,   0.6, 0.0]
+            [ 0.0,  1.2, 0.0],
+            [ 0.0,  0.6, 0.0]
         ])
-        right_aileron_faces = np.array([[0, 1, 2], [0, 2, 3]])
-        right_aileron_colors = np.array([[0.8, 0.0, 0.0, 1.0]] * right_aileron_faces.shape[0])
+        right_faces = np.array([[0, 1, 2], [0, 2, 3]])
+        right_colors = np.array([[0.8, 0.0, 0.0, 1.0]] * right_faces.shape[0])
         self.right_aileron = gl.GLMeshItem(
-            vertexes=right_aileron_vertices,
-            faces=right_aileron_faces,
-            faceColors=right_aileron_colors,
+            vertexes=right_verts,
+            faces=right_faces,
+            faceColors=right_colors,
             smooth=False,
             shader='shaded',
             drawEdges=True,
             edgeColor=(0, 0, 0, 1)
         )
         self.addItem(self.right_aileron)
-        self._orig_right_aileron = right_aileron_vertices.copy()
-        self._right_aileron_faces = right_aileron_faces
-        self._right_aileron_colors = right_aileron_colors
+        self.hinges['right_aileron'] = np.array([0.0,  0.6, 0.0])
 
-        # Elevator (attached to the trailing edge of the horizontal stabilizer) 
-        elevator_vertices = np.array([ 
-            [-1.1, -0.4, 0.0], 
-            [-1.1, 0.4, 0.0], 
-            [-1.0, 0.4, 0.0], 
-            [-1.0, -0.4, 0.0] 
-        ]) 
-        
-        elevator_faces = np.array([[0, 1, 2], [0, 2, 3]]) 
-        elevator_colors = np.array([[0.0, 0.8, 0.0, 1.0]] * elevator_faces.shape[0]) 
-        self.elevator = gl.GLMeshItem( 
-            vertexes=elevator_vertices, 
-            faces=elevator_faces, 
-            faceColors=elevator_colors, 
-            smooth=False, 
-            shader='shaded', 
-            drawEdges=True, 
-            edgeColor=(0, 0, 0, 1) 
-        ) 
-        self.addItem(self.elevator) 
-        self._orig_elevator = elevator_vertices.copy() 
-        self._elevator_faces = elevator_faces 
-        self._elevator_colors = elevator_colors
+        # --- Elevator ---
+        elev_verts = np.array([
+            [-1.1, -0.4, 0.0],
+            [-1.1,  0.4, 0.0],
+            [-1.0,  0.4, 0.0],
+            [-1.0, -0.4, 0.0]
+        ])
+        elev_faces = np.array([[0, 1, 2], [0, 2, 3]])
+        elev_colors = np.array([[0.0, 0.8, 0.0, 1.0]] * elev_faces.shape[0])
+        self.elevator = gl.GLMeshItem(
+            vertexes=elev_verts,
+            faces=elev_faces,
+            faceColors=elev_colors,
+            smooth=False,
+            shader='shaded',
+            drawEdges=True,
+            edgeColor=(0, 0, 0, 1)
+        )
+        self.addItem(self.elevator)
+        # Hinge at tailplane leading edge
+        self.hinges['elevator'] = np.array([-1.0, 0.0, 0.0])
 
-        # Rudder (attached to the trailing edge of the vertical fin)
-        rudder_vertices = np.array([
+        # --- Rudder ---
+        rudder_verts = np.array([
             [-1.0, 0.0, -0.6],
             [-1.0, 0.0, -0.3],
-            [-1.1,  0.0, -0.3],
-            [-1.1,  0.0, -0.6]
+            [-1.1, 0.0, -0.3],
+            [-1.1, 0.0, -0.6]
         ])
         rudder_faces = np.array([[0, 1, 2], [0, 2, 3]])
         rudder_colors = np.array([[0.0, 0.0, 0.8, 1.0]] * rudder_faces.shape[0])
         self.rudder = gl.GLMeshItem(
-            vertexes=rudder_vertices,
+            vertexes=rudder_verts,
             faces=rudder_faces,
             faceColors=rudder_colors,
             smooth=False,
@@ -300,155 +256,76 @@ class AircraftVisualizer(gl.GLViewWidget):
             edgeColor=(0, 0, 0, 1)
         )
         self.addItem(self.rudder)
-        self._orig_rudder = rudder_vertices.copy()
-        self._rudder_faces = rudder_faces
-        self._rudder_colors = rudder_colors
-
-    @staticmethod
-    def rotation_matrix(axis, angle):
-        """
-        Compute a rotation matrix for rotating 'angle' radians around 'axis'
-        """
-        axis = np.array(axis)
-        axis = axis / np.linalg.norm(axis)
-        cos_a = np.cos(angle)
-        sin_a = np.sin(angle)
-        ux, uy, uz = axis
-        return np.array([
-            [cos_a + ux*ux*(1-cos_a),      ux*uy*(1-cos_a) - uz*sin_a, ux*uz*(1-cos_a) + uy*sin_a],
-            [uy*ux*(1-cos_a) + uz*sin_a, cos_a + uy*uy*(1-cos_a),      uy*uz*(1-cos_a) - ux*sin_a],
-            [uz*ux*(1-cos_a) - uy*sin_a, uz*uy*(1-cos_a) + ux*sin_a, cos_a + uz*uz*(1-cos_a)]
-        ])
+        # Hinge at vertical fin trailing edge
+        self.hinges['rudder'] = np.array([-1.0, 0.0, -0.6])
 
     def update_visualization(self):
         """
-        Update the aircraft orientation using the latest quaternion data.
-        Also update the control surfaces based on the command values.
-        Applies a final z‑flip so that -z is up and +z is down.
+        Update the aircraft and control‐surface orientations using quaternion and
+        rate-command data from the DataStore.  Uses GPU transforms rather than
+        rebuilding meshes each frame.
         """
-        q = self.data_store.data["quaternion"]
-        if None not in (q["w"], q["x"], q["y"], q["z"]):
-            roll, pitch, yaw = quaternion_to_euler(q["w"], q["x"], q["y"], q["z"])
+        # 1) Fetch and validate quaternion
+        w = self.data_store.get_latest("imu", "quaternion", "w")
+        x = self.data_store.get_latest("imu", "quaternion", "x")
+        y = self.data_store.get_latest("imu", "quaternion", "y")
+        z = self.data_store.get_latest("imu", "quaternion", "z")
+        if None in (w, x, y, z):
+            return
 
-            # Apply axis inversion factors.
-            roll *= self.axis_inversion['roll']
-            pitch *= self.axis_inversion['pitch']
-            yaw *= self.axis_inversion['yaw']
+        # 2) Build 3x3 rotation matrix directly from quaternion
+        M = quat_to_matrix(w, x, y, z)
 
-            # Create composite rotation matrix from Euler angles (ZYX order).
-            cr = np.cos(np.radians(roll))
-            sr = np.sin(np.radians(roll))
-            cp = np.cos(np.radians(pitch))
-            sp = np.sin(np.radians(pitch))
-            cy = np.cos(np.radians(yaw))
-            sy = np.sin(np.radians(yaw))
+        # 3) Apply global rotation to the aircraft mesh
+        #    Build a 4×4 homogeneous matrix and set as the mesh transform
+        mat4 = np.eye(4)
+        mat4[:3, :3] = M
+        t = pg.Transform3D()
+        t.setMatrix(mat4.flatten())
+        self.aircraft_mesh.resetTransform()
+        self.aircraft_mesh.setTransform(t)
 
-            Rz = np.array([
-                [cy, -sy, 0],
-                [sy,  cy, 0],
-                [0,    0, 1]
-            ])
-            Ry = np.array([
-                [cp, 0, sp],
-                [0, 1, 0],
-                [-sp, 0, cp]
-            ])
-            Rx = np.array([
-                [1, 0, 0],
-                [0, cr, -sr],
-                [0, sr, cr]
-            ])
-            R = Rz @ Ry @ Rx
+        # 4) Fetch control‐surface commands (–1…+1)
+        roll_cmd  = self.data_store.get_latest("controller", "rate", "roll")  or 0.0
+        pitch_cmd = self.data_store.get_latest("controller", "rate", "pitch") or 0.0
+        yaw_cmd   = self.data_store.get_latest("controller", "rate", "yaw")   or 0.0
 
-            # Rotate the original mesh vertices.
-            rotated_vertices = (R @ self._orig_mesh_vertices.T).T
-            # Flip the z-axis so that -z is up and +z is down.
-            rotated_vertices[:, 2] *= -1
+        # 5) Compute deflection in degrees (±30° max)
+        max_defl_deg = 30.0
+        defl_roll_deg  = roll_cmd  * max_defl_deg
+        defl_pitch_deg = pitch_cmd * max_defl_deg
+        defl_yaw_deg   = yaw_cmd   * max_defl_deg
 
-            self.aircraft_mesh.setMeshData(
-                vertexes=rotated_vertices,
-                faces=self._faces,
-                faceColors=self._face_colors,
-                smooth=False,
-                shader='shaded',
-                drawEdges=True,
-                edgeColor=(0, 0, 0, 1)
-            )
+        # 6) Helper to apply hinge‐based rotation then global transform
+        def apply_surface_transform(mesh, hinge, axis, angle_deg):
+            mesh.resetTransform()
+            mesh.translate(*hinge)
+            mesh.rotate(angle_deg, *axis)
+            mesh.translate(*(-hinge))
+            mesh.setTransform(t, combine=True)
 
-            # Helper function: apply deflection rotation about a hinge,
-            # then overall aircraft rotation R and final z flip.
-            def transform_surface(orig_vertices, hinge, axis, deflection_angle):
-                relative = orig_vertices - hinge
-                R_defl = AircraftVisualizer.rotation_matrix(axis, deflection_angle)
-                rotated_relative = (R_defl @ relative.T).T
-                transformed = rotated_relative + hinge
-                transformed = (R @ transformed.T).T
-                transformed[:, 2] *= -1
-                return transformed
-
-            # Get command values (default to 0 if not available)
-            # Commands are in the range -1 to 1; scale them so that ±1 is 90° deflection.
-            rate_controller_roll = self.data_store.data["rate"]["roll"] or 0.0
-            rate_controller_pitch = self.data_store.data["rate"]["pitch"] or 0.0
-            rate_controller_yaw = self.data_store.data["rate"]["yaw"] or 0.0
-
-            max_deflection = np.radians(90)  # 90° maximum for all control surfaces
-
-            # Compute actual deflection angles.
-            left_aileron_angle = -rate_controller_roll * max_deflection
-            right_aileron_angle = rate_controller_roll * max_deflection
-            elevator_angle = -rate_controller_pitch * max_deflection
-            rudder_angle = rate_controller_yaw * max_deflection
-
-            # Update left aileron.
-            # Hinge at the trailing edge of the left wing (x = 0.0).
-            hinge_left = np.array([0.0, -0.6, 0.0])
-            transformed_left = transform_surface(self._orig_left_aileron, hinge_left, [0, 1, 0], left_aileron_angle)
-            self.left_aileron.setMeshData(
-                vertexes=transformed_left,
-                faces=self._left_aileron_faces,
-                faceColors=self._left_aileron_colors,
-                smooth=False,
-                shader='shaded',
-                drawEdges=True,
-                edgeColor=(0, 0, 0, 1)
-            )
-
-            # Update right aileron.
-            hinge_right = np.array([0.0, 0.6, 0.0])
-            transformed_right = transform_surface(self._orig_right_aileron, hinge_right, [0, 1, 0], right_aileron_angle)
-            self.right_aileron.setMeshData(
-                vertexes=transformed_right,
-                faces=self._right_aileron_faces,
-                faceColors=self._right_aileron_colors,
-                smooth=False,
-                shader='shaded',
-                drawEdges=True,
-                edgeColor=(0, 0, 0, 1)
-            )
-
-            # Update elevator.
-            hinge_elevator = np.array([-1.0, 0.0, 0.0]) 
-            transformed_elevator = transform_surface(self._orig_elevator, hinge_elevator, [0, 1, 0], elevator_angle) 
-            self.elevator.setMeshData( 
-                vertexes=transformed_elevator, 
-                faces=self._elevator_faces, 
-                faceColors=self._elevator_colors, 
-                smooth=False, 
-                shader='shaded', 
-                drawEdges=True, 
-                edgeColor=(0, 0, 0, 1) 
-            )
-
-            # Update rudder.
-            hinge_rudder = np.array([-1.0, 0.0, -0.6])
-            transformed_rudder = transform_surface(self._orig_rudder, hinge_rudder, [0, 0, 1], rudder_angle)
-            self.rudder.setMeshData(
-                vertexes=transformed_rudder,
-                faces=self._rudder_faces,
-                faceColors=self._rudder_colors,
-                smooth=False,
-                shader='shaded',
-                drawEdges=True,
-                edgeColor=(0, 0, 0, 1)
-            )
+        # 7) Update each control surface
+        apply_surface_transform(
+            self.left_aileron,
+            self.hinges["left_aileron"],
+            (0, 1, 0),
+            -defl_roll_deg
+        )
+        apply_surface_transform(
+            self.right_aileron,
+            self.hinges["right_aileron"],
+            (0, 1, 0),
+            +defl_roll_deg
+        )
+        apply_surface_transform(
+            self.elevator,
+            self.hinges["elevator"],
+            (0, 1, 0),
+            -defl_pitch_deg
+        )
+        apply_surface_transform(
+            self.rudder,
+            self.hinges["rudder"],
+            (0, 0, 1),
+            +defl_yaw_deg
+        )

@@ -193,6 +193,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mqttClient = MqttClient()
         self.mqttClient.connectionChanged.connect(self.update_connection_status)
         self.mqttClient.dataReceived.connect(self.update_data_status)
+        self.mqttClient.dataReceived.connect(self.auto_toggle_logging)
         self.mqttClient.connect()
 
     def toggle_logging(self):
@@ -228,6 +229,30 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.dataLabel.setText("Data: No Recent Data")
             self.dataLabel.setStyleSheet("color: gray;")
+
+    def auto_toggle_logging(self):
+        """
+        Automatic flight‐based logger control.
+        - When flight_state == 2 (INFLIGHT) and not already recording, start logging.
+        - When flight_state != 2 and currently recording, stop logging.
+        Keeps the UI button in sync so the user sees the correct state.
+        """
+        # Read the latest flight_state (cast to int in case it came as float)
+        state = int(data_values.get("flight_state", 0))
+
+        # If we’ve just entered “INFLIGHT” and aren’t recording yet → start
+        if state == 2 and not self.dataLogger.recording:
+            self.dataLogger.start()
+            self.logButton.setText("Stop Logging")
+            self.logButton.setStyleSheet(
+                "background-color: red; font-size: 20px; padding: 15px;")
+
+        # If we’ve left INFLIGHT (i.e. PREFLIGHT or LANDED) and we are recording → stop
+        elif state != 2 and self.dataLogger.recording:
+            self.dataLogger.stop()
+            self.logButton.setText("Start Logging")
+            self.logButton.setStyleSheet(
+                "background-color: green; font-size: 20px; padding: 15px;")
     
     def publish_reset(self):
         self.mqttClient.client.publish("arduflite/command/reset", "1")

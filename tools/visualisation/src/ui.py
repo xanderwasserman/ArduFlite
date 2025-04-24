@@ -76,9 +76,9 @@ class MainWindow(QtWidgets.QMainWindow):
         status_layout.addWidget(alt)
         # 3D visualizer inside status box
         self.visualizer = AircraftVisualizer(self.data_store)
-        self.visualizer.axis_inversion['roll']  = -1
+        self.visualizer.axis_inversion['roll']  = 1
         self.visualizer.axis_inversion['pitch'] = -1
-        self.visualizer.axis_inversion['yaw']   = -1
+        self.visualizer.axis_inversion['yaw']   = 1
         self.visualizer.setMinimumHeight(400)
         status_layout.addWidget(self.visualizer)
         self.state_label = QtWidgets.QLabel("State: Unknown")

@@ -62,16 +62,27 @@ class MultiPlotter(pg.PlotWidget):
     MultiPlotter allows plotting multiple series on one time-series graph.
     Each series is defined by a dict:
       {source, category, variable, name, pen}
+    You can optionally pass y_range=(min, max) to fix the Y axis.
     """
-    def __init__(self, data_store, series, parent=None):
+    # Default y-ranges by (source, category)
+    _Y_RANGES = {
+        ("imu","accel"):      (-2, 2),
+        ("imu","gyro"):       (-300, 300),
+        ("imu","orientation"):(-90, 90),
+        ("controller","rate"):    (-1, 1),
+        ("controller","attitude"):(-70, 70),
+    }
+
+    def __init__(self, data_store, series, y_range=None, parent=None):
         """
         :param data_store: instance of DataStore
         :param series: list of dicts with keys:
                        source, category, variable, name, pen
+        :param y_range: optional tuple (ymin, ymax) to fix Y axis
         """
         super().__init__(parent)
         self.data_store = data_store
-        self.series = series
+        self.series     = series
 
         self.setLabel('left', 'Value')
         self.setLabel('bottom', 'Time Ago (s)')
@@ -83,6 +94,21 @@ class MultiPlotter(pg.PlotWidget):
             curve = self.plot([], [], pen=s.get('pen', 'w'), name=s.get('name'))
             self.curves.append(curve)
 
+        # Decide Y range: explicit y_range > built-in mapping > auto
+        if y_range is not None:
+            self.setYRange(*y_range)
+            self.enableAutoRange(axis='y', enable=False)
+        else:
+            # look at first series for default mapping
+            src = self.series[0]['source']
+            cat = self.series[0]['category']
+            rng = MultiPlotter._Y_RANGES.get((src, cat))
+            if rng:
+                self.setYRange(*rng)
+                self.enableAutoRange(axis='y', enable=False)
+            else:
+                self.enableAutoRange(axis='y', enable=True)
+
         # Update every 100 ms
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.update_plot)
@@ -91,7 +117,9 @@ class MultiPlotter(pg.PlotWidget):
     def update_plot(self):
         now = time.monotonic()
         for idx, s in enumerate(self.series):
-            history = self.data_store.get_history(s['source'], s['category'], s['variable'])
+            history = self.data_store.get_history(
+                s['source'], s['category'], s['variable']
+            )
             if not history:
                 # clear if no data
                 self.curves[idx].setData([], [])
@@ -100,6 +128,7 @@ class MultiPlotter(pg.PlotWidget):
             times, values = zip(*history)
             times = [now - t for t in times]
 
+            # downsample if over 1000 points
             if len(times) > 1000:
                 factor = len(times) // 1000
                 times  = times[::factor]

@@ -266,8 +266,7 @@ class AircraftVisualizer(gl.GLViewWidget):
     def update_visualization(self):
         """
         Update the aircraft and control surfaces.
-        Applies a 4×4 quaternion‐based transform to the fuselage mesh,
-        then re‐applies hinge rotations + that same transform to each surface.
+        Fixes +Z-down, and flips roll/yaw signs via axis reflection.
         """
         # 1) Grab quaternion
         w = self.data_store.get_latest("imu", "quaternion", "w")
@@ -277,39 +276,39 @@ class AircraftVisualizer(gl.GLViewWidget):
         if None in (w, x, y, z):
             return
 
-        # 2) Build 3×3 rotation from quaternion
+        # 2) Build 3×3 from quaternion (with zero-length guard)
         M3 = quat_to_matrix(w, x, y, z)
 
-        # 3) Build 4×4 homogeneous matrix for Qt
+        # 3) Reflect X & Z to invert roll and yaw signs
+        reflect = np.diag([-1.0, 1.0, -1.0])
+        M3 = reflect @ M3 @ reflect
+
+        # 4) Embed in 4×4 and flip +Z-down → –Z-up
         M4 = np.eye(4, dtype=float)
         M4[:3, :3] = M3
-        flat = M4.flatten().tolist()
-        qt_mat = QMatrix4x4(*flat)
+        flip_z = np.diag([1.0, 1.0, -1.0, 1.0])
+        M4 = flip_z @ M4
 
-        # 4) Apply to fuselage mesh
+        # 5) Convert to QMatrix4x4
+        qt_mat = QMatrix4x4(*M4.flatten().tolist())
+
+        # 6) Apply to fuselage
         self.aircraft_mesh.resetTransform()
         self.aircraft_mesh.setTransform(qt_mat)
 
-        # 5) Fetch rate‐loop commands for control‐surface deflections
+        # 7) Control-surface deflections (±30°)
         roll_cmd  = self.data_store.get_latest("controller", "rate", "roll")  or 0.0
         pitch_cmd = self.data_store.get_latest("controller", "rate", "pitch") or 0.0
         yaw_cmd   = self.data_store.get_latest("controller", "rate", "yaw")   or 0.0
+        max_defl  = 30.0
 
-        # 5) Compute deflection in degrees (±30° max)
-        # ±30° max deflection
-        max_defl = 30.0
-
-        # Helper to set a single‐surface transform
         def set_surface(mesh, hinge, axis, angle_deg):
             mesh.resetTransform()
-            # rotate about its hinge
             mesh.translate(*hinge)
             mesh.rotate(angle_deg, *axis)
             mesh.translate(*(-hinge))
-            # then apply the global orientation
             mesh.setTransform(qt_mat)
 
-        # 6) Update each surface
         set_surface(self.left_aileron,  self.hinges['left_aileron'],  (0,1,0), -roll_cmd  * max_defl)
         set_surface(self.right_aileron, self.hinges['right_aileron'], (0,1,0),  roll_cmd  * max_defl)
         set_surface(self.elevator,      self.hinges['elevator'],      (0,1,0), -pitch_cmd * max_defl)

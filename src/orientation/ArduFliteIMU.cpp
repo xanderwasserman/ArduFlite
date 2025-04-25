@@ -600,7 +600,7 @@ void ArduFliteIMU::applyLowPassFilters()
  
      // 2) thresholds & timing
      const float ACC_MOV_THR      = 0.2f;   // >0.2g translation
-     const float GYRO_THROW_MAX   = 30.0f;  // <30 deg/s rotation during throw
+     const float GYRO_THROW_MAX   = 120.0f;  // <30 deg/s rotation during throw
      const float GYRO_STABLE_THR  = 2.0f;   // <2 deg/s considered “steady”
      const unsigned long DEBOUNCE  = 150;   // ms of continuous throw-like motion
      const unsigned long STABLE_MS = 2000;  // ms to declare landed

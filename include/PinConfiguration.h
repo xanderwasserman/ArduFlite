@@ -16,7 +16,7 @@
 #define BOARD_TYPE_WEMOS        1
 
 #ifndef BOARD_TYPE
-#define BOARD_TYPE BOARD_TYPE_FIREBEETLE
+#define BOARD_TYPE BOARD_TYPE_WEMOS
 #endif
 
 namespace I2CConfig 
@@ -26,8 +26,8 @@ namespace I2CConfig
     constexpr int I2C_SDA_PIN           = 21;
     constexpr int I2C_SCL_PIN           = 22;
 #elif BOARD_TYPE == BOARD_TYPE_WEMOS
-    constexpr int I2C_SDA_PIN           = 8;
-    constexpr int I2C_SCL_PIN           = 10;
+    constexpr int I2C_SDA_PIN           = 3;
+    constexpr int I2C_SCL_PIN           = 5;
 #endif
     constexpr int I2C_CLOCK_SPEED       = 400000; // Set I2C clock to 400 kHz.
 
@@ -36,20 +36,35 @@ namespace I2CConfig
 namespace PwmInputConfig 
 {
     // PWM input pins from receiver
+#if BOARD_TYPE == BOARD_TYPE_FIREBEETLE
     constexpr int ROLL_INPUT_PIN        = 34;
     constexpr int PITCH_INPUT_PIN       = 35;
     constexpr int YAW_INPUT_PIN         = 36;
     constexpr int THROTTLE_INPUT_PIN    = 39;
+#elif BOARD_TYPE == BOARD_TYPE_WEMOS
+    constexpr int ROLL_INPUT_PIN        = 6;
+    constexpr int PITCH_INPUT_PIN       = 7;
+    constexpr int YAW_INPUT_PIN         = 8;
+    constexpr int THROTTLE_INPUT_PIN    = 10;
+#endif
+    
 
 } // namespace PwmInputConfig
 
 namespace PwmOutputConfig 
 {
     // Servo output pins to control surfaces
+#if BOARD_TYPE == BOARD_TYPE_FIREBEETLE
     constexpr int LEFT_AIL_PIN          = 17;
     constexpr int RIGHT_AIL_PIN         = 16;
     constexpr int PITCH_PIN             = 4;
     constexpr int YAW_PIN               = 12;
+#elif BOARD_TYPE == BOARD_TYPE_WEMOS
+    constexpr int LEFT_AIL_PIN          = 2;
+    constexpr int RIGHT_AIL_PIN         = 1;
+    constexpr int PITCH_PIN             = 0;
+    constexpr int YAW_PIN               = 4;
+#endif
 
 } // namespace PwmOutputConfig
 

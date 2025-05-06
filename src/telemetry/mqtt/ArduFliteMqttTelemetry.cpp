@@ -138,6 +138,10 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters)
     // Optionally set timeouts:
     // self->wifiManager.setConfigPortalTimeout(30); // e.g. 30s
 
+#if BOARD_TYPE == BOARD_TYPE_WEMOS
+    WiFi.setTxPower(WIFI_POWER_8_5dBm);
+#endif
+
     // Attempt to connect or open the config portal
     if (!localManager.autoConnect("ArduFliteAP")) 
     {

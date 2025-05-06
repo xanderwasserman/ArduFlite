@@ -16,11 +16,17 @@
 
 namespace ServoSetupConfig 
 {
+#if BOARD_TYPE == BOARD_TYPE_FIREBEETLE
     constexpr ServoConfig PITCH_CONFIG      = { PwmOutputConfig::PITCH_PIN,      500, 2500, 90, 70, false };
     constexpr ServoConfig YAW_CONFIG        = { PwmOutputConfig::YAW_PIN,        500, 2500, 90, 70, false };
     constexpr ServoConfig LEFT_AIL_CONFIG   = { PwmOutputConfig::LEFT_AIL_PIN,   500, 2500, 90, 70, true };
     constexpr ServoConfig RIGHT_AIL_CONFIG  = { PwmOutputConfig::RIGHT_AIL_PIN,  500, 2500, 90, 70, false };
-
+#elif BOARD_TYPE == BOARD_TYPE_WEMOS
+    constexpr ServoConfig PITCH_CONFIG      = { PwmOutputConfig::PITCH_PIN,      500, 2500, 90, 70, true };
+    constexpr ServoConfig YAW_CONFIG        = { PwmOutputConfig::YAW_PIN,        500, 2500, 90, 70, true };
+    constexpr ServoConfig LEFT_AIL_CONFIG   = { PwmOutputConfig::LEFT_AIL_PIN,   500, 2500, 90, 70, true };
+    constexpr ServoConfig RIGHT_AIL_CONFIG  = { PwmOutputConfig::RIGHT_AIL_PIN,  500, 2500, 90, 70, false };
+#endif
 } // namespace ServoSetupConfig
 
 #endif // SERVO_CONFIG_H

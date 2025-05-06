@@ -12,6 +12,8 @@
 #include <WiFiManager.h>
 #include <PubSubClient.h>
 #include <Preferences.h>
+
+#include "include/PinConfiguration.h"
 #include "src/telemetry/ArduFliteTelemetry.h"
 #include "src/telemetry/TelemetryData.h"
 #include "src/utils/CommandSystem.h"

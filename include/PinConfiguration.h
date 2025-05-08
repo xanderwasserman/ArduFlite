@@ -43,7 +43,7 @@ namespace PwmInputConfig
     constexpr int THROTTLE_INPUT_PIN    = 39;
 #elif BOARD_TYPE == BOARD_TYPE_WEMOS
     constexpr int ROLL_INPUT_PIN        = 6;
-    constexpr int PITCH_INPUT_PIN       = 7;
+    constexpr int PITCH_INPUT_PIN       = 32;//TODO: should be 7, but pin 7 is used for the RGB LED
     constexpr int YAW_INPUT_PIN         = 8;
     constexpr int THROTTLE_INPUT_PIN    = 10;
 #endif

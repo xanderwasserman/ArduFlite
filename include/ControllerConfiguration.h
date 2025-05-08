@@ -21,11 +21,11 @@ namespace AttitudeControllerConfig
 
 namespace RateControllerConfig 
 {
-    constexpr PIDConfig DEFAULT_ROLL_PID  = {0.01f,  0.0032f,  0.00125f,    1.0f, 0.2f, 0.1f};
-    constexpr PIDConfig DEFAULT_PITCH_PID = {0.008f,  0.0025f,  0.003f,      1.0f, 0.2f, 0.1f};
-    constexpr PIDConfig DEFAULT_YAW_PID   = {0.01f,  0.0f,     0.0f,        1.0f, 0.2f, 0.1f};
+    constexpr PIDConfig DEFAULT_ROLL_PID  = {0.015f,    0.0032f,  0.00125f,    1.0f, 0.4f, 0.02f};
+    constexpr PIDConfig DEFAULT_PITCH_PID = {0.01f,     0.0025f,  0.003f,      1.0f, 0.4f, 0.02f};
+    constexpr PIDConfig DEFAULT_YAW_PID   = {0.015f,    0.0f,     0.0f,        1.0f, 0.4f, 0.02f};
 
-    constexpr float outLpAlpha = 0.8f;
+    constexpr float outLpAlpha = 0.1f;
 
 } // namespace RateControllerConfig
 

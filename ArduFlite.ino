@@ -32,6 +32,7 @@
 #include "src/utils/MultiTapButton.h"
 #include "src/utils/MultiTapButtonManager.h"
 #include "src/utils/CommandSystem.h"
+#include "src/utils/StatusLED.h"
 #include "src/actuators/ServoManager.h"
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/controller/ArduFliteAttitudeController.h"
@@ -82,10 +83,19 @@ HoldButton calibrateButton(ButtonInputConfig::USER_BUTTON_PIN, CALIB_HOLD_TIME, 
 MultiTapButton resetButton(ButtonInputConfig::USER_BUTTON_PIN, 1000, 3, onResetTripleTap, true, 30);
 MultiTapButton modeButton(ButtonInputConfig::USER_BUTTON_PIN, 1000, 2, onModeDoubleTap, true, 30);
 
+#if BOARD_TYPE == BOARD_TYPE_WEMOS
+StatusLED statusLED(7, 1);
+#endif
+
 void setup() 
 {
+#if BOARD_TYPE == BOARD_TYPE_WEMOS
+    statusLED.begin();
+    statusLED.setPattern(Patterns::Boot);
+#endif
+
     Serial.begin(115200);
-    while (!Serial);
+    while (!Serial && millis() < 2000);  // wait max 2 seconds
 
     pinMode(ButtonInputConfig::USER_BUTTON_PIN, INPUT_PULLUP);
 
@@ -96,6 +106,9 @@ void setup()
     if (!myIMU.begin()) 
     {
         Serial.println("IMU failed to init!");
+#if BOARD_TYPE == BOARD_TYPE_WEMOS
+        statusLED.setPattern(Patterns::Error); //fast yellow blink
+#endif
         while (1);
     }
 
@@ -146,6 +159,30 @@ void loop()
     MultiTapButtonManager::updateAll();
 
     // Retrieve the current flight state from the IMU.
+    static ArduFliteMode lastMode = UNKNOWN_MODE;
+    ArduFliteMode currentMode = arduflite.getMode();
+
+    if (currentMode != lastMode) 
+    {
+        switch (currentMode) 
+        {
+            case ASSIST_MODE:
+                #if BOARD_TYPE == BOARD_TYPE_WEMOS
+                statusLED.setPattern(Patterns::Assist);
+                #endif
+                break;
+            case STABILIZED_MODE:
+                #if BOARD_TYPE == BOARD_TYPE_WEMOS
+                statusLED.setPattern(Patterns::Stabilized);
+                #endif
+                break;
+            default:
+                break;
+        }
+        lastMode = currentMode;
+    }
+
+    // Retrieve the current flight state from the IMU.
     static FlightState lastState = UNKNOWN_STATE;
     FlightState currentState = myIMU.getFlightState();
     
@@ -194,12 +231,18 @@ void loop()
 // Callback for calibrate button.
 void onCalibrateHold() 
 {
+#if BOARD_TYPE == BOARD_TYPE_WEMOS
+    statusLED.setPattern({0,0,255, 100,100});// fast blue blink
+#endif
     Serial.println("Calibrating IMU...");
     arduflite.pauseTasks();     // Pause control loop tasks
     myIMU.pauseTask();           // Pause the IMU update task
     myIMU.selfCalibrate();       // Run calibration
     myIMU.resumeTask();          // Resume the IMU update task
     arduflite.resumeTasks();    // Resume control loop tasks
+#if BOARD_TYPE == BOARD_TYPE_WEMOS
+    statusLED.setPattern({0,255,0, 500,150});// slow green blink
+#endif
 }
 
 // Callback for telemetry reset button.

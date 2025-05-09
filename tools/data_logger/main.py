@@ -144,9 +144,9 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.setWindowTitle("Flight Data Logger")
         # For touchscreen devices, starting in full screen can be useful.
-        # self.showFullScreen()
+        self.showFullScreen()
         # Alternatively, you can use a fixed size:
-        self.resize(360, 280)
+        # self.resize(360, 280)
         
         # Central widget and layout with padding for touch.
         central = QtWidgets.QWidget()

@@ -209,6 +209,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.logTimer = QtCore.QTimer(self)
         self.logTimer.timeout.connect(self.record_data)
         self.logTimer.start(50)
+        
+        # remember last flight_state so we only react on a change
+        self.prev_flight_state = int(data_values.get("flight_state", 0))
 
         self.dataLogger = DataLogger()
         self.mqttClient = MqttClient()
@@ -216,6 +219,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mqttClient.dataReceived.connect(self.update_data_status)
         self.mqttClient.dataReceived.connect(self.auto_toggle_logging)
         self.mqttClient.connect()
+        self.auto_toggle_logging()
 
     def toggle_logging(self):
         if not self.dataLogger.recording:
@@ -259,7 +263,11 @@ class MainWindow(QtWidgets.QMainWindow):
         Keeps the UI button in sync so the user sees the correct state.
         """
         # Read the latest flight_state (cast to int in case it came as float)
+        # only act if flight_state actually changed
         state = int(data_values.get("flight_state", 0))
+        if state == self.prev_flight_state:
+            return
+        self.prev_flight_state = state
 
         # If we’ve just entered “INFLIGHT” and aren’t recording yet → start
         if state == 2 and not self.dataLogger.recording:

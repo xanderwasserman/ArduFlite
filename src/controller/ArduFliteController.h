@@ -36,7 +36,8 @@ struct LoopStats {
 enum ArduFliteMode 
 {
     ASSIST_MODE     = 0,    // Pilot controls the attitude setpoint.
-    STABILIZED_MODE = 1     // Pilot directly controls the rate setpoints.
+    STABILIZED_MODE = 1,     // Pilot directly controls the rate setpoints.
+    UNKNOWN_MODE    = 99     // Pilot directly controls the rate setpoints.
 };
 
 /**

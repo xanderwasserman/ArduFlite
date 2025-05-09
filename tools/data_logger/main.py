@@ -146,7 +146,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # For touchscreen devices, starting in full screen can be useful.
         # self.showFullScreen()
         # Alternatively, you can use a fixed size:
-        self.resize(800, 600)
+        self.resize(854, 480)
         
         # Central widget and layout with padding for touch.
         central = QtWidgets.QWidget()

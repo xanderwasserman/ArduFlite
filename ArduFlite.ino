@@ -45,6 +45,7 @@
 #include "src/tests/ReceiverTests.h"
 #include "src/cli/ArduFliteCLI.h"
 #include "src/receiver/ArduFlitePwmReceiver.h"
+#include "src/mission_planner/MissionPlanner.h"
 
 void printControlLoopStats();
 void onCalibrateHold();
@@ -77,6 +78,9 @@ ArduFlitePwmReceiver pilotReceiver(ReceiverSetupConfig::RECEIVER_CHANNELS, Recei
 
 // Instantiate the CLI
 ArduFliteCLI myCLI(&arduflite, &myIMU);
+
+//Instantiate mission planner
+MissionPlanner mission(arduflite);
 
 // Instantiate the User Buttons
 HoldButton calibrateButton(ButtonInputConfig::USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
@@ -129,6 +133,9 @@ void setup()
 
     // Start the CLI task.
     myCLI.startTask();
+
+    // Start the Mission Planner
+    mission.begin();
 
     // Initialize and register buttons.
     calibrateButton.begin();
@@ -198,9 +205,19 @@ void loop()
                 break;
             case INFLIGHT:
                 Serial.println("Aircraft is in FLIGHT state.");
+                if (!mission.isRunning())
+                {
+                    mission.start();
+                }
+                
                 break;
             case LANDED:
                 Serial.println("Aircraft has LANDED.");
+                if (mission.isRunning())
+                {
+                    mission.stop();
+                }
+
                 arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
                 arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
                 break;
@@ -209,13 +226,6 @@ void loop()
         }
         lastState = currentState;
     }
-
-    //TODO
-    // Run the attitude test sequence only when in-flight.
-    // if (currentState == INFLIGHT) 
-    // {
-    //     runAttitudeTest_wiggle(arduflite, 15, 2000);
-    // }
 
     //TODO
     // runReceiverTest_print(pilotReceiver, numReceiverChannels);

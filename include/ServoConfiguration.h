@@ -16,6 +16,8 @@
 
 namespace ServoSetupConfig 
 {
+    constexpr float MAX_SERVO_DEG_PER_SEC = 300.0f;
+
 #if BOARD_TYPE == BOARD_TYPE_FIREBEETLE
     constexpr ServoConfig PITCH_CONFIG      = { PwmOutputConfig::PITCH_PIN,      500, 2500, 90, 70, false };
     constexpr ServoConfig YAW_CONFIG        = { PwmOutputConfig::YAW_PIN,        500, 2500, 90, 70, false };

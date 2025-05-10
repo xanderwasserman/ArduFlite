@@ -25,7 +25,7 @@
 
 // Set the default Barometer type. Change this definition to BARO_TYPE_BMP280 to use the BMP280.
 #ifndef BARO_TYPE
-#define BARO_TYPE BARO_TYPE_NONE
+#define BARO_TYPE BARO_TYPE_BMP280
 #endif
 
 //==============================================================

@@ -25,7 +25,7 @@ namespace RateControllerConfig
 {
     constexpr PIDConfig DEFAULT_ROLL_PID  = {0.015f,    0.0032f,  0.00125f,     1.0f, 0.6f, 0.03f};
     constexpr PIDConfig DEFAULT_PITCH_PID = {0.009f,    0.0025f,  0.0036f,      1.0f, 0.6f, 0.02f};
-    constexpr PIDConfig DEFAULT_YAW_PID   = {0.015f,    0.0f,     0.00125ff,    1.0f, 0.6f, 0.03f};
+    constexpr PIDConfig DEFAULT_YAW_PID   = {0.015f,    0.0f,     0.00125f,    1.0f, 0.6f, 0.03f};
 
     constexpr float outLpAlpha = 0.1f;
 

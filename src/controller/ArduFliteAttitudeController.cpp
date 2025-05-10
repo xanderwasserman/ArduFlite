@@ -168,7 +168,7 @@
      float pitchErr = scale * qErrorRP.y;   // Pitch error component.
      
      // --- Apply Deadband to Filter Out Noise ---
-     float deadband = 0.01f;  // Approximately 0.57 degrees.
+     float deadband = AttitudeControllerConfig::ATTITUDE_DEADBAND_RADS; 
      if (fabs(rollErr) < deadband)   rollErr = 0.0f;
      if (fabs(pitchErr) < deadband)  pitchErr = 0.0f;
      if (fabs(yawErr) < deadband)    yawErr = 0.0f;

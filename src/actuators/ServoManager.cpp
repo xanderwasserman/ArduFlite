@@ -7,6 +7,7 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "ServoManager.h"
+#include "include/ServoConfiguration.h"
 
 // Helper: maps a float value from [inMin, inMax] to [outMin, outMax].
 int ServoManager::mapFloatToInt(float val, float inMin, float inMax, int outMin, int outMax) {
@@ -23,7 +24,8 @@ ServoManager::ServoManager(WingDesign design,
                            ServoConfig rightAilCfg,
                            bool dual)
     : wingDesign(design), pitchConfig(pitchCfg), yawConfig(yawCfg),
-      leftAilConfig(leftAilCfg), rightAilConfig(rightAilCfg), dualAilerons(dual)
+      leftAilConfig(leftAilCfg), rightAilConfig(rightAilCfg), dualAilerons(dual),
+      maxServoDegPerSec(ServoSetupConfig::MAX_SERVO_DEG_PER_SEC)
 {
     // Attach elevator and rudder servos.
     pitchServo.attach(pitchConfig.pin, pitchConfig.minPulse, pitchConfig.maxPulse);

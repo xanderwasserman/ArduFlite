@@ -12,8 +12,6 @@
 #include <Arduino.h>
 #include <ESP32Servo.h>
 
-#include "include/ServoConfiguration.h"
-
 // Wing design types.
 enum WingDesign {
     CONVENTIONAL, // Separate elevator, rudder, and aileron(s)
@@ -133,7 +131,7 @@ private:
     float lastSingleAilDeg   = 0.0f;
 
     // limiter configuration
-    float maxServoDegPerSec  = ServoSetupConfig::MAX_SERVO_DEG_PER_SEC;    // default cap: 300°/s
+    float maxServoDegPerSec  = 300.0f;    // default cap: 300°/s
     unsigned long lastUpdateMicros = 0;   // timestamp of last writeCommands()
 };
 

@@ -88,7 +88,7 @@ public:
      * @param pitch Pitch angle in degrees.
      * @param yaw Yaw angle in degrees.
      */
-    void setDesiredEulerDegs(float pitch, float roll, float yaw);
+    void setDesiredEulerDegs(float roll, float pitch, float yaw);
 
     /**
      * @brief Sets the pilot-provided rate setpoints in Stabilized mode.

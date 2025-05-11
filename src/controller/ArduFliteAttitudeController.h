@@ -82,11 +82,11 @@ public:
      * Converts the provided Euler angles (roll, pitch, yaw) to a quaternion and updates
      * the desired orientation.
      *
-     * @param pitch Pitch angle in radians.
      * @param roll Roll angle in radians.
+     * @param pitch Pitch angle in radians.
      * @param yaw Yaw angle in radians.
      */
-    void setDesiredEulerRads(float pitch, float roll, float yaw);
+    void setDesiredEulerRads(float roll, float pitch, float yaw);
 
     /**
      * @brief Sets the desired orientation using Euler angles in degrees.
@@ -94,11 +94,11 @@ public:
      * Converts the provided Euler angles (roll, pitch, yaw) from degrees to radians and
      * updates the desired orientation.
      *
-     * @param pitch Pitch angle in degrees.
      * @param roll Roll angle in degrees.
+     * @param pitch Pitch angle in degrees.
      * @param yaw Yaw angle in degrees.
      */
-    void setDesiredEulerDegs(float pitch, float roll, float yaw);
+    void setDesiredEulerDegs(float roll, float pitch, float yaw);
 
     /**
      * @brief Updates the attitude controller.

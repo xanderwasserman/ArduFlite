@@ -102,7 +102,7 @@ ArduFliteMode ArduFliteController::getMode() const
  * @param pitch Pitch angle in degrees.
  * @param yaw Yaw angle in degrees.
  */
-void ArduFliteController::setDesiredEulerDegs(float pitch, float roll, float yaw) 
+void ArduFliteController::setDesiredEulerDegs(float roll, float pitch, float yaw) 
 {
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
     pilotRollAngleSetpoint  = roll;
@@ -111,7 +111,7 @@ void ArduFliteController::setDesiredEulerDegs(float pitch, float roll, float yaw
     xSemaphoreGive(ctrlMutex);
 
     // Forward the request to the attitude controller.
-    attitudeCtrl->setDesiredEulerDegs(pitch, roll, yaw);
+    attitudeCtrl->setDesiredEulerDegs(roll, pitch, yaw);
 }
  
 /**

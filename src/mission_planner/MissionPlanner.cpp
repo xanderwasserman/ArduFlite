@@ -65,11 +65,22 @@ void MissionPlanner::start()
     {
         if (!_steps.empty() && !_running) 
         {
-            _running = true;
+            _running      = true;
             _currentIndex = 0;
-            _stepStartMs = millis();
-            auto &s = _steps[0];
-            _ctrl.setDesiredEulerDegs(s.rollDeg, s.pitchDeg, s.yawDeg);
+            _stepStartMs  = millis();
+
+            // grab a const‐ref to the first step
+            const auto &first = _steps[_currentIndex];
+
+            // apply it right away
+            _ctrl.setDesiredEulerDegs(first.rollDeg, first.pitchDeg, first.yawDeg);
+
+            // log it
+            Serial.printf(
+                "MissionPlanner: step %u → roll=%.1f°, pitch=%.1f°, yaw=%.1f°\n",
+                (unsigned)_currentIndex,
+                first.rollDeg, first.pitchDeg, first.yawDeg
+            );
         }
         xSemaphoreGive(_mutex);
     }
@@ -104,37 +115,45 @@ void MissionPlanner::run()
 {
     while (true) 
     {
-        // only do work if mission is running
-        if (isRunning()) 
+        // Take the mutex once
+        if (xSemaphoreTake(_mutex, portMAX_DELAY)) 
         {
-            if (xSemaphoreTake(_mutex, portMAX_DELAY)) 
+            if (_running && !_steps.empty()) 
             {
                 uint32_t now = millis();
-                if (_currentIndex < _steps.size()) 
+                const auto &cur = _steps[_currentIndex];
+
+                // Have we held this step long enough?
+                if (now - _stepStartMs >= cur.holdMs) 
                 {
-                    const auto &step = _steps[_currentIndex];
-                    if (now - _stepStartMs >= step.holdMs) 
+                    // advance index
+                    _currentIndex++;
+
+                    if (_currentIndex >= _steps.size()) 
                     {
-                        // advance
-                        _currentIndex++;
-                        if (_currentIndex >= _steps.size()) 
-                        {
-                            // finished
-                            _running = false;
-                        } 
-                        else 
-                        {
-                            // set next step
-                            _stepStartMs = now;
-                            const auto &s = _steps[_currentIndex];
-                            _ctrl.setDesiredEulerDegs(s.rollDeg, s.pitchDeg, s.yawDeg);
-                        }
+                        // mission is done
+                        Serial.println("MissionPlanner: Mission complete");
+                        _running = false;
+                    } 
+                    else 
+                    {
+                        // apply next step
+                        const auto &next = _steps[_currentIndex];
+                        _ctrl.setDesiredEulerDegs(next.rollDeg, next.pitchDeg, next.yawDeg);
+                        Serial.printf(
+                            "MissionPlanner: step %u → roll=%.1f°, pitch=%.1f°, yaw=%.1f°\n",
+                            (unsigned)_currentIndex,
+                            next.rollDeg, next.pitchDeg, next.yawDeg
+                        );
+                        // reset the timer
+                        _stepStartMs = now;
                     }
                 }
-                xSemaphoreGive(_mutex);
             }
+            xSemaphoreGive(_mutex);
         }
-        // run at 100 Hz
+        // throttle to 100 Hz
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
+

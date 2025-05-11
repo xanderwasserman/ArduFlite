@@ -14,7 +14,7 @@
 namespace MissionConfig 
 {
     constexpr MissionPlanner::Step MISSION_STEPS[] = {
-        {  0.0f,  2.0f,  0.0f, 2000 },  // climb 2° for 2 s
+        {  0.0f,  5.0f,  0.0f, 2000 },  // climb 5° for 2 s
         { 10.0f,  0.0f,  0.0f, 1000 },  // roll +10° for 1 s
         {  0.0f,  0.0f,  0.0f, 1000 },  // level for 0.5 s
         {-10.0f,  0.0f,  0.0f, 1000 },  // roll –10° for 1 s

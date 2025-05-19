@@ -14,7 +14,7 @@
 namespace AttitudeControllerConfig 
 {
     constexpr PIDConfig DEFAULT_ROLL_PID  = {200.0f,  20.0f,   30.0f, 100.0f, 100.0f, 0.1f};
-    constexpr PIDConfig DEFAULT_PITCH_PID = {200.0f,  20.0f,   30.0f, 100.0f, 100.0f, 0.1f};
+    constexpr PIDConfig DEFAULT_PITCH_PID = {160.0f,  20.0f,   30.0f, 100.0f, 100.0f, 0.1f};
     constexpr PIDConfig DEFAULT_YAW_PID   = {200.0f,  20.0f,   30.0f, 100.0f, 100.0f, 0.1f};
 
     constexpr float ATTITUDE_DEADBAND_RADS = 0.001f;
@@ -23,9 +23,9 @@ namespace AttitudeControllerConfig
 
 namespace RateControllerConfig 
 {
-    constexpr PIDConfig DEFAULT_ROLL_PID  = {0.035f,    0.005f,  0.003f,     1.0f, 1.0f, 0.03f};
-    constexpr PIDConfig DEFAULT_PITCH_PID = {0.01f,    0.0025f,  0.005f,      1.0f, 1.0f, 0.02f};
-    constexpr PIDConfig DEFAULT_YAW_PID   = {0.01f,    0.0f,     0.003f,    1.0f, 1.0f, 0.03f};
+    constexpr PIDConfig DEFAULT_ROLL_PID  = {0.035f,    0.005f,  0.003f,     1.0f, 1.0f, 0.1f};
+    constexpr PIDConfig DEFAULT_PITCH_PID = {0.01f,    0.0025f,  0.005f,      1.0f, 1.0f, 0.1f};
+    constexpr PIDConfig DEFAULT_YAW_PID   = {0.01f,    0.0f,     0.003f,    1.0f, 1.0f, 0.1f};
 
     constexpr float outLpAlpha = 0.1f;
 

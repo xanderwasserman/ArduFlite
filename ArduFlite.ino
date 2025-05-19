@@ -47,11 +47,13 @@
 #include "src/receiver/ArduFlitePwmReceiver.h"
 #include "src/mission_planner/MissionPlanner.h"
 
-void printControlLoopStats();
-void onCalibrateHold();
-void onModeDoubleTap();
-void onResetTripleTap();
-void resetSystemCommand();
+void printControlLoopStats(void);
+void onCalibrateHold(void);
+void onModeDoubleTap(void);
+void onResetTripleTap(void);
+void resetSystemCommand(void);
+void pauseController(void);
+void resumeController(void);
 
 // Declare system commands instnaces
 CommandSystem commandSystem;
@@ -202,9 +204,12 @@ void loop()
                 Serial.println("Aircraft is in PREFLIGHT state.");
                 arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
                 arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
+                pauseController();
                 break;
             case INFLIGHT:
                 Serial.println("Aircraft is in FLIGHT state.");
+                resumeController();
+                
                 if (!mission.isRunning())
                 {
                     mission.start();
@@ -220,6 +225,7 @@ void loop()
 
                 arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
                 arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
+                pauseController();
                 break;
             default:
                 break;
@@ -239,7 +245,7 @@ void loop()
 }
 
 // Callback for calibrate button.
-void onCalibrateHold() 
+void onCalibrateHold(void) 
 {
 #if BOARD_TYPE == BOARD_TYPE_WEMOS
     statusLED.setPattern({0,0,255, 100,100});// fast blue blink
@@ -256,7 +262,7 @@ void onCalibrateHold()
 }
 
 // Callback for telemetry reset button.
-void onModeDoubleTap() 
+void onModeDoubleTap(void) 
 {
     Serial.println("Toggling Controller Mode...");
 
@@ -272,8 +278,21 @@ void onModeDoubleTap()
 }
 
 // Callback for telemetry reset button.
-void onResetTripleTap() 
+void onResetTripleTap(void) 
 {
     Serial.println("Resetting Telemetry layer...");
     telemetry.reset();
+}
+
+void pauseController(void)
+{
+    Serial.println("Pausing Controller...");
+    arduflite.pauseTasks();     // Pause control loop tasks
+    servoMgr.writeCommands(0.0f, 0.0f, 0.0f);
+}
+
+void resumeController(void)
+{
+    Serial.println("Resuming Controller...");
+    arduflite.resumeTasks();    // Resume control loop tasks
 }

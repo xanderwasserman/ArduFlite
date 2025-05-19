@@ -17,7 +17,7 @@ namespace AttitudeControllerConfig
     constexpr PIDConfig DEFAULT_PITCH_PID = {200.0f,  20.0f,   30.0f, 100.0f, 100.0f, 0.1f};
     constexpr PIDConfig DEFAULT_YAW_PID   = {200.0f,  20.0f,   30.0f, 100.0f, 100.0f, 0.1f};
 
-    constexpr float ATTITUDE_DEADBAND_RADS = 0.002f;
+    constexpr float ATTITUDE_DEADBAND_RADS = 0.001f;
 
 } // namespace AttitudeControllerConfig
 

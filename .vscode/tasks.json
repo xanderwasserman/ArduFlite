@@ -4,7 +4,7 @@
       {
         "label": "Compile FireBeetle2",
         "type": "shell",
-        "command": "arduino-cli compile -b esp32:esp32:dfrobot_firebeetle2_esp32e --warnings default --build-cache-path ./build_cache --build-path ./build",
+        "command": "arduino-cli compile -b esp32:esp32:dfrobot_firebeetle2_esp32e --warnings default --build-path ./build --build-property build.optimization_flags=\"-O2\" --verbose",
         "group": {
           "kind": "build",
           "isDefault": true

@@ -2,9 +2,9 @@
     "version": "2.0.0",
     "tasks": [
       {
-        "label": "Compile FireBeetle2 Sketch",
+        "label": "Compile FireBeetle2",
         "type": "shell",
-        "command": "arduino-cli compile --fqbn esp32:esp32:dfrobot_firebeetle2_esp32e",
+        "command": "arduino-cli compile -b esp32:esp32:dfrobot_firebeetle2_esp32e --warnings default --build-cache-path ./build_cache --build-path ./build",
         "group": {
           "kind": "build",
           "isDefault": true
@@ -15,9 +15,32 @@
         }
       },
       {
-        "label": "Upload FireBeetle2 Sketch",
+        "label": "Upload FireBeetle2",
         "type": "shell",
-        "command": "arduino-cli upload -p COM4 --fqbn esp32:esp32:dfrobot_firebeetle2_esp32e",
+        "command": "arduino-cli upload -p COM4 -b esp32:esp32:dfrobot_firebeetle2_esp32e", 
+        "group": "build",
+        "presentation": {
+          "echo": true,
+          "reveal": "always"
+        }
+      },
+      {
+        "label": "Compile Lolin C3",
+        "type": "shell",
+        "command": "arduino-cli compile -b esp32:esp32:lolin_c3_mini --warnings default --build-path ./build --build-property build.optimization_flags=\"-O2\" --verbose",
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        },
+        "presentation": {
+          "echo": true,
+          "reveal": "always"
+        }
+      },
+      {
+        "label": "Upload Lolin C3",
+        "type": "shell",
+        "command": "arduino-cli upload -p COM3 -b esp32:esp32:lolin_c3_mini",
         "group": "build",
         "presentation": {
           "echo": true,

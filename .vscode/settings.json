@@ -2,14 +2,24 @@
     "VsCodeTaskButtons.showCounter": true,
     "VsCodeTaskButtons.tasks": [
         {
-            "label": "$(search-refresh) Build",
-            "task": "Compile FireBeetle2 Sketch",
+            "label": "$(search-refresh) Build Firebeetle",
+            "task": "Compile FireBeetle2",
             "tooltip": "🛠️ Compile FireBeetle2 Sketch"
         },
         {
-            "label": "$(notebook-move-up) Upload",
-            "task": "Upload FireBeetle2 Sketch",
+            "label": "$(notebook-move-up) Upload Firebeetle",
+            "task": "Upload FireBeetle2",
             "tooltip": "🧹 Upload FireBeetle2 Sketch"
+        },
+        {
+            "label": "$(search-refresh) Build Lolin C3",
+            "task": "Compile Lolin C3",
+            "tooltip": "🛠️ Compile Lolin C3 Sketch"
+        },
+        {
+            "label": "$(notebook-move-up) Upload Lolin C3",
+            "task": "Upload Lolin C3",
+            "tooltip": "🧹 Upload Lolin C3 Sketch"
         }
     ]
 }

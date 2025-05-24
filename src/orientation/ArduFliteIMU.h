@@ -16,6 +16,7 @@
 #include <Adafruit_AHRS.h>
 #include "src/orientation/FliteQuaternion.h"
 #include "include/PinConfiguration.h"
+#include "include/IMUConfiguration.h"
 
 //==============================================================
 // Barometer type selection
@@ -292,10 +293,10 @@ private:
     float qz = 0.0f;
     float altitude = 0.0f;
 
-    float accelAlpha = 0.05f;
-    float gyroAlpha  = 0.1f;
-    float magAlpha  = 0.1f;
-    float altiAlpha  = 0.005f;
+    float accelAlpha = IMUConfig::ACCEL_ALPHA;
+    float gyroAlpha  = IMUConfig::GYRO_ALPHA;
+    float magAlpha  = IMUConfig::MAG_ALPHA;
+    float altiAlpha  = IMUConfig::ALTI_ALPHA;
     bool lpInitialized = false;
 
     float filteredAccelX, filteredAccelY, filteredAccelZ = 0.0f;

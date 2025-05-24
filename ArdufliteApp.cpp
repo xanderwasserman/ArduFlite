@@ -73,16 +73,16 @@ ArduFliteRateController     rateController;
 ServoManager servoMgr(CONVENTIONAL, ServoSetupConfig::PITCH_CONFIG, ServoSetupConfig::YAW_CONFIG, ServoSetupConfig::LEFT_AIL_CONFIG, ServoSetupConfig::RIGHT_AIL_CONFIG, true);
 
 // Instantiate the Controllers
-ArduFliteController arduflite(&myIMU, &attitudeController, &rateController, &servoMgr);
+ArduFliteController controller(&myIMU, &attitudeController, &rateController, &servoMgr);
 
 // Instantiate the Receiver
 ArduFlitePwmReceiver pilotReceiver(ReceiverSetupConfig::RECEIVER_CHANNELS, ReceiverSetupConfig::NR_RECEIVER_CHANNELS);
 
 // Instantiate the CLI
-ArduFliteCLI myCLI(&arduflite, &myIMU);
+ArduFliteCLI myCLI(&controller, &myIMU);
 
 //Instantiate mission planner
-MissionPlanner mission(arduflite);
+MissionPlanner mission(controller);
 
 // Instantiate the User Buttons
 HoldButton calibrateButton(ButtonInputConfig::USER_BUTTON_PIN, CALIB_HOLD_TIME, onCalibrateHold, true, false, 50);
@@ -121,14 +121,14 @@ void arduflite_init()
     servoMgr.testControlSurfaces();
 
     // Start with a level attitude (Assist mode).
-    arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
-    arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
+    controller.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
+    controller.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
 
     // Set the mode (default is ASSIST_MODE).
-    arduflite.setMode(ASSIST_MODE);
+    controller.setMode(ASSIST_MODE);
 
     // Start the overall control tasks.
-    arduflite.startTasks();
+    controller.startTasks();
 
     // Start the PWM signal receiver.
     pilotReceiver.begin();
@@ -161,7 +161,7 @@ void arduflite_init()
 void arduflite_loop() 
 {
     // Process any pending commands.
-    commandSystem.processCommands(&arduflite, &myIMU);
+    commandSystem.processCommands(&controller, &myIMU);
     
     // Update buttons.
     HoldButtonManager::updateAll();
@@ -169,7 +169,7 @@ void arduflite_loop()
 
     // Retrieve the current flight state from the IMU.
     static ArduFliteMode lastMode = UNKNOWN_MODE;
-    ArduFliteMode currentMode = arduflite.getMode();
+    ArduFliteMode currentMode = controller.getMode();
 
     if (currentMode != lastMode) 
     {
@@ -202,13 +202,13 @@ void arduflite_loop()
         {
             case PREFLIGHT:
                 Serial.println("Aircraft is in PREFLIGHT state.");
-                arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
-                arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
-                pauseController();
+                controller.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
+                controller.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
+                controller.pauseTasks();     // Pause control loop tasks
                 break;
             case INFLIGHT:
                 Serial.println("Aircraft is in FLIGHT state.");
-                resumeController();
+                controller.resumeTasks();    // Resume control loop tasks
                 
                 if (!mission.isRunning())
                 {
@@ -223,9 +223,9 @@ void arduflite_loop()
                     mission.stop();
                 }
 
-                arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
-                arduflite.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
-                pauseController();
+                controller.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
+                controller.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
+                controller.pauseTasks();     // Pause control loop tasks
                 break;
             default:
                 break;
@@ -237,7 +237,7 @@ void arduflite_loop()
     // runReceiverTest_print(pilotReceiver, numReceiverChannels);
         
     // Update telemetry with the latest sensor and control information.
-    telemetryData.update(myIMU, arduflite);
+    telemetryData.update(myIMU, controller);
 
     telemetry.publish(telemetryData);
 
@@ -251,11 +251,11 @@ void onCalibrateHold(void)
     statusLED.setPattern({0,0,255, 100,100});// fast blue blink
 #endif
     Serial.println("Calibrating IMU...");
-    arduflite.pauseTasks();     // Pause control loop tasks
+    controller.pauseTasks();     // Pause control loop tasks
     myIMU.pauseTask();           // Pause the IMU update task
     myIMU.selfCalibrate();       // Run calibration
     myIMU.resumeTask();          // Resume the IMU update task
-    arduflite.resumeTasks();    // Resume control loop tasks
+    controller.resumeTasks();    // Resume control loop tasks
 #if BOARD_TYPE == BOARD_TYPE_WEMOS
     statusLED.setPattern({0,255,0, 500,150});// slow green blink
 #endif
@@ -266,13 +266,13 @@ void onModeDoubleTap(void)
 {
     Serial.println("Toggling Controller Mode...");
 
-    if (arduflite.getMode() == ASSIST_MODE) 
+    if (controller.getMode() == ASSIST_MODE) 
     {
-      arduflite.setMode(STABILIZED_MODE);
+      controller.setMode(STABILIZED_MODE);
     } 
     else 
     {
-      arduflite.setMode(ASSIST_MODE);
+      controller.setMode(ASSIST_MODE);
     }
     
 }
@@ -282,17 +282,4 @@ void onResetTripleTap(void)
 {
     Serial.println("Resetting Telemetry layer...");
     telemetry.reset();
-}
-
-void pauseController(void)
-{
-    Serial.println("Pausing Controller...");
-    // arduflite.pauseTasks();     // Pause control loop tasks
-    // servoMgr.writeCommands(0.0f, 0.0f, 0.0f);
-}
-
-void resumeController(void)
-{
-    Serial.println("Resuming Controller...");
-    // arduflite.resumeTasks();    // Resume control loop tasks
 }

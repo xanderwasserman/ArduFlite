@@ -24,22 +24,11 @@
 #define BARO_TYPE_NONE      0
 #define BARO_TYPE_BMP280    1
 
-// Set the default Barometer type. Change this definition to BARO_TYPE_BMP280 to use the BMP280.
-#ifndef BARO_TYPE
-#define BARO_TYPE BARO_TYPE_BMP280
-#endif
-
 //==============================================================
 // IMU type selection
 //==============================================================
 #define IMU_TYPE_MPU6500 0
 #define IMU_TYPE_MPU9250 1
-
-// Set the default IMU type. Change this definition to IMU_TYPE_MPU9250 to use the 9250.
-// #define IMU_TYPE IMU_TYPE_MPU6500
-#ifndef IMU_TYPE
-#define IMU_TYPE IMU_TYPE_MPU6500
-#endif
 
 #if BARO_TYPE == BARO_TYPE_BMP280
 #include <Adafruit_BMP280.h> // Include barometer library when using MPU9250

@@ -13,4 +13,7 @@
 // Hold time for the IMU calibration button
 #define CALIB_HOLD_TIME         3000
 
+void arduflite_init();
+void arduflite_loop();
+
 #endif // ARDUFLITE_H

@@ -11,6 +11,7 @@
 
 #include <Arduino.h>
 #include "src/controller/ArduFliteController.h"
+#include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
 
 class ArduFliteCLI {
 public:
@@ -18,7 +19,7 @@ public:
      * @brief Constructs the CLI.
      * @param controller A pointer to the controller, whose statistics and state we want to query.
      */
-    ArduFliteCLI(ArduFliteController* controller, ArduFliteIMU* imu);
+    ArduFliteCLI(ArduFliteController* controller, ArduFliteIMU* imu, ArduFliteFlashTelemetry* flashTelemetry);
 
     /**
      * @brief Starts the CLI task.
@@ -34,6 +35,7 @@ public:
 private:
     ArduFliteController* controller;
     ArduFliteIMU* imu;
+    ArduFliteFlashTelemetry* flashTelemetry;
 };
 
 #endif // ARDU_FLITE_CLI_H

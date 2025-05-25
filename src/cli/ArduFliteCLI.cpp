@@ -10,12 +10,13 @@
 #include "src/cli/CLICommands.h"
 #include "src/cli/CLICommandsConfig.h"
 
-ArduFliteCLI::ArduFliteCLI(ArduFliteController* controller, ArduFliteIMU* imu)
-    : controller(controller), imu(imu)
+ArduFliteCLI::ArduFliteCLI(ArduFliteController* controller, ArduFliteIMU* imu, ArduFliteFlashTelemetry* flashTelemetry)
+    : controller(controller), imu(imu), flashTelemetry(flashTelemetry)
 {
     // Set the global controller pointer for CLI commands.
     setCliController(controller);
     setCliIMU(imu);
+    setFlashTelemetry(flashTelemetry);
 }
 
 void ArduFliteCLI::startTask() {

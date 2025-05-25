@@ -1,16 +1,24 @@
-// ArduFliteFlashTelemetry.cpp
+// src/telemetry/flash/ArduFliteFlashTelemetry.cpp
+//
+// ArduFlite - Advanced Flight Controller Framework
+// Author: Alexander Wasserman | Version: 1.0 | 25 May 2025
+//
+// Licensed under the MIT License. See LICENSE file for details.
+//
 
-#include "ArduFliteFlashTelemetry.h"
+#include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
+#include <FS.h>
+#include <LittleFS.h>
 
 #define FLUSH_INTERVAL_MS  500
-#define MAX_ROW_BUFFER     400
+#define MAX_ROW_BUFFER     600
 
 ArduFliteFlashTelemetry::ArduFliteFlashTelemetry(float frequencyHz)
   : _intervalMs(1000.0f / frequencyHz),
     _mutex(nullptr),
     _lastFlushMs(0),
     _isLogging(false)
-{}
+{ }
 
 ArduFliteFlashTelemetry::~ArduFliteFlashTelemetry() {
     if (_mutex) {
@@ -40,12 +48,13 @@ void ArduFliteFlashTelemetry::begin() {
         return;
     }
 
-    FSInfo fs;
-    LittleFS.info(fs);
-    Serial.printf("TotalBytes: %u\n", fs.totalBytes);
-    Serial.printf("UsedBytes:  %u\n", fs.usedBytes);
+    // Report filesystem size
+    size_t total = LittleFS.totalBytes();
+    size_t used  = LittleFS.usedBytes();
+    Serial.printf("\nLittleFS TotalBytes: %u\n", (unsigned)total);
+    Serial.printf("LittleFS UsedBytes:  %u\n\n", (unsigned)used);
 
-    // Start the background task
+    // Start background task
     xTaskCreate(
         telemetryTask,
         "FlashTelTask",
@@ -66,13 +75,19 @@ void ArduFliteFlashTelemetry::publish(const TelemetryData& data) {
 
 int ArduFliteFlashTelemetry::findNextFlightLogIndex() {
     int maxIdx = -1;
-    Dir dir = LittleFS.openDir("/");
-    while (dir.next()) {
+    File root = LittleFS.open("/");
+    File file = root.openNextFile();
+    while (file) {
+        String name = file.name();
+        const char* p = name.c_str();
+        if (p[0] == '/') p++;  // skip leading slash
         int idx;
-        if (sscanf(dir.fileName(), "/log_%03d.csv", &idx) == 1) {
+        if (sscanf(p, "log_%03d.csv", &idx) == 1) {
             maxIdx = max(maxIdx, idx);
         }
+        file = root.openNextFile();
     }
+    root.close();
     return maxIdx + 1;
 }
 
@@ -87,8 +102,8 @@ void ArduFliteFlashTelemetry::startLogging() {
 
             _logFile = LittleFS.open(_currentFilename, FILE_WRITE);
             if (_logFile) {
-                // write header
-                char header[200];
+                // Write CSV header + newline
+                char header[MAX_ROW_BUFFER];
                 formatCSVHeader(header, sizeof(header));
                 _logFile.write((const uint8_t*)header, strlen(header));
                 _logFile.flush();
@@ -120,13 +135,17 @@ void ArduFliteFlashTelemetry::listLogs() {
     if (!_mutex) return;
     if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
         Serial.println("Available logs:");
-        Dir dir = LittleFS.openDir("/");
-        while (dir.next()) {
-            const char* name = dir.fileName();
-            if (strncmp(name, "/log_", 5) == 0) {
-                Serial.println(name + 1);  // skip '/'
+        File root = LittleFS.open("/");
+        File file = root.openNextFile();
+        while (file) {
+            String name = file.name();
+            if (name.startsWith("/")) name = name.substring(1);
+            if (name.startsWith("log_") && name.endsWith(".csv")) {
+                Serial.println(name);
             }
+            file = root.openNextFile();
         }
+        root.close();
         xSemaphoreGive(_mutex);
     }
 }
@@ -141,10 +160,16 @@ void ArduFliteFlashTelemetry::dumpLog(int index) {
         if (!f) {
             Serial.printf("Failed to open %s\n", fn);
         } else {
-            Serial.printf("\n--- BEGIN %s ---\n", fn);
+            // BEGIN marker + blank line
+            Serial.printf("\n--- BEGIN %s ---\n\n", fn);
+
+            // Read and print line by line
             while (f.available()) {
-                Serial.write(f.read());
+                String line = f.readStringUntil('\n');
+                Serial.println(line);  // ensures each CSV row is on its own line
             }
+
+            // END marker
             Serial.printf("\n--- END %s ---\n", fn);
             f.close();
         }
@@ -174,16 +199,16 @@ void ArduFliteFlashTelemetry::telemetryTask(void* pvParameters) {
         unsigned long ts = millis();
         TelemetryData copy;
 
-        // 1) Copy pendingData under mutex
+        // 1) Copy pending data under mutex
         if (self->_mutex && xSemaphoreTake(self->_mutex, pdMS_TO_TICKS(5)) == pdTRUE) {
             copy = self->_pendingData;
             xSemaphoreGive(self->_mutex);
         }
 
-        // 2) Format outside mutex
+        // 2) Format CSV row outside mutex
         size_t len = formatCSVRow(rowBuf, sizeof(rowBuf), ts, copy);
 
-        // 3) Write/flush under mutex if logging
+        // 3) Write & periodic flush under mutex
         if (self->_mutex && xSemaphoreTake(self->_mutex, pdMS_TO_TICKS(5)) == pdTRUE) {
             if (self->_isLogging && self->_logFile) {
                 self->_logFile.write((const uint8_t*)rowBuf, len);
@@ -195,7 +220,7 @@ void ArduFliteFlashTelemetry::telemetryTask(void* pvParameters) {
             xSemaphoreGive(self->_mutex);
         }
 
-        // Delay to maintain frequency
+        // Maintain the desired telemetry rate
         unsigned long elapsed = millis() - ts;
         int delayMs = (int)max(1.0f, self->_intervalMs - elapsed);
         vTaskDelay(pdMS_TO_TICKS(delayMs));
@@ -204,33 +229,61 @@ void ArduFliteFlashTelemetry::telemetryTask(void* pvParameters) {
 
 void ArduFliteFlashTelemetry::formatCSVHeader(char* buf, size_t bufSize) {
     const char* hdr =
-      "timestamp,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,"
-      "quat_w,quat_x,quat_y,quat_z,roll,pitch,yaw,"
-      "att_sp_roll,att_sp_pitch,att_sp_yaw,"
-      "rate_sp_roll,rate_sp_pitch,rate_sp_yaw,"
-      "att_cmd_roll,att_cmd_pitch,att_cmd_yaw,"
-      "rate_cmd_roll,rate_cmd_pitch,rate_cmd_yaw,"
-      "altitude,flight_state,flight_mode\n";
+        "timestamp,"
+        "accel_x,accel_y,accel_z,"
+        "gyro_x,gyro_y,gyro_z,"
+        "quat_w,quat_x,quat_y,quat_z,"
+        "roll,pitch,yaw,"
+        "att_sp_roll,att_sp_pitch,att_sp_yaw,"
+        "rate_sp_roll,rate_sp_pitch,rate_sp_yaw,"
+        "att_cmd_roll,att_cmd_pitch,att_cmd_yaw,"
+        "rate_cmd_roll,rate_cmd_pitch,rate_cmd_yaw,"
+        "altitude,flight_state,flight_mode\n";
+    // bufSize is at least MAX_ROW_BUFFER (600), plenty for this header
     strncpy(buf, hdr, bufSize - 1);
     buf[bufSize - 1] = '\0';
 }
 
-size_t ArduFliteFlashTelemetry::formatCSVRow(char* buf, size_t bufSize, unsigned long ts, const TelemetryData& d) {
+size_t ArduFliteFlashTelemetry::formatCSVRow(
+    char* buf, size_t bufSize,
+    unsigned long ts,
+    const TelemetryData& d
+) {
+    // We have exactly 29 fields (1 timestamp + 26 floats + 2 ints)
     return snprintf(buf, bufSize,
-        "%lu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,%.4f,"
-        "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,"
-        "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%d,%d\n",
+        "%lu,"                             //  1 timestamp
+        "%.3f,%.3f,%.3f,"                  //  2-4 accel
+        "%.3f,%.3f,%.3f,"                  //  5-7 gyro
+        "%.4f,%.4f,%.4f,%.4f,"             //  8-11 quat
+        "%.3f,%.3f,%.3f,"                  // 12-14 orientation
+        "%.3f,%.3f,%.3f,"                  // 15-17 attitudeSetpoint
+        "%.3f,%.3f,%.3f,"                  // 18-20 rateSetpoint
+        "%.3f,%.3f,%.3f,"                  // 21-23 attitudeCmd
+        "%.3f,%.3f,%.3f,"                  // 24-26 rateCmd
+        "%.2f,"                            // 27 altitude
+        "%d,"                              // 28 flight_state
+        "%d\n",                            // 29 flight_mode
         ts,
+        // accel
         d.accel.x, d.accel.y, d.accel.z,
+        // gyro
         d.gyro.x, d.gyro.y, d.gyro.z,
+        // quat
         d.quat.w, d.quat.x, d.quat.y, d.quat.z,
+        // orientation
         d.orientation.roll, d.orientation.pitch, d.orientation.yaw,
+        // attitudeSetpoint
         d.attitudeSetpoint.roll, d.attitudeSetpoint.pitch, d.attitudeSetpoint.yaw,
+        // rateSetpoint
         d.rateSetpoint.roll, d.rateSetpoint.pitch, d.rateSetpoint.yaw,
+        // attitudeCmd
         d.attitudeCmd.roll, d.attitudeCmd.pitch, d.attitudeCmd.yaw,
+        // rateCmd
         d.rateCmd.roll, d.rateCmd.pitch, d.rateCmd.yaw,
+        // altitude + ints
         d.altitude,
         d.flight_state,
         d.flight_mode
     );
 }
+

@@ -12,6 +12,7 @@
 #include "src/cli/CLICommands.h" 
 #include "src/controller/ArduFliteController.h" 
 #include "src/orientation/ArduFliteIMU.h"
+#include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
 
 // Declare the command table and its size as extern.
 extern CLICommand cliCommands[];
@@ -27,5 +28,6 @@ void cmdCalibrateIMU(const String &args);
 // Function to set the controller pointer (to be used by the CLI task)
 void setCliController(ArduFliteController* controller);
 void setCliIMU(ArduFliteIMU* imu);
+void setFlashTelemetry(ArduFliteFlashTelemetry* telem);
 
 #endif // CLI_COMMANDS_CONFIG_H

@@ -11,6 +11,7 @@
 // Global pointer for the controller (accessible in command functions).
 ArduFliteController* globalController = nullptr;
 ArduFliteIMU* globalIMU = nullptr;
+ArduFliteFlashTelemetry* globalFlashTelemetry = nullptr;
 
 void setCliController(ArduFliteController* controller) {
     globalController = controller;
@@ -18,6 +19,10 @@ void setCliController(ArduFliteController* controller) {
 
 void setCliIMU(ArduFliteIMU* imu) {
     globalIMU = imu;
+}
+
+void setFlashTelemetry(ArduFliteFlashTelemetry* flashTelemetry) {
+    globalFlashTelemetry = flashTelemetry;
 }
 
 // Command functions:
@@ -92,13 +97,77 @@ void cmdCalibrateIMU(const String &args) {
     }
 }
 
+void cmdFlash(const String &args) {
+    if (!globalFlashTelemetry) {
+        Serial.println("Flash telemetry not initialized!");
+        return;
+    }
+
+    // Trim & lowercase for simple parsing
+    String in = args;
+    in.trim();
+    in.toLowerCase();
+
+    // Split first word (sub-command) from the rest (parameter)
+    int spacePos = in.indexOf(' ');
+    String cmd = (spacePos < 0) ? in : in.substring(0, spacePos);
+    String param = (spacePos < 0) ? "" : in.substring(spacePos + 1);
+    param.trim();
+
+    if (cmd == "start") {
+        globalFlashTelemetry->startLogging();
+        Serial.println("→ Flash logging STARTED");
+    }
+    else if (cmd == "stop") {
+        globalFlashTelemetry->stopLogging();
+        Serial.println("→ Flash logging STOPPED");
+    }
+    else if (cmd == "list") {
+        Serial.println("→ Listing flash logs:");
+        globalFlashTelemetry->listLogs();
+    }
+    else if (cmd == "dump") {
+        if (param.length() == 0) {
+            Serial.println("Usage: flash dump <index>");
+        } else {
+            int idx = param.toInt();
+            Serial.printf("→ Dumping log %d:\n", idx);
+            globalFlashTelemetry->dumpLog(idx);
+        }
+    }
+    else if (cmd == "delete" || cmd == "del" || cmd == "rm") {
+        if (param.length() == 0) {
+            Serial.println("Usage: flash delete <index>");
+        } else {
+            int idx = param.toInt();
+            Serial.printf("→ Deleting log %d: ", idx);
+            globalFlashTelemetry->deleteLog(idx);
+        }
+    }
+    else if (cmd == "reset") {
+        Serial.println("→ Formatting LittleFS (erasing all logs)...");
+        globalFlashTelemetry->reset();
+        Serial.println("→ Done.");
+    }
+    else {
+        Serial.println("Unknown flash command. Available:");
+        Serial.println("  flash start       → begin a new flight log");
+        Serial.println("  flash stop        → end current flight log");
+        Serial.println("  flash list        → list existing logs");
+        Serial.println("  flash dump <idx>  → stream log #<idx> over serial");
+        Serial.println("  flash delete <idx>→ remove log #<idx>");
+        Serial.println("  flash reset       → erase entire LittleFS");
+    }
+}
+
 // Define the command table.
 CLICommand cliCommands[] = {
-    { "help",       "Show help message",                            cmdHelp         },
-    { "stats",      "Show control loop statistics",                 cmdStats        },
-    { "tasks",      "Show FreeRTOS task stats",                     cmdTasks        },
-    { "setmode",    "Set mode; usage: setmode assist|stabilized",   cmdSetMode      },
-    { "calibrate",  "Calibrate the IMU; usage: calibrate imu",      cmdCalibrateIMU }
+    { "help","      Show help message",                                                        cmdHelp         },
+    { "stats","     Show control loop statistics",                                             cmdStats        },
+    { "tasks","     Show FreeRTOS task stats",                                                 cmdTasks        },
+    { "setmode","   Set mode; usage: setmode assist|stabilized",                               cmdSetMode      },
+    { "calibrate"," Calibrate the IMU; usage: calibrate imu",                                  cmdCalibrateIMU },
+    { "flash","     Flash functionalities; usage: flash list|start|stop|dump|rm|reset",        cmdFlash }
 };
 
 const size_t numCLICommands = sizeof(cliCommands) / sizeof(cliCommands[0]);

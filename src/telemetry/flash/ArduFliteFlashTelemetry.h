@@ -1,13 +1,20 @@
-// ArduFliteFlashTelemetry.h
+/**
+ * ArduFliteFlashTelemetry.h
+ *
+ * ArduFlite - Advanced Flight Controller Framework
+ * Author: Alexander Wasserman | Version: 1.0 | 25 May 2025
+ *
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
 
-#pragma once
+#ifndef ARDUFLITE_FLASH_TELEMETRY_H
+#define ARDUFLITE_FLASH_TELEMETRY_H
+
+#include "src/telemetry/ArduFliteTelemetry.h"
 
 #include <Arduino.h>
 #include <FS.h>
 #include <LittleFS.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
-#include "src/telemetry/ArduFliteTelemetry.h"
 
 class ArduFliteFlashTelemetry : public ArduFliteTelemetry {
 public:
@@ -51,3 +58,5 @@ private:
     bool              _isLogging;
     String            _currentFilename;
 };
+
+#endif //ARDUFLITE_FLASH_TELEMETRY_H

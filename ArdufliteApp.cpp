@@ -41,6 +41,7 @@
 #include "src/telemetry/mqtt/ArduFliteMqttTelemetry.h"
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
 #include "src/telemetry/serial/ArduFliteDebugSerialTelemetry.h"
+#include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
 #include "src/tests/AttitudeTests.h"
 #include "src/tests/ReceiverTests.h"
 #include "src/cli/ArduFliteCLI.h"
@@ -60,8 +61,8 @@ CommandSystem commandSystem;
 
 // Declare telemetry instnaces.
 TelemetryData               telemetryData;
-ArduFliteMqttTelemetry      telemetry(20.0f, &commandSystem);          // 20 Hz telemetry frequency
-ArduFliteFlashTelemetry     flashTelemetry(50.0f);  // 50 Hz logging
+ArduFliteMqttTelemetry      telemetry(20.0f, &commandSystem);           // 20 Hz telemetry frequency
+ArduFliteFlashTelemetry     flashTelemetry(50.0f);                      // 50 Hz logging
 // ArduFliteDebugSerialTelemetry    debugTelemetry(1.0f);               // 1 Hz telemetry frequency
 // ArduFliteQSerialTelemetry        telemetry(20.0f);
 
@@ -80,7 +81,7 @@ ArduFliteController controller(&myIMU, &attitudeController, &rateController, &se
 ArduFlitePwmReceiver pilotReceiver(ReceiverSetupConfig::RECEIVER_CHANNELS, ReceiverSetupConfig::NR_RECEIVER_CHANNELS);
 
 // Instantiate the CLI
-ArduFliteCLI myCLI(&controller, &myIMU);
+ArduFliteCLI myCLI(&controller, &myIMU, &flashTelemetry);
 
 //Instantiate mission planner
 MissionPlanner mission(controller);
@@ -211,6 +212,7 @@ void arduflite_loop()
             case INFLIGHT:
                 Serial.println("Aircraft is in FLIGHT state.");
                 controller.resumeTasks();    // Resume control loop tasks
+                flashTelemetry.startLogging();
                 
                 if (!mission.isRunning())
                 {
@@ -224,6 +226,8 @@ void arduflite_loop()
                 {
                     mission.stop();
                 }
+
+                flashTelemetry.stopLogging();
 
                 controller.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
                 controller.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
@@ -242,6 +246,7 @@ void arduflite_loop()
     telemetryData.update(myIMU, controller);
 
     telemetry.publish(telemetryData);
+    flashTelemetry.publish(telemetryData);
 
     vTaskDelay(pdMS_TO_TICKS(10));
 }

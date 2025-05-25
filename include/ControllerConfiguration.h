@@ -36,17 +36,17 @@ constexpr PIDConfig makePID(
 
 namespace AttitudeControllerConfig {
     // now you only declare (kp, ki, kd, outLimit, headroom, alpha)
-    constexpr PIDConfig DEFAULT_ROLL_PID  = makePID(200.0f, 15.0f, 30.0f, 100.0f /*deg/s*/);
-    constexpr PIDConfig DEFAULT_PITCH_PID = makePID(160.0f, 15.0f, 30.0f, 100.0f);
-    constexpr PIDConfig DEFAULT_YAW_PID   = makePID(200.0f, 15.0f, 30.0f, 100.0f);
+    constexpr PIDConfig DEFAULT_ROLL_PID  = makePID(    200.0f,     15.0f,  30.0f,      100.0f);
+    constexpr PIDConfig DEFAULT_PITCH_PID = makePID(    160.0f,     15.0f,  30.0f,      100.0f);
+    constexpr PIDConfig DEFAULT_YAW_PID   = makePID(    200.0f,     15.0f,  30.0f,      100.0f);
 
     constexpr float ATTITUDE_DEADBAND_RADS = 0.001f;
 }
 
 namespace RateControllerConfig {
-    constexpr PIDConfig DEFAULT_ROLL_PID  = makePID(0.03f,  0.01f, 0.003f, 1.0f /*±1*/, 0.9f, 0.1f);
-    constexpr PIDConfig DEFAULT_PITCH_PID = makePID(0.01f,  0.003f,0.005f, 1.0f,       0.9f, 0.1f);
-    constexpr PIDConfig DEFAULT_YAW_PID   = makePID(0.01f,  0.002f,0.003f, 1.0f,       0.9f, 0.1f);
+    constexpr PIDConfig DEFAULT_ROLL_PID  = makePID(    0.03f,      0.01f,  0.003f,     1.0f);
+    constexpr PIDConfig DEFAULT_PITCH_PID = makePID(    0.01f,      0.01f,  0.005f,     1.0f);
+    constexpr PIDConfig DEFAULT_YAW_PID   = makePID(    0.01f,      0.01f,  0.003f,     1.0f);
 
     constexpr float outLpAlpha = 0.01f;
 }

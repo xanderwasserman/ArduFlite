@@ -61,6 +61,7 @@ CommandSystem commandSystem;
 // Declare telemetry instnaces.
 TelemetryData               telemetryData;
 ArduFliteMqttTelemetry      telemetry(20.0f, &commandSystem);          // 20 Hz telemetry frequency
+ArduFliteFlashTelemetry     flashTelemetry(50.0f);  // 50 Hz logging
 // ArduFliteDebugSerialTelemetry    debugTelemetry(1.0f);               // 1 Hz telemetry frequency
 // ArduFliteQSerialTelemetry        telemetry(20.0f);
 
@@ -106,6 +107,7 @@ void arduflite_init()
     pinMode(ButtonInputConfig::USER_BUTTON_PIN, INPUT_PULLUP);
 
     telemetry.begin();
+    flashTelemetry.begin();
     // debugTelemetry.begin();
 
     // Initialize the IMU.

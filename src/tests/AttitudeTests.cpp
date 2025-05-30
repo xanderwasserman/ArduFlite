@@ -7,6 +7,8 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "src/tests/AttitudeTests.h"
+#include "src/utils/Logging.h"
+
 #include <Arduino.h>
 
 void runAttitudeTest_wiggle(ArduFliteController &arduflite, float angle, float time)
@@ -22,22 +24,22 @@ void runAttitudeTest_wiggle(ArduFliteController &arduflite, float angle, float t
         {
             case 0:
                 arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
-                Serial.println("Test: Level attitude (0° roll)");
+                LOG_INF("Test: Level attitude (0° roll)");
                 state++;
                 break;
             case 1:
                 arduflite.setDesiredEulerDegs(angle, 0.0f, 0.0f);
-                Serial.printf("Test: Roll +%f°\n", angle);
+                LOG_INF("Test: Roll +%f°", angle);
                 state++;
                 break;
             case 2:
                 arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
-                Serial.println("Test: Level attitude (0° roll)");
+                LOG_INF("Test: Level attitude (0° roll)");
                 state++;
                 break;
             case 3:
                 arduflite.setDesiredEulerDegs(-angle, 0.0f, 0.0f);
-                Serial.printf("Test: Roll -%f°\n", angle);
+                LOG_INF("Test: Roll -%f°", angle);
                 state = 0;
                 break;
             default:

@@ -15,6 +15,8 @@
  */
 
 #include "src/orientation/ArduFliteIMU.h"
+#include "src/utils/Logging.h"
+
 #include <math.h>
 
 /**
@@ -40,7 +42,7 @@ ArduFliteIMU::ArduFliteIMU() {
     // Create the mutex for protecting sensor data.
     imuMutex = xSemaphoreCreateMutex();
     if (imuMutex == NULL) {
-        Serial.println("Failed to create IMU mutex!");
+        LOG_ERR("Failed to create IMU mutex!");
     }
 }
  
@@ -61,8 +63,7 @@ bool ArduFliteIMU::begin() {
     // Initialize IMU with calibration data.
     int err = IMU.init(calib, IMU_ADDRESS);
     if (err != 0) {
-        Serial.print("FastIMU init error: ");
-        Serial.println(err);
+        LOG_ERR("FastIMU init error: %d", err);
         return false;
     }
 
@@ -70,14 +71,13 @@ bool ArduFliteIMU::begin() {
     err = IMU.setGyroRange(300);
     err = IMU.setAccelRange(4);
     if (err == -1) {
-        Serial.print("Error setting IMU sensor ranges: ");
-        Serial.println(err);
+        LOG_ERR("Error setting IMU sensor ranges: %d", err);
         return false;
     }
 
     // Load calibration offsets from EEPROM; if unavailable, perform self-calibration.
     if (!applyCalibrations()) {
-        Serial.println("FastIMU failed to apply calibrations!");
+        LOG_ERR("FastIMU failed to apply calibrations!");
         return false;
     }
 
@@ -85,15 +85,15 @@ bool ArduFliteIMU::begin() {
     // Initialize BMP280 barometer. Change the address if necessary.
     if (!bmp280.begin(0x76)) 
     {
-        Serial.println("Failed to initialize BMP280 barometer!");
+        LOG_ERR("Failed to initialize BMP280 barometer!");
     } 
     else 
     {
         // Immediately set our ground‑level reference pressure:
         float p = bmp280.readPressure() / 100.0f;  // Pa → hPa
         offsets.referencePressure = p;
-        Serial.printf("BMP280 reference pressure set to %f hPa.\n", p);
-        Serial.println("BMP280 barometer initialized.");
+        LOG_INF("BMP280 reference pressure set to %f hPa.", p);
+        LOG_INF("BMP280 barometer initialized.");
     }
 #endif
 
@@ -101,9 +101,9 @@ bool ArduFliteIMU::begin() {
     initFilter();
 
 #if IMU_TYPE == IMU_TYPE_MPU9250
-    Serial.println("FastIMU (MPU-9250) initialized!");
+    LOG_INF("FastIMU (MPU-9250) initialized!");
 #else
-    Serial.println("FastIMU (MPU-6500) initialized!");
+    LOG_INF("FastIMU (MPU-6500) initialized!");
 #endif
 
     // Start the dedicated IMU update task.
@@ -138,7 +138,7 @@ void ArduFliteIMU::pauseTask()
 {
     if (imuTaskHandle != NULL) {
         vTaskSuspend(imuTaskHandle);
-        Serial.println("IMU Task paused.");
+        LOG_INF("IMU Task paused.");
     }
 }
  
@@ -151,7 +151,7 @@ void ArduFliteIMU::resumeTask()
 {
     if (imuTaskHandle != NULL) {
         vTaskResume(imuTaskHandle);
-        Serial.println("IMU Task resumed.");
+        LOG_INF("IMU Task resumed.");
     }
 }
 
@@ -259,7 +259,7 @@ void ArduFliteIMU::initFilter()
 
 #endif
     }
-    Serial.println("Filter warm-up complete.");
+    LOG_INF("Filter warm-up complete.");
 }
  
 /**
@@ -369,8 +369,8 @@ void ArduFliteIMU::update(float dt)
 * @return true if calibration is successful, false otherwise.
 */
 bool ArduFliteIMU::selfCalibrate() {
-    Serial.println("=== Self Calibration Start ===");
-    Serial.println("Please keep IMU still & level in final orientation...");
+    LOG_INF("=== Self Calibration Start ===");
+    LOG_INF("Please keep IMU still & level in final orientation...");
 
     const unsigned long CALIB_MS = 10000;
     unsigned long start = millis();
@@ -425,10 +425,10 @@ bool ArduFliteIMU::selfCalibrate() {
     double avgGz        = sumGz / samples;
     double avgBaro      = sumBaro / samples;
 
-    Serial.println("Raw average readings:");
-    Serial.printf("Accel: %.3f, %.3f, %.3f\n", avgAx, avgAy, avgAz);
-    Serial.printf("Gyro: %.3f, %.3f, %.3f\n", avgGx, avgGy, avgGz);
-    Serial.printf("Pressure: %.3f\n", avgBaro);
+    LOG_INF("Raw average readings:");
+    LOG_INF("Accel: %.3f, %.3f, %.3f", avgAx, avgAy, avgAz);
+    LOG_INF("Gyro: %.3f, %.3f, %.3f", avgGx, avgGy, avgGz);
+    LOG_INF("Pressure: %.3f", avgBaro);
 
     // Determine desired offsets.
     ArduFliteIMUOffsets newOfs;
@@ -441,10 +441,10 @@ bool ArduFliteIMU::selfCalibrate() {
     newOfs.gyroZ                = float(avgGz);
     newOfs.referencePressure    = (float)avgBaro;
 
-    Serial.println("Computed new offsets:");
-    Serial.printf("Accel Offsets: %.3f, %.3f, %.3f\n", newOfs.accelX, newOfs.accelY, newOfs.accelZ);
-    Serial.printf("Gyro Offsets: %.3f, %.3f, %.3f\n", newOfs.gyroX, newOfs.gyroY, newOfs.gyroZ);
-    Serial.printf("Pressure reference: %.3f\n", newOfs.referencePressure);
+    LOG_INF("Computed new offsets:");
+    LOG_INF("Accel Offsets: %.3f, %.3f, %.3f", newOfs.accelX, newOfs.accelY, newOfs.accelZ);
+    LOG_INF("Gyro Offsets: %.3f, %.3f, %.3f", newOfs.gyroX, newOfs.gyroY, newOfs.gyroZ);
+    LOG_INF("Pressure reference: %.3f", newOfs.referencePressure);
 
     // Store and save the calibration offsets.
     setOffsets(newOfs);
@@ -452,7 +452,7 @@ bool ArduFliteIMU::selfCalibrate() {
 
     xSemaphoreGive(imuMutex);
 
-    Serial.println("=== Self Calibration Done ===");
+    LOG_INF("=== Self Calibration Done ===");
 
     return true;
 }
@@ -471,13 +471,13 @@ bool ArduFliteIMU::applyCalibrations()
     if (loadOffsetsFromEEPROM(tmp)) 
     {
         setOffsets(tmp);
-        Serial.println("Loaded calibration offsets from EEPROM:");
-        Serial.printf("Accel: %.3f, %.3f, %.3f\n", offsets.accelX, offsets.accelY, offsets.accelZ);
-        Serial.printf("Gyro:  %.3f, %.3f, %.3f\n", offsets.gyroX, offsets.gyroY, offsets.gyroZ);
+        LOG_INF("Loaded calibration offsets from EEPROM:");
+        LOG_INF("Accel: %.3f, %.3f, %.3f", offsets.accelX, offsets.accelY, offsets.accelZ);
+        LOG_INF("Gyro:  %.3f, %.3f, %.3f", offsets.gyroX, offsets.gyroY, offsets.gyroZ);
 
         return true;
     } else {
-        Serial.println("No valid offsets in EEPROM. Consider calling selfCalibrate().");
+        LOG_WARN("No valid offsets in EEPROM. Calling selfCalibrate()...");
         return selfCalibrate();
     }
 }
@@ -516,7 +516,7 @@ void ArduFliteIMU::saveOffsetsToEEPROM(const ArduFliteIMUOffsets &ofs)
     tmp.offsets = ofs;
     EEPROM.put(CALIB_DATA_ADDR, tmp);
     EEPROM.commit();  // Commit changes for ESP32.
-    Serial.println("Calibration data saved to EEPROM.");
+    LOG_INF("Calibration data saved to EEPROM.");
 }
  
 /**

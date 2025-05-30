@@ -7,6 +7,7 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "src/controller/ArduFliteRateController.h"
+#include "src/utils/Logging.h"
 
 // Constructor with initial PID parameters.
 // The output limits are set to -1.0 and +1.0 so that the final servo commands remain normalized.
@@ -20,7 +21,7 @@ ArduFliteRateController::ArduFliteRateController()
     rateMutex = xSemaphoreCreateMutex();
     if (rateMutex == NULL) {
         // Handle error accordingly (e.g., print an error message)
-        Serial.println("Failed to create ArduFliteRateController mutex!");
+        LOG_ERR("Failed to create ArduFliteRateController mutex!");
     }
 }
 

@@ -7,6 +7,7 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "CLICommandsConfig.h"
+#include "src/utils/Logging.h"
 
 // Global pointer for the controller (accessible in command functions).
 ArduFliteController* globalController = nullptr;
@@ -27,57 +28,57 @@ void setFlashTelemetry(ArduFliteFlashTelemetry* flashTelemetry) {
 
 // Command functions:
 void cmdHelp(const String &args) {
-    Serial.println("Available commands:");
+    LOG_C("Available commands:");
     for (size_t i = 0; i < numCLICommands; i++) {
-        Serial.print("  ");
-        Serial.print(cliCommands[i].command);
-        Serial.print(" - ");
-        Serial.println(cliCommands[i].description);
+        LOG_C_N("  ");
+        LOG_C_N("%s", cliCommands[i].command);
+        LOG_C_N(" - ");
+        LOG_C_N("%s", cliCommands[i].description);
     }
 }
 
 void cmdStats(const String &args) {
     if (!globalController) {
-        Serial.println("Controller not set!");
+        LOG_ERR("Controller not set!");
         return;
     }
     // Retrieve and print stats.
     LoopStats outerStats = globalController->getOuterLoopStats();
     LoopStats innerStats = globalController->getInnerLoopStats();
-    Serial.printf("Outer Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu\n",
+    LOG_C("Outer Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu",
                   outerStats.avgDt, outerStats.maxDt, outerStats.overrunCount, (outerStats.overrunCount/outerStats.sampleCount)*100);
-    Serial.printf("Inner Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu\n",
+    LOG_C("Inner Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu",
                   innerStats.avgDt, innerStats.maxDt, innerStats.overrunCount, (innerStats.overrunCount/innerStats.sampleCount)*100);
 }
 
 void cmdTasks(const String &args) {
     char taskListBuffer[512];
     vTaskList(taskListBuffer);
-    Serial.println("Task List:");
-    Serial.println(taskListBuffer);
+    LOG_C("Task List:");
+    LOG_C("%s", taskListBuffer);
 }
 
 void cmdSetMode(const String &args) {
     if (!globalController) {
-        Serial.println("Controller not set!");
+        LOG_ERR("Controller not set!");
         return;
     }
     String argLower = args;
     argLower.toLowerCase();
     if (argLower.indexOf("assist") >= 0) {
         globalController->setMode(ASSIST_MODE);
-        Serial.println("Mode set to ASSIST_MODE.");
+        LOG_C("Mode set to ASSIST_MODE.");
     } else if (argLower.indexOf("stabilized") >= 0) {
         globalController->setMode(STABILIZED_MODE);
-        Serial.println("Mode set to STABILIZED_MODE.");
+        LOG_C("Mode set to STABILIZED_MODE.");
     } else {
-        Serial.println("Unknown mode. Use 'assist' or 'stabilized'.");
+        LOG_C("Unknown mode. Use 'assist' or 'stabilized'.");
     }
 }
 
 void cmdCalibrateIMU(const String &args) {
     if (!globalController || !globalIMU) {
-        Serial.println("CLI Controller or IMU reference not set!");
+        LOG_C("CLI Controller or IMU reference not set!");
         return;
     }
     // Accept either no arguments or "imu" as the argument.
@@ -85,21 +86,21 @@ void cmdCalibrateIMU(const String &args) {
     trimmed.trim();
     trimmed.toLowerCase();
     if (trimmed.length() == 0 || trimmed.equals("imu")) {
-        Serial.println("Starting IMU calibration...");
+        LOG_C("Starting IMU calibration...");
         bool success = globalIMU->selfCalibrate();
         if (success) {
-            Serial.println("IMU calibration complete.");
+            LOG_C("IMU calibration complete.");
         } else {
-            Serial.println("IMU calibration failed.");
+            LOG_C("IMU calibration failed.");
         }
     } else {
-        Serial.println("Unknown calibration target. Use 'calibrate imu'.");
+        LOG_C("Unknown calibration target. Use 'calibrate imu'.");
     }
 }
 
 void cmdFlash(const String &args) {
     if (!globalFlashTelemetry) {
-        Serial.println("Flash telemetry not initialized!");
+        LOG_C("Flash telemetry not initialized!");
         return;
     }
 
@@ -116,47 +117,47 @@ void cmdFlash(const String &args) {
 
     if (cmd == "start") {
         globalFlashTelemetry->startLogging();
-        Serial.println("→ Flash logging STARTED");
+        LOG_C("Flash logging STARTED");
     }
     else if (cmd == "stop") {
         globalFlashTelemetry->stopLogging();
-        Serial.println("→ Flash logging STOPPED");
+        LOG_C("Flash logging STOPPED");
     }
     else if (cmd == "list") {
-        Serial.println("→ Listing flash logs:");
+        LOG_C("Listing flash logs:");
         globalFlashTelemetry->listLogs();
     }
     else if (cmd == "dump") {
         if (param.length() == 0) {
-            Serial.println("Usage: flash dump <index>");
+            LOG_C("Usage: flash dump <index>");
         } else {
             int idx = param.toInt();
-            Serial.printf("→ Dumping log %d:\n", idx);
+            LOG_C("Dumping log %d:\n", idx);
             globalFlashTelemetry->dumpLog(idx);
         }
     }
     else if (cmd == "delete" || cmd == "del" || cmd == "rm") {
         if (param.length() == 0) {
-            Serial.println("Usage: flash delete <index>");
+            LOG_C("Usage: flash delete <index>");
         } else {
             int idx = param.toInt();
-            Serial.printf("→ Deleting log %d: ", idx);
+            LOG_C("Deleting log %d: ", idx);
             globalFlashTelemetry->deleteLog(idx);
         }
     }
     else if (cmd == "reset") {
-        Serial.println("→ Formatting LittleFS (erasing all logs)...");
+        LOG_C("Formatting LittleFS (erasing all logs)...");
         globalFlashTelemetry->reset();
-        Serial.println("→ Done.");
+        LOG_C("Done.");
     }
     else {
-        Serial.println("Unknown flash command. Available:");
-        Serial.println("  flash start       → begin a new flight log");
-        Serial.println("  flash stop        → end current flight log");
-        Serial.println("  flash list        → list existing logs");
-        Serial.println("  flash dump <idx>  → stream log #<idx> over serial");
-        Serial.println("  flash delete <idx>→ remove log #<idx>");
-        Serial.println("  flash reset       → erase entire LittleFS");
+        LOG_C("Unknown flash command. Available:");
+        LOG_C("  flash start       → begin a new flight log");
+        LOG_C("  flash stop        → end current flight log");
+        LOG_C("  flash list        → list existing logs");
+        LOG_C("  flash dump <idx>  → stream log #<idx> over serial");
+        LOG_C("  flash delete <idx>→ remove log #<idx>");
+        LOG_C("  flash reset       → erase entire LittleFS");
     }
 }
 

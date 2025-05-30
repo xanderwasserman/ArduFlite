@@ -8,6 +8,7 @@
  */
 #include "ServoManager.h"
 #include "include/ServoConfiguration.h"
+#include "src/utils/Logging.h"
 
 // Helper: maps a float value from [inMin, inMax] to [outMin, outMax].
 int ServoManager::mapFloatToInt(float val, float inMin, float inMax, int outMin, int outMax) {
@@ -256,7 +257,7 @@ void ServoManager::testControlSurfaces()
     const int numCycles = 3;    // Number of test cycles
     const int delayTime = 500;    // Delay (in milliseconds) between commands
 
-    Serial.println("Beginning control surface test...");
+    LOG_INF("Beginning control surface test...");
 
     for (int i = 0; i < numCycles; i++) {
         // Command maximum deflection (normalized value 1.0)
@@ -271,5 +272,5 @@ void ServoManager::testControlSurfaces()
         writeCommands(0.0f, 0.0f, 0.0f);
         delay(delayTime);
     }
-    Serial.println("Control surface test complete.");
+    LOG_INF("Control surface test complete.");
 }

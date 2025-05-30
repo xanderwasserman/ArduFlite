@@ -7,6 +7,8 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
  #include "src/tests/ReceiverTests.h"
+ #include "src/utils/Logging.h"
+
 #include <Arduino.h>
 
 void runReceiverTest_print(ArduFlitePwmReceiver &pilotReceiver, size_t channels)
@@ -19,7 +21,7 @@ void runReceiverTest_print(ArduFlitePwmReceiver &pilotReceiver, size_t channels)
         // Read and print normalized input values for each channel.
         for (size_t i = 0; i < channels; i++) {
             float value = pilotReceiver.getNormalizedValue(i);
-            Serial.printf("Channel %d: %f\n", i+1, value);
+            LOG_INF("Channel %d: %f", i+1, value);
         }
         lastUpdate = currentTime;
     }

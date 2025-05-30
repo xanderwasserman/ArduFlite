@@ -19,9 +19,13 @@
  * License: MIT License
  * ----------------------------------------------------------------------------
  */
-#include <Arduino.h>
-
 #include "include/ArduFlite.h"
+#include "src/actuators/ServoManager.h"
+#include "src/orientation/ArduFliteIMU.h"
+#include "src/cli/ArduFliteCLI.h"
+#include "src/receiver/ArduFlitePwmReceiver.h"
+#include "src/mission_planner/MissionPlanner.h"
+
 #include "include/ReceiverConfiguration.h"
 #include "include/PinConfiguration.h"
 #include "include/ControllerConfiguration.h"
@@ -33,20 +37,21 @@
 #include "src/utils/MultiTapButtonManager.h"
 #include "src/utils/CommandSystem.h"
 #include "src/utils/StatusLED.h"
-#include "src/actuators/ServoManager.h"
-#include "src/orientation/ArduFliteIMU.h"
+#include "src/utils/Logging.h"
+
 #include "src/controller/ArduFliteAttitudeController.h"
 #include "src/controller/ArduFliteRateController.h"
 #include "src/controller/ArduFliteController.h"
+
 #include "src/telemetry/mqtt/ArduFliteMqttTelemetry.h"
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
 #include "src/telemetry/serial/ArduFliteDebugSerialTelemetry.h"
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
+
 #include "src/tests/AttitudeTests.h"
 #include "src/tests/ReceiverTests.h"
-#include "src/cli/ArduFliteCLI.h"
-#include "src/receiver/ArduFlitePwmReceiver.h"
-#include "src/mission_planner/MissionPlanner.h"
+
+#include <Arduino.h>
 
 void printControlLoopStats(void);
 void onCalibrateHold(void);
@@ -114,7 +119,7 @@ void arduflite_init()
     // Initialize the IMU.
     if (!myIMU.begin()) 
     {
-        Serial.println("IMU failed to init!");
+        LOG_ERR("IMU failed to init!");
 #if BOARD_TYPE == BOARD_TYPE_WEMOS
         statusLED.setPattern(Patterns::Error); //fast yellow blink
 #endif
@@ -147,18 +152,18 @@ void arduflite_init()
     resetButton.begin();
     modeButton.begin();
 
-    Serial.println("Available Button Functions:");
+    LOG_INF("Available Button Functions:");
 
     HoldButtonManager::registerButton(calibrateButton);
-    Serial.println("  3s hold - calibrate IMU.");
+    LOG_INF("  3s hold - calibrate IMU.");
 
     MultiTapButtonManager::registerButton(resetButton);
-    Serial.println("  3x tap - reset telemetry layer.");
+    LOG_INF("  3x tap - reset telemetry layer.");
 
     MultiTapButtonManager::registerButton(modeButton);
-    Serial.println("  2x tap - toggle ArduFlite Mode.");
+    LOG_INF("  2x tap - toggle ArduFlite Mode.");
 
-    Serial.println("ArduFlite Controller initialised.");
+    LOG_INF("ArduFlite Controller initialised.");
 }
 
 void arduflite_loop() 
@@ -204,14 +209,12 @@ void arduflite_loop()
         switch (currentState) 
         {
             case PREFLIGHT:
-                Serial.println("Aircraft is in PREFLIGHT state.");
+                LOG_INF("Aircraft is in PREFLIGHT state.");
                 controller.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
                 controller.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
-                controller.pauseTasks();     // Pause control loop tasks
                 break;
             case INFLIGHT:
-                Serial.println("Aircraft is in FLIGHT state.");
-                controller.resumeTasks();    // Resume control loop tasks
+                LOG_INF("Aircraft is in FLIGHT state.");
                 flashTelemetry.startLogging();
                 
                 if (!mission.isRunning())
@@ -221,7 +224,7 @@ void arduflite_loop()
                 
                 break;
             case LANDED:
-                Serial.println("Aircraft has LANDED.");
+                LOG_INF("Aircraft has LANDED.");
                 if (mission.isRunning())
                 {
                     mission.stop();
@@ -231,7 +234,6 @@ void arduflite_loop()
 
                 controller.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
                 controller.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
-                controller.pauseTasks();     // Pause control loop tasks
                 break;
             default:
                 break;
@@ -257,7 +259,7 @@ void onCalibrateHold(void)
 #if BOARD_TYPE == BOARD_TYPE_WEMOS
     statusLED.setPattern({0,0,255, 100,100});// fast blue blink
 #endif
-    Serial.println("Calibrating IMU...");
+    LOG_INF("Calibrating IMU...");
     controller.pauseTasks();     // Pause control loop tasks
     myIMU.pauseTask();           // Pause the IMU update task
     myIMU.selfCalibrate();       // Run calibration
@@ -271,7 +273,7 @@ void onCalibrateHold(void)
 // Callback for telemetry reset button.
 void onModeDoubleTap(void) 
 {
-    Serial.println("Toggling Controller Mode...");
+    LOG_INF("Toggling Controller Mode...");
 
     if (controller.getMode() == ASSIST_MODE) 
     {
@@ -287,6 +289,6 @@ void onModeDoubleTap(void)
 // Callback for telemetry reset button.
 void onResetTripleTap(void) 
 {
-    Serial.println("Resetting Telemetry layer...");
+    LOG_INF("Resetting Telemetry layer...");
     telemetry.reset();
 }

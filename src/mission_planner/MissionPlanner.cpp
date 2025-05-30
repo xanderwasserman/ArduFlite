@@ -8,6 +8,7 @@
  */
 #include "src/mission_planner/MissionPlanner.h"
 #include "include/MissionConfiguration.h" 
+#include "src/utils/Logging.h"
 
 MissionPlanner::MissionPlanner(ArduFliteController &controller)
     : _ctrl(controller)
@@ -76,11 +77,7 @@ void MissionPlanner::start()
             _ctrl.setDesiredEulerDegs(first.rollDeg, first.pitchDeg, first.yawDeg);
 
             // log it
-            Serial.printf(
-                "MissionPlanner: step %u → roll=%.1f°, pitch=%.1f°, yaw=%.1f°\n",
-                (unsigned)_currentIndex,
-                first.rollDeg, first.pitchDeg, first.yawDeg
-            );
+            LOG_INF("MissionPlanner: step %u → roll=%.1f°, pitch=%.1f°, yaw=%.1f°", (unsigned)_currentIndex, first.rollDeg, first.pitchDeg, first.yawDeg);
         }
         xSemaphoreGive(_mutex);
     }
@@ -132,7 +129,7 @@ void MissionPlanner::run()
                     if (_currentIndex >= _steps.size()) 
                     {
                         // mission is done
-                        Serial.println("MissionPlanner: Mission complete");
+                        LOG_INF("MissionPlanner: Mission complete");
                         _running = false;
                     } 
                     else 
@@ -140,11 +137,7 @@ void MissionPlanner::run()
                         // apply next step
                         const auto &next = _steps[_currentIndex];
                         _ctrl.setDesiredEulerDegs(next.rollDeg, next.pitchDeg, next.yawDeg);
-                        Serial.printf(
-                            "MissionPlanner: step %u → roll=%.1f°, pitch=%.1f°, yaw=%.1f°\n",
-                            (unsigned)_currentIndex,
-                            next.rollDeg, next.pitchDeg, next.yawDeg
-                        );
+                        LOG_INF( "MissionPlanner: step %u → roll=%.1f°, pitch=%.1f°, yaw=%.1f°", (unsigned)_currentIndex, next.rollDeg, next.pitchDeg, next.yawDeg);
                         // reset the timer
                         _stepStartMs = now;
                     }

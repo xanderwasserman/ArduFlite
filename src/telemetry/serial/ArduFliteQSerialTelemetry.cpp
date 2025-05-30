@@ -7,6 +7,7 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "ArduFliteQSerialTelemetry.h"
+#include "src/utils/Logging.h"
 
 ArduFliteQSerialTelemetry::ArduFliteQSerialTelemetry(float frequencyHz)
 {
@@ -50,7 +51,7 @@ void ArduFliteQSerialTelemetry::telemetryTask(void* pvParameters) {
         }
 
         // Print the quaternion
-        Serial.printf("%f,%f,%f,%f\n", localCopy.quat.w, localCopy.quat.x, localCopy.quat.y, localCopy.quat.z);
+        LOG_C("%f,%f,%f,%f", localCopy.quat.w, localCopy.quat.x, localCopy.quat.y, localCopy.quat.z);
 
         // Delay for the remainder of the interval
         unsigned long elapsed = millis() - startMs;

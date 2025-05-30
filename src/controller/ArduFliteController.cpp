@@ -21,6 +21,8 @@
  */
 
 #include "src/controller/ArduFliteController.h"
+#include "src/utils/Logging.h"
+
 #include <Arduino.h>
 
 #define OUTER_LOOP_DT 10
@@ -44,19 +46,19 @@ ArduFliteController::ArduFliteController(ArduFliteIMU* imu, ArduFliteAttitudeCon
     // Create the mutex for protecting shared state.
     ctrlMutex = xSemaphoreCreateMutex();
     if (ctrlMutex == NULL) {
-        Serial.println("Failed to create ArduFliteController mutex!");
+        LOG_ERR("Failed to create ArduFliteController mutex!");
     }
 
     // Create the mutex for protecting innerLoop stats.
     innerStatsMutex = xSemaphoreCreateMutex();
     if (innerStatsMutex == NULL) {
-        Serial.println("Failed to create innerLoop Stats mutex!");
+        LOG_ERR("Failed to create innerLoop Stats mutex!");
     }
 
     // Create the mutex for protecting outerLoop stats.
     outerStatsMutex = xSemaphoreCreateMutex();
     if (outerStatsMutex == NULL) {
-        Serial.println("Failed to create outerLoop Stats mutex!");
+        LOG_ERR("Failed to create outerLoop Stats mutex!");
     }
 }
  
@@ -162,7 +164,7 @@ void ArduFliteController::pauseTasks()
     if (innerTaskHandle != NULL) {
         vTaskSuspend(innerTaskHandle);
     }
-    Serial.println("Control tasks paused.");
+    LOG_INF("Control tasks paused.");
 }
 
 /**
@@ -179,7 +181,7 @@ void ArduFliteController::resumeTasks()
     if (innerTaskHandle != NULL) {
         vTaskResume(innerTaskHandle);
     }
-    Serial.println("Control tasks resumed.");
+    LOG_INF("Control tasks resumed.");
 }
  
 /**

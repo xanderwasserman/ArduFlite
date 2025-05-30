@@ -14,10 +14,11 @@
  * It uses PID controllers for roll, pitch, and yaw, and employs a mutex
  * (attitudeMutex) to protect the shared desired orientation (desiredQ).
  */
+ #include "src/controller/ArduFliteAttitudeController.h"
+#include "src/utils/Logging.h"
 
  #include <math.h>
  #include <Arduino.h>
- #include "src/controller/ArduFliteAttitudeController.h"
  
  /**
   * @brief Constructor.
@@ -37,7 +38,7 @@
      // Create the mutex for protecting desiredQ.
      attitudeMutex = xSemaphoreCreateMutex();
      if (attitudeMutex == NULL) {
-         Serial.println("Failed to create ArduFliteAttitudeController mutex!");
+         LOG_ERR("Failed to create ArduFliteAttitudeController mutex!");
      }
  }
  

@@ -7,6 +7,8 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "ArduFliteMqttTelemetry.h"
+#include "src/utils/Logging.h"
+
 #include <Arduino.h>
 
 ArduFliteMqttTelemetry* ArduFliteMqttTelemetry::instance = nullptr;
@@ -58,7 +60,7 @@ void ArduFliteMqttTelemetry::begin()
 
     if (result != pdPASS) 
     {
-        Serial.println("Failed to create MqttTelemetryTask!");
+        LOG_ERR("Failed to create MqttTelemetryTask!");
     }
 }
 
@@ -77,17 +79,16 @@ void ArduFliteMqttTelemetry::connectToMqtt()
 {
     if (!mqttClient.connected()) 
     {
-        Serial.printf("Connecting to MQTT with credentials:\nBroker: %s\nPort: %d\nUsername: %s\nPassword: %s\n", mqttServer.c_str(), mqttPort, mqttUser.c_str(), mqttPass.c_str());
+        LOG_INF("Connecting to MQTT with credentials:\nBroker: %s\nPort: %d\nUsername: %s\nPassword: %s", mqttServer.c_str(), mqttPort, mqttUser.c_str(), mqttPass.c_str());
         if (mqttUser.length() > 0) 
         {
             if (mqttClient.connect("ArduFlite", mqttUser.c_str(), mqttPass.c_str())) 
             {
-                Serial.println("connected with auth");
+                LOG_INF("connected with auth");
             } 
             else 
             {
-                Serial.print("failed, rc=");
-                Serial.println(mqttClient.state());
+                LOG_ERR("auth failed, rc=%d", mqttClient.state());
             }
         } 
         else 
@@ -95,12 +96,11 @@ void ArduFliteMqttTelemetry::connectToMqtt()
             // No user/pass
             if (mqttClient.connect("ArduFlite")) 
             {
-                Serial.println("connected");
+                LOG_INF("connected");
             } 
             else 
             {
-                Serial.print("failed, rc=");
-                Serial.println(mqttClient.state());
+                LOG_ERR("failed, rc=%d", mqttClient.state());
             }
         }
 
@@ -145,7 +145,7 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters)
     // Attempt to connect or open the config portal
     if (!localManager.autoConnect("ArduFliteAP")) 
     {
-        Serial.println("WiFi connection failed. Telemetry task will exit.");
+        LOG_ERR("WiFi connection failed. Telemetry task will exit.");
         // If we want the task to keep trying, we could do a loop. Otherwise, stop.
         vTaskDelete(nullptr); // kill this task
         return;
@@ -166,7 +166,7 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters)
     // Create a mutex for data
     self->telemetryMutex = xSemaphoreCreateMutex();
 
-    Serial.println("Telemetry WiFi + MQTT setup complete. Entering publish loop...");
+    LOG_INF("Telemetry WiFi + MQTT setup complete. Entering publish loop...");
 
     // ----------------------
     // 2) Main publish loop
@@ -240,7 +240,7 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters)
 
 void ArduFliteMqttTelemetry::reset()
 {
-    Serial.println("ArduFliteMqttTelemetry::reset() called. Stopping task & clearing Wi-Fi credentials...");
+    LOG_INF("ArduFliteMqttTelemetry::reset() called. Stopping task & clearing Wi-Fi credentials...");
 
     // Disconnect MQTT
     mqttClient.disconnect();
@@ -268,7 +268,7 @@ void ArduFliteMqttTelemetry::loadPreferences()
     Preferences prefs;
     if (!prefs.begin(PREF_NAMESPACE, true))// read-only mode
     { 
-        Serial.println("[MQTT] Preferences not found, using defaults");
+        LOG_WARN("[MQTT] Preferences not found, using defaults");
         return;
     }
 
@@ -277,7 +277,7 @@ void ArduFliteMqttTelemetry::loadPreferences()
     mqttUser   = prefs.getString("user",  mqttUser);
     mqttPass   = prefs.getString("pass",  mqttPass);
 
-    Serial.printf("[MQTT] Loaded from NVS:\nServer=%s Port=%d User=%s Pass=%s\n",
+    LOG_INF("[MQTT] Loaded from NVS:\nServer=%s Port=%d User=%s Pass=%s",
         mqttServer.c_str(), mqttPort, mqttUser.c_str(), mqttPass.c_str());
 
     prefs.end();
@@ -288,7 +288,7 @@ void ArduFliteMqttTelemetry::savePreferences()
     Preferences prefs;
     if (!prefs.begin(PREF_NAMESPACE, false)) // read/write
     { 
-        Serial.println("[MQTT] Failed to open prefs for writing");
+        LOG_ERR("[MQTT] Failed to open prefs for writing");
         return;
     }
 
@@ -298,7 +298,7 @@ void ArduFliteMqttTelemetry::savePreferences()
     prefs.putString("pass",  mqttPass);
     prefs.end();
 
-    Serial.println("[MQTT] Saved new config to NVS");
+    LOG_INF("[MQTT] Saved new config to NVS");
 }
 
 // Static MQTT callback for subscribed messages.
@@ -317,7 +317,7 @@ void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned i
     String topicStr(topic);
     topicStr.toLowerCase();
     
-    Serial.printf("Received on topic: %s: %s\n",topicStr, message);
+    LOG_INF("Received on topic: %s: %s\n",topicStr, message);
 
     if (topicStr =="arduflite/command/reset")
     {
@@ -332,7 +332,7 @@ void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned i
         // For calibrate, check if payload equals "1".
         if (message.equals("1")) 
         {
-            Serial.println("Calibrate command received.");
+            LOG_INF("Calibrate command received.");
             instance->pushSystemCommand(CMD_CALIBRATE);
         }
     }
@@ -343,15 +343,15 @@ void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned i
         switch (modeValue) 
         {
             case 1:
-                Serial.println("Mode command received: Setting mode to ASSIST_MODE.");
+                LOG_INF("Mode command received: Setting mode to ASSIST_MODE.");
                 instance->pushSystemCommand(CMD_MODE_ASSIST);
                 break;
             case 2:
-                Serial.println("Mode command received: Setting mode to STABILIZED_MODE.");
+                LOG_INF("Mode command received: Setting mode to STABILIZED_MODE.");
                 instance->pushSystemCommand(CMD_MODE_STABILIZED);
                 break;
             default:
-                Serial.println("Unknown mode command payload.");
+                LOG_WARN("Unknown mode command payload.");
                 break;
         }
     }

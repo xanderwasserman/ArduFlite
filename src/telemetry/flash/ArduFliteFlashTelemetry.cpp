@@ -7,6 +7,8 @@
 //
 
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
+#include "src/utils/Logging.h"
+
 #include <FS.h>
 #include <LittleFS.h>
 
@@ -34,25 +36,25 @@ ArduFliteFlashTelemetry::~ArduFliteFlashTelemetry() {
 
 void ArduFliteFlashTelemetry::begin() {
     if (!LittleFS.begin()) {
-        Serial.println("LittleFS mount failed; formatting...");
+        LOG_ERR("LittleFS mount failed; formatting...");
         LittleFS.format();
         if (!LittleFS.begin()) {
-            Serial.println("LittleFS format failed!");
+            LOG_ERR("LittleFS format failed!");
             return;
         }
     }
 
     _mutex = xSemaphoreCreateMutex();
     if (!_mutex) {
-        Serial.println("Failed to create telemetry mutex");
+        LOG_ERR("Failed to create telemetry mutex");
         return;
     }
 
     // Report filesystem size
     size_t total = LittleFS.totalBytes();
     size_t used  = LittleFS.usedBytes();
-    Serial.printf("\nLittleFS TotalBytes: %u\n", (unsigned)total);
-    Serial.printf("LittleFS UsedBytes:  %u\n\n", (unsigned)used);
+    LOG_INF("LittleFS TotalBytes: %u", (unsigned)total);
+    LOG_INF("LittleFS UsedBytes:  %u\n\n", (unsigned)used);
 
     // Start background task
     xTaskCreate(
@@ -109,9 +111,9 @@ void ArduFliteFlashTelemetry::startLogging() {
                 _logFile.flush();
                 _lastFlushMs = millis();
                 _isLogging = true;
-                Serial.printf("Logging started: %s\n", fn);
+                LOG_INF("Logging started: %s", fn);
             } else {
-                Serial.printf("Failed to open %s\n", fn);
+                LOG_ERR("Failed to open %s", fn);
             }
         }
         xSemaphoreGive(_mutex);
@@ -125,7 +127,7 @@ void ArduFliteFlashTelemetry::stopLogging() {
             _logFile.flush();
             _logFile.close();
             _isLogging = false;
-            Serial.printf("Logging stopped: %s\n", _currentFilename.c_str());
+            LOG_INF("Logging stopped: %s", _currentFilename.c_str());
         }
         xSemaphoreGive(_mutex);
     }
@@ -134,14 +136,14 @@ void ArduFliteFlashTelemetry::stopLogging() {
 void ArduFliteFlashTelemetry::listLogs() {
     if (!_mutex) return;
     if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
-        Serial.println("Available logs:");
+        LOG_C("Available logs:");
         File root = LittleFS.open("/");
         File file = root.openNextFile();
         while (file) {
             String name = file.name();
             if (name.startsWith("/")) name = name.substring(1);
             if (name.startsWith("log_") && name.endsWith(".csv")) {
-                Serial.println(name);
+                LOG_C("%s", name);
             }
             file = root.openNextFile();
         }
@@ -158,19 +160,19 @@ void ArduFliteFlashTelemetry::dumpLog(int index) {
 
         File f = LittleFS.open(fn, FILE_READ);
         if (!f) {
-            Serial.printf("Failed to open %s\n", fn);
+            LOG_ERR("Failed to open %s", fn);
         } else {
             // BEGIN marker + blank line
-            Serial.printf("\n--- BEGIN %s ---\n\n", fn);
+            LOG_C_N("\n--- BEGIN %s ---\n\n", fn);
 
             // Read and print line by line
             while (f.available()) {
                 String line = f.readStringUntil('\n');
-                Serial.println(line);  // ensures each CSV row is on its own line
+                LOG_C("%s", line);  // ensures each CSV row is on its own line
             }
 
             // END marker
-            Serial.printf("\n--- END %s ---\n", fn);
+            LOG_C_N("\n--- END %s ---\n", fn);
             f.close();
         }
         xSemaphoreGive(_mutex);
@@ -183,9 +185,9 @@ void ArduFliteFlashTelemetry::deleteLog(int index) {
         char fn[32];
         snprintf(fn, sizeof(fn), "/log_%03d.csv", index);
         if (LittleFS.remove(fn)) {
-            Serial.printf("Deleted %s\n", fn);
+            LOG_INF("Deleted %s", fn);
         } else {
-            Serial.printf("Failed to delete %s\n", fn);
+            LOG_ERR("Failed to delete %s", fn);
         }
         xSemaphoreGive(_mutex);
     }

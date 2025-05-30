@@ -9,6 +9,7 @@
 #include "src/cli/ArduFliteCLI.h"
 #include "src/cli/CLICommands.h"
 #include "src/cli/CLICommandsConfig.h"
+#include "src/utils/Logging.h"
 
 ArduFliteCLI::ArduFliteCLI(ArduFliteController* controller, ArduFliteIMU* imu, ArduFliteFlashTelemetry* flashTelemetry)
     : controller(controller), imu(imu), flashTelemetry(flashTelemetry)
@@ -28,7 +29,7 @@ void ArduFliteCLI::cliTask(void* parameters) {
     ArduFliteCLI* cli = static_cast<ArduFliteCLI*>(parameters);
     String inputLine = "";
     
-    Serial.println("CLI Task started. Type 'help' for available commands.");
+    LOG_C("CLI Task started. Type 'help' for available commands.");
     
     while (true) {
         // Read input from Serial.
@@ -59,7 +60,7 @@ void ArduFliteCLI::cliTask(void* parameters) {
                         }
                     }
                     if (!found) {
-                        Serial.println("Unknown command. Type 'help' for available commands.");
+                        LOG_C("Unknown command. Type 'help' for available commands.");
                     }
                     inputLine = "";  // Clear the line.
                 }

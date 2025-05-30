@@ -6,7 +6,6 @@
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
-// StatusLED.cpp
 
 #include "StatusLED.h"
 

@@ -17,14 +17,14 @@
 #define LOG_INF(fmt, ...)  Logger::instance().info ("[%s] " fmt, __func__, ##__VA_ARGS__)
 #define LOG_WARN(fmt, ...) Logger::instance().warn ("[%s] " fmt, __func__, ##__VA_ARGS__)
 #define LOG_ERR(fmt, ...)  Logger::instance().error("[%s] " fmt, __func__, ##__VA_ARGS__)
-#define LOG_C(fmt, ...)    Logger::instance().clear("[%s] " fmt, __func__, ##__VA_ARGS__)
+#define LOG(fmt, ...)    Logger::instance().clear(fmt, ##__VA_ARGS__)
 
 // and the “no-newline” variants:
 #define LOG_DBG_N(fmt, ...)  Logger::instance().debug_n("[%s] " fmt, __func__, ##__VA_ARGS__)
 #define LOG_INF_N(fmt, ...)  Logger::instance().info_n ("[%s] " fmt, __func__, ##__VA_ARGS__)
 #define LOG_WARN_N(fmt, ...) Logger::instance().warn_n ("[%s] " fmt, __func__, ##__VA_ARGS__)
 #define LOG_ERR_N(fmt, ...)  Logger::instance().error_n("[%s] " fmt, __func__, ##__VA_ARGS__)
-#define LOG_C_N(fmt, ...)    Logger::instance().clear_n("[%s] " fmt, __func__, ##__VA_ARGS__)
+#define LOG_N(fmt, ...)    Logger::instance().clear_n(fmt, ##__VA_ARGS__)
 
 // Log levels
 enum class LogLevel {

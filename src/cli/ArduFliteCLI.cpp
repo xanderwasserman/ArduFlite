@@ -29,7 +29,7 @@ void ArduFliteCLI::cliTask(void* parameters) {
     ArduFliteCLI* cli = static_cast<ArduFliteCLI*>(parameters);
     String inputLine = "";
     
-    LOG_C("CLI Task started. Type 'help' for available commands.");
+    LOG("CLI Task started. Type 'help' for available commands.");
     
     while (true) {
         // Read input from Serial.
@@ -60,7 +60,7 @@ void ArduFliteCLI::cliTask(void* parameters) {
                         }
                     }
                     if (!found) {
-                        LOG_C("Unknown command. Type 'help' for available commands.");
+                        LOG("Unknown command. Type 'help' for available commands.");
                     }
                     inputLine = "";  // Clear the line.
                 }

@@ -52,15 +52,15 @@ void ArduFliteDebugSerialTelemetry::telemetryTask(void* pvParameters) {
             xSemaphoreGive(self->telemetryMutex);
         }
 
-        LOG_C_N("\033[2J\033[H");
-        LOG_C_N("In-flight: %s\n", localCopy.flight_state==0?"UNKNOW":localCopy.flight_state==1?"PREFLIGHT":localCopy.flight_state==2?"INFLIGHT":"LANDED");
-        LOG_C_N("Altitude: %f\n", localCopy.altitude);
-        LOG_C_N("Accel: %f, %f, %f\n", localCopy.accel.x, localCopy.accel.y, localCopy.accel.z);
-        LOG_C_N("Gyro: %f, %f, %f\n", localCopy.gyro.x, localCopy.gyro.y, localCopy.gyro.z);
-        LOG_C_N("Q: %f, %f, %f, %f\n", localCopy.quat.w, localCopy.quat.x, localCopy.quat.y, localCopy.quat.z);
-        LOG_C_N("Orientation: %f, %f, %f\n", localCopy.orientation.pitch, localCopy.orientation.roll, localCopy.orientation.yaw);
-        LOG_C_N("Attitude Cmd: %f, %f, %f\n", localCopy.attitudeCmd.roll, localCopy.attitudeCmd.pitch, localCopy.attitudeCmd.yaw);
-        LOG_C_N("Rate Cmd: %f, %f, %f\n", localCopy.rateCmd.roll, localCopy.rateCmd.pitch, localCopy.rateCmd.yaw);
+        LOG_N("\033[2J\033[H");
+        LOG_N("In-flight: %s\n", localCopy.flight_state==0?"UNKNOW":localCopy.flight_state==1?"PREFLIGHT":localCopy.flight_state==2?"INFLIGHT":"LANDED");
+        LOG_N("Altitude: %f\n", localCopy.altitude);
+        LOG_N("Accel: %f, %f, %f\n", localCopy.accel.x, localCopy.accel.y, localCopy.accel.z);
+        LOG_N("Gyro: %f, %f, %f\n", localCopy.gyro.x, localCopy.gyro.y, localCopy.gyro.z);
+        LOG_N("Q: %f, %f, %f, %f\n", localCopy.quat.w, localCopy.quat.x, localCopy.quat.y, localCopy.quat.z);
+        LOG_N("Orientation: %f, %f, %f\n", localCopy.orientation.pitch, localCopy.orientation.roll, localCopy.orientation.yaw);
+        LOG_N("Attitude Cmd: %f, %f, %f\n", localCopy.attitudeCmd.roll, localCopy.attitudeCmd.pitch, localCopy.attitudeCmd.yaw);
+        LOG_N("Rate Cmd: %f, %f, %f\n", localCopy.rateCmd.roll, localCopy.rateCmd.pitch, localCopy.rateCmd.yaw);
 
         // Delay for the remainder of the interval
         unsigned long elapsed = millis() - startMs;

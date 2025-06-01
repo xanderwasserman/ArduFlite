@@ -137,14 +137,14 @@ void ArduFliteFlashTelemetry::stopLogging() {
 void ArduFliteFlashTelemetry::listLogs() {
     if (!_mutex) return;
     if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
-        LOG_C("Available logs:");
+        LOG("Available logs:");
         File root = LittleFS.open("/");
         File file = root.openNextFile();
         while (file) {
             String name = file.name();
             if (name.startsWith("/")) name = name.substring(1);
             if (name.startsWith("log_") && name.endsWith(".csv")) {
-                LOG_C("%s", name);
+                LOG("%s", name);
             }
             file = root.openNextFile();
         }
@@ -164,16 +164,16 @@ void ArduFliteFlashTelemetry::dumpLog(int index) {
             LOG_ERR("Failed to open %s", fn);
         } else {
             // BEGIN marker + blank line
-            LOG_C_N("\n--- BEGIN %s ---\n\n", fn);
+            LOG_N("\n--- BEGIN %s ---\n\n", fn);
 
             // Read and print line by line
             while (f.available()) {
                 String line = f.readStringUntil('\n');
-                LOG_C("%s", line);  // ensures each CSV row is on its own line
+                LOG("%s", line.c_str());  // ensures each CSV row is on its own line
             }
 
             // END marker
-            LOG_C_N("\n--- END %s ---\n", fn);
+            LOG_N("\n--- END %s ---\n", fn);
             f.close();
         }
         xSemaphoreGive(_mutex);

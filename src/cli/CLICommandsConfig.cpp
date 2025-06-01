@@ -28,12 +28,12 @@ void setFlashTelemetry(ArduFliteFlashTelemetry* flashTelemetry) {
 
 // Command functions:
 void cmdHelp(const String &args) {
-    LOG_C("Available commands:");
+    LOG("Available commands:");
     for (size_t i = 0; i < numCLICommands; i++) {
-        LOG_C_N("  ");
-        LOG_C_N("%s", cliCommands[i].command);
-        LOG_C_N(" - ");
-        LOG_C_N("%s", cliCommands[i].description);
+        LOG_N("  ");
+        LOG_N("%s", cliCommands[i].command);
+        LOG_N(" - ");
+        LOG("%s", cliCommands[i].description);
     }
 }
 
@@ -45,17 +45,17 @@ void cmdStats(const String &args) {
     // Retrieve and print stats.
     LoopStats outerStats = globalController->getOuterLoopStats();
     LoopStats innerStats = globalController->getInnerLoopStats();
-    LOG_C("Outer Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu",
+    LOG("Outer Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu",
                   outerStats.avgDt, outerStats.maxDt, outerStats.overrunCount, (outerStats.overrunCount/outerStats.sampleCount)*100);
-    LOG_C("Inner Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu",
+    LOG("Inner Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu",
                   innerStats.avgDt, innerStats.maxDt, innerStats.overrunCount, (innerStats.overrunCount/innerStats.sampleCount)*100);
 }
 
 void cmdTasks(const String &args) {
     char taskListBuffer[512];
     vTaskList(taskListBuffer);
-    LOG_C("Task List:");
-    LOG_C("%s", taskListBuffer);
+    LOG("Task List:");
+    LOG("%s", taskListBuffer);
 }
 
 void cmdSetMode(const String &args) {
@@ -67,18 +67,18 @@ void cmdSetMode(const String &args) {
     argLower.toLowerCase();
     if (argLower.indexOf("assist") >= 0) {
         globalController->setMode(ASSIST_MODE);
-        LOG_C("Mode set to ASSIST_MODE.");
+        LOG("Mode set to ASSIST_MODE.");
     } else if (argLower.indexOf("stabilized") >= 0) {
         globalController->setMode(STABILIZED_MODE);
-        LOG_C("Mode set to STABILIZED_MODE.");
+        LOG("Mode set to STABILIZED_MODE.");
     } else {
-        LOG_C("Unknown mode. Use 'assist' or 'stabilized'.");
+        LOG("Unknown mode. Use 'assist' or 'stabilized'.");
     }
 }
 
 void cmdCalibrateIMU(const String &args) {
     if (!globalController || !globalIMU) {
-        LOG_C("CLI Controller or IMU reference not set!");
+        LOG("CLI Controller or IMU reference not set!");
         return;
     }
     // Accept either no arguments or "imu" as the argument.
@@ -86,21 +86,21 @@ void cmdCalibrateIMU(const String &args) {
     trimmed.trim();
     trimmed.toLowerCase();
     if (trimmed.length() == 0 || trimmed.equals("imu")) {
-        LOG_C("Starting IMU calibration...");
+        LOG("Starting IMU calibration...");
         bool success = globalIMU->selfCalibrate();
         if (success) {
-            LOG_C("IMU calibration complete.");
+            LOG("IMU calibration complete.");
         } else {
-            LOG_C("IMU calibration failed.");
+            LOG("IMU calibration failed.");
         }
     } else {
-        LOG_C("Unknown calibration target. Use 'calibrate imu'.");
+        LOG("Unknown calibration target. Use 'calibrate imu'.");
     }
 }
 
 void cmdFlash(const String &args) {
     if (!globalFlashTelemetry) {
-        LOG_C("Flash telemetry not initialized!");
+        LOG("Flash telemetry not initialized!");
         return;
     }
 
@@ -117,47 +117,47 @@ void cmdFlash(const String &args) {
 
     if (cmd == "start") {
         globalFlashTelemetry->startLogging();
-        LOG_C("Flash logging STARTED");
+        LOG("Flash logging STARTED");
     }
     else if (cmd == "stop") {
         globalFlashTelemetry->stopLogging();
-        LOG_C("Flash logging STOPPED");
+        LOG("Flash logging STOPPED");
     }
     else if (cmd == "list") {
-        LOG_C("Listing flash logs:");
+        LOG("Listing flash logs:");
         globalFlashTelemetry->listLogs();
     }
     else if (cmd == "dump") {
         if (param.length() == 0) {
-            LOG_C("Usage: flash dump <index>");
+            LOG("Usage: flash dump <index>");
         } else {
             int idx = param.toInt();
-            LOG_C("Dumping log %d:\n", idx);
+            LOG("Dumping log %d:\n", idx);
             globalFlashTelemetry->dumpLog(idx);
         }
     }
     else if (cmd == "delete" || cmd == "del" || cmd == "rm") {
         if (param.length() == 0) {
-            LOG_C("Usage: flash delete <index>");
+            LOG("Usage: flash delete <index>");
         } else {
             int idx = param.toInt();
-            LOG_C("Deleting log %d: ", idx);
+            LOG("Deleting log %d: ", idx);
             globalFlashTelemetry->deleteLog(idx);
         }
     }
     else if (cmd == "reset") {
-        LOG_C("Formatting LittleFS (erasing all logs)...");
+        LOG("Formatting LittleFS (erasing all logs)...");
         globalFlashTelemetry->reset();
-        LOG_C("Done.");
+        LOG("Done.");
     }
     else {
-        LOG_C("Unknown flash command. Available:");
-        LOG_C("  flash start       → begin a new flight log");
-        LOG_C("  flash stop        → end current flight log");
-        LOG_C("  flash list        → list existing logs");
-        LOG_C("  flash dump <idx>  → stream log #<idx> over serial");
-        LOG_C("  flash delete <idx>→ remove log #<idx>");
-        LOG_C("  flash reset       → erase entire LittleFS");
+        LOG("Unknown flash command. Available:");
+        LOG("  flash start       → begin a new flight log");
+        LOG("  flash stop        → end current flight log");
+        LOG("  flash list        → list existing logs");
+        LOG("  flash dump <idx>  → stream log #<idx> over serial");
+        LOG("  flash delete <idx>→ remove log #<idx>");
+        LOG("  flash reset       → erase entire LittleFS");
     }
 }
 

@@ -6,10 +6,11 @@
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
-#include "ArduFliteMqttTelemetry.h"
+#include "src/telemetry/mqtt/ArduFliteMqttTelemetry.h"
 #include "src/utils/Logging.h"
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 
 ArduFliteMqttTelemetry* ArduFliteMqttTelemetry::instance = nullptr;
 
@@ -64,13 +65,14 @@ void ArduFliteMqttTelemetry::begin()
     }
 }
 
-void ArduFliteMqttTelemetry::publish(const TelemetryData& data) 
+void ArduFliteMqttTelemetry::publish(const TelemetryData& telemData, const ConfigData& configData) 
 {
     // Store new data to a local buffer (pendingData),
     // so the telemetryTask can publish it in the background
     if (telemetryMutex && xSemaphoreTake(telemetryMutex, 10) == pdTRUE) 
     {
-        pendingData = data; 
+        pendingData         = telemData; 
+        pendingConfigData   = configData; 
         xSemaphoreGive(telemetryMutex);
     }
 }
@@ -108,7 +110,14 @@ void ArduFliteMqttTelemetry::connectToMqtt()
         mqttClient.subscribe("arduflite/command/reset");
         mqttClient.subscribe("arduflite/command/calibrate");
         mqttClient.subscribe("arduflite/command/mode");
-
+        mqttClient.subscribe("arduflite/control/attitude");
+        mqttClient.subscribe("arduflite/config/attitude/roll/pid");
+        mqttClient.subscribe("arduflite/config/attitude/pitch/pid");
+        mqttClient.subscribe("arduflite/config/attitude/yaw/pid");
+        mqttClient.subscribe("arduflite/config/rate/roll/pid");
+        mqttClient.subscribe("arduflite/config/rate/pitch/pid");
+        mqttClient.subscribe("arduflite/config/rate/yaw/pid");
+        mqttClient.subscribe("arduflite/config/rate/alpha");
     }
 }
 
@@ -178,11 +187,13 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters)
         // Make sure MQTT is connected
         self->connectToMqtt();
 
-        TelemetryData localCopy;
+        TelemetryData   localTelemCopy;
+        ConfigData      localConfigCopy;
         // Copy data under mutex
         if (xSemaphoreTake(self->telemetryMutex, pdMS_TO_TICKS(50)) == pdTRUE) 
         {
-            localCopy = self->pendingData;
+            localTelemCopy = self->pendingData;
+            localConfigCopy = self->pendingConfigData;
             xSemaphoreGive(self->telemetryMutex);
         }
 
@@ -190,42 +201,72 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters)
         if (self->mqttClient.connected()) 
         {
             // You could optionally check return codes if needed
-            self->mqttClient.publish("arduflite/imu/flight/state", String(localCopy.flight_state, 3).c_str());
-            self->mqttClient.publish("arduflite/imu/flight/mode", String(localCopy.flight_mode, 3).c_str());
-            self->mqttClient.publish("arduflite/imu/barometer/altitude", String(localCopy.altitude, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/flight/state", String(localTelemCopy.flight_state, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/flight/mode", String(localTelemCopy.flight_mode, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/barometer/altitude", String(localTelemCopy.altitude, 3).c_str());
 
-            self->mqttClient.publish("arduflite/imu/accel/x", String(localCopy.accel.x, 3).c_str());
-            self->mqttClient.publish("arduflite/imu/accel/y", String(localCopy.accel.y, 3).c_str());
-            self->mqttClient.publish("arduflite/imu/accel/z", String(localCopy.accel.z, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/accel/x", String(localTelemCopy.accel.x, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/accel/y", String(localTelemCopy.accel.y, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/accel/z", String(localTelemCopy.accel.z, 3).c_str());
 
-            self->mqttClient.publish("arduflite/imu/gyro/x", String(localCopy.gyro.x, 3).c_str());
-            self->mqttClient.publish("arduflite/imu/gyro/y", String(localCopy.gyro.y, 3).c_str());
-            self->mqttClient.publish("arduflite/imu/gyro/z", String(localCopy.gyro.z, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/gyro/x", String(localTelemCopy.gyro.x, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/gyro/y", String(localTelemCopy.gyro.y, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/gyro/z", String(localTelemCopy.gyro.z, 3).c_str());
 
-            self->mqttClient.publish("arduflite/imu/quaternion/w", String(localCopy.quat.w, 4).c_str());
-            self->mqttClient.publish("arduflite/imu/quaternion/x", String(localCopy.quat.x, 4).c_str());
-            self->mqttClient.publish("arduflite/imu/quaternion/y", String(localCopy.quat.y, 4).c_str());
-            self->mqttClient.publish("arduflite/imu/quaternion/z", String(localCopy.quat.z, 4).c_str());
+            self->mqttClient.publish("arduflite/imu/quaternion/w", String(localTelemCopy.quat.w, 4).c_str());
+            self->mqttClient.publish("arduflite/imu/quaternion/x", String(localTelemCopy.quat.x, 4).c_str());
+            self->mqttClient.publish("arduflite/imu/quaternion/y", String(localTelemCopy.quat.y, 4).c_str());
+            self->mqttClient.publish("arduflite/imu/quaternion/z", String(localTelemCopy.quat.z, 4).c_str());
 
-            self->mqttClient.publish("arduflite/imu/orientation/pitch", String(localCopy.orientation.pitch, 2).c_str());
-            self->mqttClient.publish("arduflite/imu/orientation/roll", String(localCopy.orientation.roll, 2).c_str());
-            self->mqttClient.publish("arduflite/imu/orientation/yaw", String(localCopy.orientation.yaw, 2).c_str());
+            self->mqttClient.publish("arduflite/imu/orientation/pitch", String(localTelemCopy.orientation.pitch, 2).c_str());
+            self->mqttClient.publish("arduflite/imu/orientation/roll", String(localTelemCopy.orientation.roll, 2).c_str());
+            self->mqttClient.publish("arduflite/imu/orientation/yaw", String(localTelemCopy.orientation.yaw, 2).c_str());
 
-            self->mqttClient.publish("arduflite/controller-setpoint/rate/roll", String(localCopy.rateSetpoint.roll, 3).c_str());
-            self->mqttClient.publish("arduflite/controller-setpoint/rate/pitch", String(localCopy.rateSetpoint.pitch, 3).c_str());
-            self->mqttClient.publish("arduflite/controller-setpoint/rate/yaw", String(localCopy.rateSetpoint.yaw, 3).c_str());
+            self->mqttClient.publish("arduflite/controller-setpoint/rate/roll", String(localTelemCopy.rateSetpoint.roll, 3).c_str());
+            self->mqttClient.publish("arduflite/controller-setpoint/rate/pitch", String(localTelemCopy.rateSetpoint.pitch, 3).c_str());
+            self->mqttClient.publish("arduflite/controller-setpoint/rate/yaw", String(localTelemCopy.rateSetpoint.yaw, 3).c_str());
 
-            self->mqttClient.publish("arduflite/controller-setpoint/attitude/roll", String(localCopy.attitudeSetpoint.roll, 3).c_str());
-            self->mqttClient.publish("arduflite/controller-setpoint/attitude/pitch", String(localCopy.attitudeSetpoint.pitch, 3).c_str());
-            self->mqttClient.publish("arduflite/controller-setpoint/attitude/yaw", String(localCopy.attitudeSetpoint.yaw, 3).c_str());
+            self->mqttClient.publish("arduflite/controller-setpoint/attitude/roll", String(localTelemCopy.attitudeSetpoint.roll, 3).c_str());
+            self->mqttClient.publish("arduflite/controller-setpoint/attitude/pitch", String(localTelemCopy.attitudeSetpoint.pitch, 3).c_str());
+            self->mqttClient.publish("arduflite/controller-setpoint/attitude/yaw", String(localTelemCopy.attitudeSetpoint.yaw, 3).c_str());
             
-            self->mqttClient.publish("arduflite/controller/rate/roll", String(localCopy.rateCmd.roll, 3).c_str());
-            self->mqttClient.publish("arduflite/controller/rate/pitch", String(localCopy.rateCmd.pitch, 3).c_str());
-            self->mqttClient.publish("arduflite/controller/rate/yaw", String(localCopy.rateCmd.yaw, 3).c_str());
+            self->mqttClient.publish("arduflite/controller/rate/roll", String(localTelemCopy.rateCmd.roll, 3).c_str());
+            self->mqttClient.publish("arduflite/controller/rate/pitch", String(localTelemCopy.rateCmd.pitch, 3).c_str());
+            self->mqttClient.publish("arduflite/controller/rate/yaw", String(localTelemCopy.rateCmd.yaw, 3).c_str());
 
-            self->mqttClient.publish("arduflite/controller/attitude/roll", String(localCopy.attitudeCmd.roll, 3).c_str());
-            self->mqttClient.publish("arduflite/controller/attitude/pitch", String(localCopy.attitudeCmd.pitch, 3).c_str());
-            self->mqttClient.publish("arduflite/controller/attitude/yaw", String(localCopy.attitudeCmd.yaw, 3).c_str());
+            self->mqttClient.publish("arduflite/controller/attitude/roll", String(localTelemCopy.attitudeCmd.roll, 3).c_str());
+            self->mqttClient.publish("arduflite/controller/attitude/pitch", String(localTelemCopy.attitudeCmd.pitch, 3).c_str());
+            self->mqttClient.publish("arduflite/controller/attitude/yaw", String(localTelemCopy.attitudeCmd.yaw, 3).c_str());
+
+            // 1) Attitude → Roll
+            self->publishPidConfig("arduflite/config/attitude/roll/pid", localConfigCopy.attitude_pidRoll);
+
+            // 2) Attitude → Pitch
+            self->publishPidConfig("arduflite/config/attitude/pitch/pid", localConfigCopy.attitude_pidPitch);
+
+            // 3) Attitude → Yaw
+            self->publishPidConfig("arduflite/config/attitude/yaw/pid", localConfigCopy.attitude_pidYaw);
+
+            // 4) Rate → Roll
+            self->publishPidConfig("arduflite/config/rate/roll/pid", localConfigCopy.rate_pidRoll);
+
+            // 5) Rate → Pitch
+            self->publishPidConfig("arduflite/config/rate/pitch/pid", localConfigCopy.rate_pidPitch);
+
+            // 6) Rate → Yaw
+            self->publishPidConfig("arduflite/config/rate/yaw/pid", localConfigCopy.rate_pidYaw);
+
+            // 7) Finally, rate-filter alpha can still be separate, e.g.:
+            {
+                char bufA[64];
+                int mA = snprintf(bufA, sizeof(bufA), "{\"alpha\":%.3f}",
+                                localConfigCopy.filter_alpha);
+                if (mA > 0 && mA < (int)sizeof(bufA)) {
+                    self->mqttClient.publish("arduflite/config/rate/alpha", bufA);
+                } else {
+                    LOG_ERR("publishRateAlpha: snprintf error or overflow (%d)", mA);
+                }
+            }
         }
 
         // Let PubSubClient handle incoming messages (if you care about subscriptions)
@@ -306,60 +347,242 @@ void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned i
 {
     if (!instance) return;
 
+    // 1) Convert topic to lowercase String for comparison
+    String topicStr(topic);
+    topicStr.toLowerCase();
+
+    // 2) Pull payload into a String (for simple "1"/"2" commands)
     String message;
-    for (unsigned int i = 0; i < length; i++) 
-    {
+    for (unsigned int i = 0; i < length; i++) {
         message += (char)payload[i];
     }
     message.trim();
 
-    // Convert the topic to a String and to lower-case for case-insensitive comparison.
-    String topicStr(topic);
-    topicStr.toLowerCase();
-    
-    LOG_INF("Received on topic: %s: %s\n",topicStr, message);
+    LOG_INF("Received on topic: %s: %s\n", topicStr.c_str(), message.c_str());
 
-    if (topicStr =="arduflite/command/reset")
+    //
+    // --- HANDLE SIMPLE COMMANDS (non‐JSON) ---
+    //
+    if (topicStr == "arduflite/command/reset") 
     {
-        // For reset, check if payload equals "1".
-        if (message.equals("1")) 
-        {
-            instance->pushSystemCommand(CMD_RESET);
+        // For reset, check if payload equals "1"
+        if (message.equals("1")) {
+            SystemCommand cmd;
+            cmd.type = CMD_RESET;
+            instance->pushSystemCommand(cmd);
         }
+        return;  // done
     }
-    else if (topicStr == "arduflite/command/calibrate")
+    else if (topicStr == "arduflite/command/calibrate") 
     {
-        // For calibrate, check if payload equals "1".
-        if (message.equals("1")) 
-        {
-            LOG_INF("Calibrate command received.");
-            instance->pushSystemCommand(CMD_CALIBRATE);
+        // For calibrate, check if payload equals "1"
+        if (message.equals("1")) {
+            SystemCommand cmd;
+            cmd.type = CMD_CALIBRATE;
+            instance->pushSystemCommand(cmd);
         }
+        return;
     }
-    else if (topicStr == "arduflite/command/mode")
+    else if (topicStr == "arduflite/command/mode") 
     {
-        // For mode command, convert payload to integer and switch.
+        // Mode command: payload is an integer (1 or 2)
         int modeValue = message.toInt();
+        SystemCommand cmd;
+        cmd.type = CMD_SET_MODE;
+
         switch (modeValue) 
         {
             case 1:
                 LOG_INF("Mode command received: Setting mode to ASSIST_MODE.");
-                instance->pushSystemCommand(CMD_MODE_ASSIST);
+                cmd.mode = ASSIST_MODE;
+                instance->pushSystemCommand(cmd);
                 break;
             case 2:
                 LOG_INF("Mode command received: Setting mode to STABILIZED_MODE.");
-                instance->pushSystemCommand(CMD_MODE_STABILIZED);
+                cmd.mode = STABILIZED_MODE;
+                instance->pushSystemCommand(cmd);
                 break;
             default:
-                LOG_WARN("Unknown mode command payload.");
+                LOG_WARN("Unknown mode command payload: %s", message.c_str());
                 break;
         }
+        return;
+    }
+
+    //
+    // --- ALL REMAINING TOPICS EXPECT A JSON PAYLOAD ---
+    //
+    DynamicJsonDocument doc(256);
+    DeserializationError err = deserializeJson(doc, payload, length);
+    if (err) 
+    {
+        LOG_ERR("JSON parse error on %s: %s", topicStr.c_str(), err.c_str());
+        return;
+    }
+
+    //
+    // --- ATTITUDE CONTROL (EulerAngles JSON) ---
+    //
+    if (topicStr == "arduflite/control/attitude") 
+    {
+        LOG_INF("Attitude control JSON received: %s", message.c_str());
+        instance->handleAttitudeControl(doc);
+        return;
+    }
+
+    //
+    // --- PID CONFIG UPDATES (each takes a full PIDConfig JSON) ---
+    //
+    // Note: Your JSON must include keys "kp", "ki", "kd", "outLimit", "maxIntegral", "derivativeAlpha".
+    //
+    if (topicStr == "arduflite/config/attitude/roll/pid") 
+    {
+        LOG_INF("Config JSON for ATTITUDE_ROLL_LOOP: %s", message.c_str());
+
+        instance->handlePidConfig(ATTITUDE_ROLL_LOOP, doc);
+        return;
+    }
+    else if (topicStr == "arduflite/config/attitude/pitch/pid") 
+    {
+        LOG_INF("Config JSON for ATTITUDE_PITCH_LOOP: %s", message.c_str());
+
+        instance->handlePidConfig(ATTITUDE_PITCH_LOOP, doc);
+        return;
+    }
+    else if (topicStr == "arduflite/config/attitude/yaw/pid") 
+    {
+        LOG_INF("Config JSON for ATTITUDE_YAW_LOOP: %s", message.c_str());
+
+        instance->handlePidConfig(ATTITUDE_YAW_LOOP, doc);
+        return;
+    }
+    else if (topicStr == "arduflite/config/rate/roll/pid") 
+    {
+        LOG_INF("Config JSON for RATE_ROLL_LOOP: %s", message.c_str());
+
+        instance->handlePidConfig(RATE_ROLL_LOOP, doc);
+        return;
+    }
+    else if (topicStr == "arduflite/config/rate/pitch/pid") 
+    {
+        LOG_INF("Config JSON for RATE_PITCH_LOOP: %s", message.c_str());
+
+        instance->handlePidConfig(RATE_PITCH_LOOP, doc);
+        return;
+    }
+    else if (topicStr == "arduflite/config/rate/yaw/pid") 
+    {
+        LOG_INF("Config JSON for RATE_YAW_LOOP: %s", message.c_str());
+
+        instance->handlePidConfig(RATE_YAW_LOOP, doc);
+        return;
+    }
+
+    //
+    // --- RATE FILTER ALPHA (single‐float JSON key: "alpha") ---
+    //
+    if (topicStr == "arduflite/config/rate/alpha") 
+    {
+        LOG_INF("Config received for rate controller alpha: %s", message.c_str());
+        float a = doc["alpha"] | 0.0f;
+        instance->handleRateAlpha(a);
+        return;
     }
 }
 
-void ArduFliteMqttTelemetry::pushSystemCommand(SystemCommandType type) 
+void ArduFliteMqttTelemetry::pushSystemCommand(SystemCommand cmd) 
 {
     if (!_cmdSys) return;
-    SystemCommand cmd{ type };
     _cmdSys->pushCommand(cmd);
+}
+
+void ArduFliteMqttTelemetry::handleAttitudeControl(const JsonDocument& doc) 
+{
+    EulerAngles ea 
+    {
+        doc["roll"]  | 0.0f,
+        doc["pitch"] | 0.0f,
+        doc["yaw"]   | 0.0f
+    };
+    
+    SystemCommand cmd;
+    cmd.type            = CMD_SET_CONFIG_ATTITUDE;
+    cmd.attitudeConfig  = ea;
+
+    _cmdSys->pushCommand(cmd);
+}
+
+void ArduFliteMqttTelemetry::handlePidConfig(ControlLoopType loop, const JsonDocument& doc) 
+{
+    // Build a PIDConfig from JSON. Keys must be:
+    //   "kp", "ki", "kd", "outLimit", "maxIntegral", "derivativeAlpha"
+    PIDConfig pc;
+    pc.kp              = doc["kp"]             | 0.0f;
+    pc.ki              = doc["ki"]             | 0.0f;
+    pc.kd              = doc["kd"]             | 0.0f;
+    pc.outLimit        = doc["outLimit"]       | 0.0f;
+    pc.maxIntegral     = doc["maxIntegral"]    | 0.0f;
+    pc.derivativeAlpha = doc["derivativeAlpha"]| 0.0f;
+
+    SystemCommand cmd;
+    cmd.type      = CMD_SET_CONFIG_PID;
+    cmd.pidLoop   = loop;
+    cmd.pidConfig = pc;
+
+    _cmdSys->pushCommand(cmd);
+}
+
+
+void ArduFliteMqttTelemetry::handleRateAlpha(float alpha) 
+{
+    SystemCommand cmd;
+    cmd.type      = CMD_SET_CONFIG_RATE_ALPHA;
+    cmd.rateAlpha = alpha;
+
+    _cmdSys->pushCommand(cmd);
+}
+
+/**
+ * @brief Format a PIDConfig as JSON and publish it.
+ *
+ * JSON schema: 
+ *   { 
+ *     "kp":            <float>,
+ *     "ki":            <float>,
+ *     "kd":            <float>,
+ *     "outLimit":      <float>,
+ *     "maxIntegral":   <float>,
+ *     "derivativeAlpha":<float>
+ *   }
+ *
+ * We use snprintf() to avoid pulling in a full JSON library.
+ */
+void ArduFliteMqttTelemetry::publishPidConfig(const char* topic, const PIDConfig& pc) 
+{
+    // Buffer must be large enough for six floats plus keys/punctuation.
+    // 128 bytes is usually safe for this schema.
+    char buf[128];
+
+    // Build JSON string:
+    // {"kp":%.3f,"ki":%.3f,"kd":%.3f,"outLimit":%.3f,"maxIntegral":%.3f,"derivativeAlpha":%.3f}
+    int len = snprintf(
+        buf, sizeof(buf),
+        "{\"kp\":%.3f,\"ki\":%.3f,\"kd\":%.3f"
+        ",\"outLimit\":%.3f,\"maxIntegral\":%.3f"
+        ",\"derivativeAlpha\":%.3f}",
+        pc.kp,
+        pc.ki,
+        pc.kd,
+        pc.outLimit,
+        pc.maxIntegral,
+        pc.derivativeAlpha
+    );
+
+    // snprintf returns the number of bytes (not including the '\0').
+    // If it returns <0 or >= sizeof(buf), the output was truncated.
+    if (len > 0 && len < (int)sizeof(buf)) {
+        this->mqttClient.publish(topic, buf);
+    } else {
+        LOG_ERR("publishPidConfig: snprintf error or buffer overflow (%d)", len);
+    }
 }

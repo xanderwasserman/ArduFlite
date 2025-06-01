@@ -6,7 +6,8 @@
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
-#pragma once
+#ifndef ARDUFLITE_Q_SERIAL_TELEMETRY_H
+#define ARDUFLITE_Q_SERIAL_TELEMETRY_H
 
 #include <Arduino.h>
 #include "src/telemetry/ArduFliteTelemetry.h"
@@ -17,7 +18,7 @@ class ArduFliteQSerialTelemetry : public ArduFliteTelemetry {
         ArduFliteQSerialTelemetry(float frequencyHz = 10.0f);
     
         void begin() override;
-        void publish(const TelemetryData& data) override;
+        void publish(const TelemetryData& telemData, const ConfigData& configData)  override;
     
     private:
         static void telemetryTask(void* pvParameters);
@@ -27,3 +28,4 @@ class ArduFliteQSerialTelemetry : public ArduFliteTelemetry {
         SemaphoreHandle_t telemetryMutex;
     };
     
+#endif //ARDUFLITE_Q_SERIAL_TELEMETRY_H

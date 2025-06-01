@@ -11,6 +11,7 @@
 #define ARDUFLITE_FLASH_TELEMETRY_H
 
 #include "src/telemetry/ArduFliteTelemetry.h"
+#include "src/telemetry/ConfigData.h"
 
 #include <Arduino.h>
 #include <FS.h>
@@ -22,8 +23,8 @@ public:
     ~ArduFliteFlashTelemetry();
 
     void begin() override;
-    void publish(const TelemetryData& data) override;
-
+    void publish(const TelemetryData& telemData, const ConfigData& configData)  override;
+     
     // Call on launch/landing
     void startLogging();
     void stopLogging();

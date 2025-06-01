@@ -40,6 +40,16 @@ enum ArduFliteMode
     UNKNOWN_MODE    = 99     // Pilot directly controls the rate setpoints.
 };
 
+enum ControlLoopType
+{
+    ATTITUDE_ROLL_LOOP = 0,
+    ATTITUDE_PITCH_LOOP,
+    ATTITUDE_YAW_LOOP,
+    RATE_ROLL_LOOP,
+    RATE_PITCH_LOOP,
+    RATE_YAW_LOOP
+};
+
 /**
  * @brief Overall controller for ArduFlite.
  *

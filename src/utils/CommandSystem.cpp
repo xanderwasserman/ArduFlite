@@ -41,14 +41,17 @@ void CommandSystem::processCommands(ArduFliteController *controller, ArduFliteIM
         switch (cmd.type) 
         {
             case CMD_RESET:
+            {
                 LOG_INF("Processing RESET command...");
-                // Here we might want to reset the system.
                 ESP.restart();
                 break;
+            }
 
             case CMD_CALIBRATE:
+            {
                 LOG_INF("Processing CALIBRATE command...");
-                if (imu != nullptr) {
+                if (imu != nullptr) 
+                {
                     imu->selfCalibrate();
                 } 
                 else 
@@ -56,34 +59,85 @@ void CommandSystem::processCommands(ArduFliteController *controller, ArduFliteIM
                     LOG_ERR("IMU pointer not provided.");
                 }
                 break;
+            }
 
-            case CMD_MODE_ASSIST:
-                LOG_INF("Processing MODE ASSIST command...");
-                if (controller != nullptr) 
+            case CMD_SET_MODE:
+            {
+                LOG_INF("Processing CMD_SET_MODE: mode = %d", cmd.mode);
+                if (controller != nullptr)
                 {
-                    controller->setMode(ASSIST_MODE);
-                } 
-                else 
+                    controller->setMode(cmd.mode);
+                }
+                else
                 {
-                    LOG_ERR("Controller pointer not provided.");
+                    LOG_ERR("CMD_SET_MODE: Controller pointer not provided.");
                 }
                 break;
+            }
 
-            case CMD_MODE_STABILIZED:
-                LOG_INF("Processing MODE STABILIZED command...");
-                if (controller != nullptr) 
+            case CMD_SET_CONFIG_PID:
+            {
+                // cmd.pidLoop is a ControlLoopType (e.g. ATTITUDE_ROLL_LOOP, RATE_YAW_LOOP, etc.)
+                // cmd.pidConfig is a full PIDConfig struct
+                LOG_INF("Processing CMD_SET_CONFIG_PID: loop = %d, kp=%.3f, ki=%.3f, kd=%.3f, outLimit=%.3f, maxI=%.3f, alpha=%.3f",
+                        cmd.pidLoop,
+                        cmd.pidConfig.kp,
+                        cmd.pidConfig.ki,
+                        cmd.pidConfig.kd,
+                        cmd.pidConfig.outLimit,
+                        cmd.pidConfig.maxIntegral,
+                        cmd.pidConfig.derivativeAlpha);
+
+                if (controller != nullptr)
                 {
-                    controller->setMode(STABILIZED_MODE);
-                } 
-                else 
+                    LOG_ERR("Setting of PID values not supported yet! Please implement me :-)"); //TODO
+                }
+                else
                 {
-                    LOG_ERR("Controller pointer not provided.");
+                    LOG_ERR("CMD_SET_CONFIG_PID: Controller pointer not provided.");
                 }
                 break;
+            }
+
+            case CMD_SET_CONFIG_ATTITUDE:
+            {
+                // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
+                LOG_INF("Processing CMD_SET_CONFIG_ATTITUDE: roll=%.3f, pitch=%.3f, yaw=%.3f",
+                        cmd.attitudeConfig.roll,
+                        cmd.attitudeConfig.pitch,
+                        cmd.attitudeConfig.yaw);
+
+                if (controller != nullptr)
+                {
+                    controller->setDesiredEulerDegs(cmd.attitudeConfig.roll, cmd.attitudeConfig.pitch, cmd.attitudeConfig.yaw);
+                }
+                else
+                {
+                    LOG_ERR("CMD_SET_CONFIG_ATTITUDE: Controller pointer not provided.");
+                }
+                break;
+            }
+
+            case CMD_SET_CONFIG_RATE_ALPHA:
+            {
+                // cmd.rateAlpha is a single float
+                LOG_INF("Processing CMD_SET_CONFIG_RATE_ALPHA: alpha=%.3f", cmd.rateAlpha);
+                if (controller != nullptr)
+                {
+                    LOG_ERR("Setting of Rate controller Alpha is not supported yet! Please implement me :-)"); //TODO
+                }
+                else
+                {
+                    LOG_ERR("CMD_SET_CONFIG_RATE_ALPHA: Controller pointer not provided.");
+                }
+                break;
+            }
 
             default:
-                LOG_WARN("Received unknown command type.");
+            {
+                LOG_WARN("Received unknown or unhandled command type: %d", cmd.type);
                 break;
+            }
         }
     }
 }

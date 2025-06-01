@@ -29,10 +29,12 @@ void ArduFliteDebugSerialTelemetry::begin() {
     );
 }
 
-void ArduFliteDebugSerialTelemetry::publish(const TelemetryData& data) {
+void ArduFliteDebugSerialTelemetry::publish(const TelemetryData& telemData, const ConfigData& configData) 
+{
     // Store new data so the task can print it
-    if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        pendingData = data;
+    if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(10)) == pdTRUE) 
+    {
+        pendingData = telemData;
         xSemaphoreGive(telemetryMutex);
     }
 }

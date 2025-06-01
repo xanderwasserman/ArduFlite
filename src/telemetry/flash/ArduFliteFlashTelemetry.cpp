@@ -67,10 +67,11 @@ void ArduFliteFlashTelemetry::begin() {
     );
 }
 
-void ArduFliteFlashTelemetry::publish(const TelemetryData& data) {
+void ArduFliteFlashTelemetry::publish(const TelemetryData& telemData, const ConfigData& configData)
+{
     if (!_mutex) return;
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        _pendingData = data;
+        _pendingData = telemData;
         xSemaphoreGive(_mutex);
     }
 }

@@ -21,9 +21,10 @@ enum SystemCommandType
     CMD_NONE = 0,
     CMD_RESET,
     CMD_CALIBRATE,
-    CMD_MODE_ASSIST,
-    CMD_MODE_STABILIZED
-    // Add additional commands as needed
+    CMD_SET_MODE,
+    CMD_SET_CONFIG_PID,
+    CMD_SET_CONFIG_ATTITUDE,
+    CMD_SET_CONFIG_RATE_ALPHA
 };
 
 /**
@@ -31,8 +32,19 @@ enum SystemCommandType
  */
 struct SystemCommand 
 {
-    SystemCommandType type;
-    // Add additional fields if a command requires extra data.
+    SystemCommandType               type;
+
+    ArduFliteMode                   mode;
+
+    // for CMD_SET_PID_CONFIG
+    ControlLoopType                 pidLoop;
+    PIDConfig                       pidConfig;
+
+    // for CMD_SET_ATTITUDE_CONFIG
+    EulerAngles                     attitudeConfig;
+
+    // for CMD_SET_RATE_ALPHA
+    float                           rateAlpha;
 };
 
 /**

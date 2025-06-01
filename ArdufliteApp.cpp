@@ -43,6 +43,8 @@
 #include "src/controller/ArduFliteRateController.h"
 #include "src/controller/ArduFliteController.h"
 
+#include "src/telemetry/ArduFliteTelemetry.h"
+#include "src/telemetry/ConfigData.h"
 #include "src/telemetry/mqtt/ArduFliteMqttTelemetry.h"
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
 #include "src/telemetry/serial/ArduFliteDebugSerialTelemetry.h"
@@ -66,6 +68,7 @@ CommandSystem commandSystem;
 
 // Declare telemetry instnaces.
 TelemetryData               telemetryData;
+ConfigData                  configData;
 ArduFliteMqttTelemetry      telemetry(20.0f, &commandSystem);           // 20 Hz telemetry frequency
 ArduFliteFlashTelemetry     flashTelemetry(50.0f);                      // 50 Hz logging
 // ArduFliteDebugSerialTelemetry    debugTelemetry(1.0f);               // 1 Hz telemetry frequency
@@ -246,9 +249,10 @@ void arduflite_loop()
         
     // Update telemetry with the latest sensor and control information.
     telemetryData.update(myIMU, controller);
+    configData.update(controller);
 
-    telemetry.publish(telemetryData);
-    flashTelemetry.publish(telemetryData);
+    telemetry.publish(telemetryData, configData);
+    flashTelemetry.publish(telemetryData, configData);
 
     vTaskDelay(pdMS_TO_TICKS(10));
 }

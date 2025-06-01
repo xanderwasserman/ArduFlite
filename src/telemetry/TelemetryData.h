@@ -9,12 +9,15 @@
 #ifndef TELEMETRY_DATA_H
 #define TELEMETRY_DATA_H
 
-#include <Arduino.h>
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/controller/ArduFliteController.h"
 
-struct TelemetryData {
-    Vector3 accel, gyro;
+#include <Arduino.h>
+
+struct TelemetryData 
+{
+    Vector3 accel;
+    Vector3 gyro;
     FliteQuaternion quat;
     EulerAngles orientation;
     EulerAngles attitudeSetpoint;

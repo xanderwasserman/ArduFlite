@@ -6,18 +6,21 @@
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
-#pragma once
-
-#include <WiFi.h>
-#include <WiFiManager.h>
-#include <PubSubClient.h>
-#include <Preferences.h>
+#ifndef ARDUFLITE_MQTT_TELEMETRY_H
+#define ARDUFLITE_MQTT_TELEMETRY_H
 
 #include "include/PinConfiguration.h"
 #include "src/telemetry/ArduFliteTelemetry.h"
 #include "src/telemetry/TelemetryData.h"
 #include "src/utils/CommandSystem.h"
 #include "src/controller/ArduFliteController.h"
+#include "src/telemetry/ConfigData.h"
+
+#include <WiFi.h>
+#include <WiFiManager.h>
+#include <PubSubClient.h>
+#include <Preferences.h>
+#include <ArduinoJson.h>
 
 class ArduFliteMqttTelemetry : public ArduFliteTelemetry {
 public:
@@ -25,7 +28,7 @@ public:
     virtual ~ArduFliteMqttTelemetry() {}
 
     void begin() override;
-    void publish(const TelemetryData& data) override;
+    void publish(const TelemetryData& telemData, const ConfigData& configData)  override;
     void reset() override;
 
 private:
@@ -35,6 +38,16 @@ private:
 
     // Called within the telemetry task to attempt an MQTT connection
     void connectToMqtt();
+
+    // Use Preferences to load/save custom MQTT settings
+    void loadPreferences();
+    void savePreferences();
+    static void mqttCallback(char* topic, byte* payload, unsigned int length);
+    void pushSystemCommand(SystemCommand cmd);
+    void handleAttitudeControl(const JsonDocument& doc);
+    void handlePidConfig(ControlLoopType loop, const JsonDocument& doc);
+    void handleRateAlpha(float alpha);
+    void publishPidConfig(const char* topic, const PIDConfig& pc);
 
     // Non-volatile preferences "namespace"
     static constexpr const char* PREF_NAMESPACE = "mqtt";
@@ -55,18 +68,15 @@ private:
     float        intervalMs;
 
     // Data sync
-    SemaphoreHandle_t telemetryMutex = nullptr;
-    TelemetryData     pendingData;
+    SemaphoreHandle_t   telemetryMutex = nullptr;
+    TelemetryData       pendingData;
+    ConfigData          pendingConfigData;
 
     // Pointer to the shared command‐queue
     CommandSystem* _cmdSys;    
 
     // FreeRTOS Task handle so we can kill/restart it on reset()
     TaskHandle_t      taskHandle     = nullptr;
-
-    // Use Preferences to load/save custom MQTT settings
-    void loadPreferences();
-    void savePreferences();
-    static void mqttCallback(char* topic, byte* payload, unsigned int length);
-    void pushSystemCommand(SystemCommandType type);
 };
+
+#endif //ARDUFLITE_MQTT_TELEMETRY_H

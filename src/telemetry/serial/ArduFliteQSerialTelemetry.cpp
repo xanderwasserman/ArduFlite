@@ -29,10 +29,12 @@ void ArduFliteQSerialTelemetry::begin() {
     );
 }
 
-void ArduFliteQSerialTelemetry::publish(const TelemetryData& data) {
+void ArduFliteQSerialTelemetry::publish(const TelemetryData& telemData, const ConfigData& configData)
+{
     // Store new data so the task can print it
-    if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        pendingData = data;
+    if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(10)) == pdTRUE) 
+    {
+        pendingData = telemData;
         xSemaphoreGive(telemetryMutex);
     }
 }
@@ -45,7 +47,8 @@ void ArduFliteQSerialTelemetry::telemetryTask(void* pvParameters) {
 
         // Copy local data under mutex
         TelemetryData localCopy;
-        if (xSemaphoreTake(self->telemetryMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+        if (xSemaphoreTake(self->telemetryMutex, pdMS_TO_TICKS(5)) == pdTRUE) 
+        {
             localCopy = self->pendingData;
             xSemaphoreGive(self->telemetryMutex);
         }

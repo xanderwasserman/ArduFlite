@@ -110,14 +110,14 @@ void ArduFliteMqttTelemetry::connectToMqtt()
         mqttClient.subscribe("arduflite/command/reset");
         mqttClient.subscribe("arduflite/command/calibrate");
         mqttClient.subscribe("arduflite/command/mode");
-        mqttClient.subscribe("arduflite/control/attitude");
-        mqttClient.subscribe("arduflite/config/attitude/roll/pid");
-        mqttClient.subscribe("arduflite/config/attitude/pitch/pid");
-        mqttClient.subscribe("arduflite/config/attitude/yaw/pid");
-        mqttClient.subscribe("arduflite/config/rate/roll/pid");
-        mqttClient.subscribe("arduflite/config/rate/pitch/pid");
-        mqttClient.subscribe("arduflite/config/rate/yaw/pid");
-        mqttClient.subscribe("arduflite/config/rate/alpha");
+        mqttClient.subscribe("arduflite/control/attitude/set");
+        mqttClient.subscribe("arduflite/config/attitude/roll/pid/set");
+        mqttClient.subscribe("arduflite/config/attitude/pitch/pid/set");
+        mqttClient.subscribe("arduflite/config/attitude/yaw/pid/set");
+        mqttClient.subscribe("arduflite/config/rate/roll/pid/set");
+        mqttClient.subscribe("arduflite/config/rate/pitch/pid/set");
+        mqttClient.subscribe("arduflite/config/rate/yaw/pid/set");
+        mqttClient.subscribe("arduflite/config/rate/alpha/set");
     }
 }
 
@@ -423,7 +423,7 @@ void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned i
     //
     // --- ATTITUDE CONTROL (EulerAngles JSON) ---
     //
-    if (topicStr == "arduflite/control/attitude") 
+    if (topicStr == "arduflite/controller-setpoint/attitude/set") 
     {
         LOG_INF("Attitude control JSON received: %s", message.c_str());
         instance->handleAttitudeControl(doc);
@@ -435,42 +435,42 @@ void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned i
     //
     // Note: Your JSON must include keys "kp", "ki", "kd", "outLimit", "maxIntegral", "derivativeAlpha".
     //
-    if (topicStr == "arduflite/config/attitude/roll/pid") 
+    if (topicStr == "arduflite/config/attitude/roll/pid/set") 
     {
         LOG_INF("Config JSON for ATTITUDE_ROLL_LOOP: %s", message.c_str());
 
         instance->handlePidConfig(ATTITUDE_ROLL_LOOP, doc);
         return;
     }
-    else if (topicStr == "arduflite/config/attitude/pitch/pid") 
+    else if (topicStr == "arduflite/config/attitude/pitch/pid/set") 
     {
         LOG_INF("Config JSON for ATTITUDE_PITCH_LOOP: %s", message.c_str());
 
         instance->handlePidConfig(ATTITUDE_PITCH_LOOP, doc);
         return;
     }
-    else if (topicStr == "arduflite/config/attitude/yaw/pid") 
+    else if (topicStr == "arduflite/config/attitude/yaw/pid/set") 
     {
         LOG_INF("Config JSON for ATTITUDE_YAW_LOOP: %s", message.c_str());
 
         instance->handlePidConfig(ATTITUDE_YAW_LOOP, doc);
         return;
     }
-    else if (topicStr == "arduflite/config/rate/roll/pid") 
+    else if (topicStr == "arduflite/config/rate/roll/pid/set") 
     {
         LOG_INF("Config JSON for RATE_ROLL_LOOP: %s", message.c_str());
 
         instance->handlePidConfig(RATE_ROLL_LOOP, doc);
         return;
     }
-    else if (topicStr == "arduflite/config/rate/pitch/pid") 
+    else if (topicStr == "arduflite/config/rate/pitch/pid/set") 
     {
         LOG_INF("Config JSON for RATE_PITCH_LOOP: %s", message.c_str());
 
         instance->handlePidConfig(RATE_PITCH_LOOP, doc);
         return;
     }
-    else if (topicStr == "arduflite/config/rate/yaw/pid") 
+    else if (topicStr == "arduflite/config/rate/yaw/pid/set") 
     {
         LOG_INF("Config JSON for RATE_YAW_LOOP: %s", message.c_str());
 
@@ -481,7 +481,7 @@ void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned i
     //
     // --- RATE FILTER ALPHA (single‐float JSON key: "alpha") ---
     //
-    if (topicStr == "arduflite/config/rate/alpha") 
+    if (topicStr == "arduflite/config/rate/alpha/set") 
     {
         LOG_INF("Config received for rate controller alpha: %s", message.c_str());
         float a = doc["alpha"] | 0.0f;

@@ -254,7 +254,7 @@ void ServoManager::setRightSurfaceConfig(const ServoConfig &config) {
  */
 void ServoManager::testControlSurfaces() 
 {
-    const int numCycles = 3;    // Number of test cycles
+    const int numCycles = 2;    // Number of test cycles
     const int delayTime = 500;    // Delay (in milliseconds) between commands
 
     LOG_INF("Beginning control surface test...");

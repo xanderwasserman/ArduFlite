@@ -254,7 +254,7 @@ void arduflite_loop()
     telemetry.publish(telemetryData, configData);
     flashTelemetry.publish(telemetryData, configData);
 
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(1));
 }
 
 // Callback for calibrate button.

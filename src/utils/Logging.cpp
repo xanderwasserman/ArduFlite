@@ -71,7 +71,7 @@ Logger& Logger::instance() {
 }
 
 Logger::Logger()
-  : _level(LogLevel::Debug)
+  : _level(LogLevel::Info)
 {
     // default handler is Serial
     static SerialLogHandler serialHandler;

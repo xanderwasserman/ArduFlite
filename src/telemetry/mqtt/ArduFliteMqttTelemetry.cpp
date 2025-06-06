@@ -110,7 +110,7 @@ void ArduFliteMqttTelemetry::connectToMqtt()
         mqttClient.subscribe("arduflite/command/reset");
         mqttClient.subscribe("arduflite/command/calibrate");
         mqttClient.subscribe("arduflite/command/mode");
-        mqttClient.subscribe("arduflite/control/attitude/set");
+        mqttClient.subscribe("arduflite/controller-setpoint/attitude/set");
         mqttClient.subscribe("arduflite/config/attitude/roll/pid/set");
         mqttClient.subscribe("arduflite/config/attitude/pitch/pid/set");
         mqttClient.subscribe("arduflite/config/attitude/yaw/pid/set");
@@ -183,6 +183,9 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters)
     while(true) 
     {
         unsigned long startMillis = millis();
+
+        // Let PubSubClient handle incoming messages (if you care about subscriptions)
+        self->mqttClient.loop();
 
         // Make sure MQTT is connected
         self->connectToMqtt();
@@ -268,9 +271,6 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters)
                 }
             }
         }
-
-        // Let PubSubClient handle incoming messages (if you care about subscriptions)
-        self->mqttClient.loop();
 
         // Delay enough to match frequency
         unsigned long elapsed = millis() - startMillis;
@@ -358,7 +358,7 @@ void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned i
     }
     message.trim();
 
-    LOG_INF("Received on topic: %s: %s\n", topicStr.c_str(), message.c_str());
+    LOG_DBG("Received on topic: %s: %s\n", topicStr.c_str(), message.c_str());
 
     //
     // --- HANDLE SIMPLE COMMANDS (non‐JSON) ---
@@ -425,7 +425,7 @@ void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned i
     //
     if (topicStr == "arduflite/controller-setpoint/attitude/set") 
     {
-        LOG_INF("Attitude control JSON received: %s", message.c_str());
+        LOG_DBG("Attitude control JSON received: %s", message.c_str());
         instance->handleAttitudeControl(doc);
         return;
     }

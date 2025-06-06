@@ -37,6 +37,11 @@ void cmdHelp(const String &args) {
     }
 }
 
+void cmdReset(const String &args) {
+    LOG("Resetting system...");
+    ESP.restart();
+}
+
 void cmdStats(const String &args) {
     if (!globalController) {
         LOG_ERR("Controller not set!");
@@ -164,6 +169,7 @@ void cmdFlash(const String &args) {
 // Define the command table.
 CLICommand cliCommands[] = {
     { "help","      Show help message",                                                        cmdHelp         },
+    { "reset","     Resets the Flight Controller",                                             cmdReset         },
     { "stats","     Show control loop statistics",                                             cmdStats        },
     { "tasks","     Show FreeRTOS task stats",                                                 cmdTasks        },
     { "setmode","   Set mode; usage: setmode assist|stabilized",                               cmdSetMode      },

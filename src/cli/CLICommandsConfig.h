@@ -20,6 +20,7 @@ extern const size_t numCLICommands;
 
 // Declare the command functions.
 void cmdHelp(const String &args);
+void cmdReset(const String &args);
 void cmdStats(const String &args);
 void cmdTasks(const String &args);
 void cmdSetMode(const String &args);

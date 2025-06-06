@@ -68,13 +68,7 @@
   * @param yaw   Yaw angle in radians.
   */
  void ArduFliteAttitudeController::setDesiredEulerRads(float roll, float pitch, float yaw) 
- {
-    xSemaphoreTake(attitudeMutex, 2);
-    desiredEulers.roll     = roll;
-    desiredEulers.pitch    = pitch;
-    desiredEulers.yaw      = yaw;
-    xSemaphoreGive(attitudeMutex);
-     
+ { 
     // Compute half-angles.
     float halfRoll  = roll  * 0.5f;
     float halfPitch = pitch * 0.5f;
@@ -110,6 +104,12 @@
   */
  void ArduFliteAttitudeController::setDesiredEulerDegs(float roll, float pitch, float yaw) 
  {
+    xSemaphoreTake(attitudeMutex, portMAX_DELAY);
+    desiredEulers.roll     = roll;
+    desiredEulers.pitch    = pitch;
+    desiredEulers.yaw      = yaw;
+    xSemaphoreGive(attitudeMutex);
+    
      const float deg2rad = PI / 180.0f;
      setDesiredEulerRads(roll * deg2rad, pitch * deg2rad, yaw * deg2rad);
  }
@@ -186,7 +186,7 @@
     rollOut  = pidRoll.update(rollErr, dt);
     pitchOut = pidPitch.update(pitchErr, dt);
     //  yawOut   = pidYaw.update(yawErr, dt);
-    yawOut = localDesiredEulers.yaw * 1.5; //! we just pass on the yaw setpoint to the rate controller, as we have no fixed heading reference (no magnetometer).
+    yawOut = localDesiredEulers.yaw; //! we just pass on the yaw setpoint to the rate controller, as we have no fixed heading reference (no magnetometer).
  }
  
  /**

@@ -11,8 +11,8 @@
 
 CommandSystem::CommandSystem() 
 {
-    // Create a queue that can hold 10 SystemCommand items.
-    commandQueue = xQueueCreate(10, sizeof(SystemCommand));
+    // Create a queue that can hold 100 SystemCommand items.
+    commandQueue = xQueueCreate(100, sizeof(SystemCommand));
     if (!commandQueue) {
         LOG_ERR("Failed to create CommandSystem queue!");
     }
@@ -35,8 +35,8 @@ bool CommandSystem::pushCommand(const SystemCommand &cmd)
 void CommandSystem::processCommands(ArduFliteController *controller, ArduFliteIMU *imu) 
 {
     SystemCommand cmd;
-    // Process all pending commands (non-blocking)
-    while (xQueueReceive(commandQueue, &cmd, 0) == pdTRUE) 
+   // Process exactly one pending command (non-blocking)
+    if (xQueueReceive(commandQueue, &cmd, 0) == pdTRUE) 
     {
         switch (cmd.type) 
         {

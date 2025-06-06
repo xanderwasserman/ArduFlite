@@ -69,28 +69,34 @@
   */
  void ArduFliteAttitudeController::setDesiredEulerRads(float roll, float pitch, float yaw) 
  {
-     // Compute half-angles.
-     float halfRoll  = roll  * 0.5f;
-     float halfPitch = pitch * 0.5f;
-     float halfYaw   = yaw   * 0.5f;
- 
-     // Pre-compute sine and cosine for efficiency.
-     float cr = cos(halfRoll);
-     float sr = sin(halfRoll);
-     float cp = cos(halfPitch);
-     float sp = sin(halfPitch);
-     float cy = cos(halfYaw);
-     float sy = sin(halfYaw);
- 
-     // Convert Euler angles to a quaternion.
-     FliteQuaternion q;
-     q.w = cr * cp * cy + sr * sp * sy;
-     q.x = sr * cp * cy - cr * sp * sy;
-     q.y = cr * sp * cy + sr * cp * sy;
-     q.z = cr * cp * sy - sr * sp * cy;
- 
-     // Set the desired orientation with thread protection.
-     setDesiredQuaternion(q);
+    xSemaphoreTake(attitudeMutex, 2);
+    desiredEulers.roll     = roll;
+    desiredEulers.pitch    = pitch;
+    desiredEulers.yaw      = yaw;
+    xSemaphoreGive(attitudeMutex);
+     
+    // Compute half-angles.
+    float halfRoll  = roll  * 0.5f;
+    float halfPitch = pitch * 0.5f;
+    float halfYaw   = yaw   * 0.5f;
+
+    // Pre-compute sine and cosine for efficiency.
+    float cr = cos(halfRoll);
+    float sr = sin(halfRoll);
+    float cp = cos(halfPitch);
+    float sp = sin(halfPitch);
+    float cy = cos(halfYaw);
+    float sy = sin(halfYaw);
+
+    // Convert Euler angles to a quaternion.
+    FliteQuaternion q;
+    q.w = cr * cp * cy + sr * sp * sy;
+    q.x = sr * cp * cy - cr * sp * sy;
+    q.y = cr * sp * cy + sr * cp * sy;
+    q.z = cr * cp * sy - sr * sp * cy;
+
+    // Set the desired orientation with thread protection.
+    setDesiredQuaternion(q);
  }
  
  /**
@@ -125,59 +131,62 @@
   */
  void ArduFliteAttitudeController::update(const FliteQuaternion &measuredQ, float dt, float &rollOut, float &pitchOut, float &yawOut) 
  {
-     // Prevent a too-small timestep.
-     if (dt < 1e-3f) dt = 1e-3f;
- 
-     // Retrieve desired orientation in a thread-safe manner.
-     FliteQuaternion localDesiredQ;
-     xSemaphoreTake(attitudeMutex, portMAX_DELAY);
-     localDesiredQ = desiredQ;
-     xSemaphoreGive(attitudeMutex);
- 
-     // Normalize the measured quaternion.
-     FliteQuaternion measuredNormalized = measuredQ;
-     float normSq = measuredNormalized.normSq();
-     if (normSq < 1e-6f) {
-         measuredNormalized = FliteQuaternion(1, 0, 0, 0);
-     }
- 
-     // --- Compute Yaw Error Separately ---
-     float desiredYaw = extractYaw(localDesiredQ);
-     float measuredYaw = extractYaw(measuredNormalized);
-     float yawErr = wrapAngle(desiredYaw - measuredYaw);
- 
-     // --- Remove Yaw from Both Quaternions ---
-     FliteQuaternion desiredNoYaw = removeYaw(localDesiredQ);
-     FliteQuaternion measuredNoYaw = removeYaw(measuredNormalized);
- 
-     // --- Compute Roll/Pitch Error Quaternion ---
-     FliteQuaternion qErrorRP = desiredNoYaw * measuredNoYaw.inverse();
-     qErrorRP.normalize();
-     // Ensure the error quaternion represents the smallest rotation.
-     if (qErrorRP.w < 0) {
-         qErrorRP.w = -qErrorRP.w;
-         qErrorRP.x = -qErrorRP.x;
-         qErrorRP.y = -qErrorRP.y;
-         qErrorRP.z = -qErrorRP.z;
-     }
- 
-     // --- Convert Error Quaternion to Rotation Vector (Log Map) ---
-     float theta = 2.0f * acos(qErrorRP.w);
-     float sinHalfTheta = sqrt(1.0f - qErrorRP.w * qErrorRP.w);
-     float scale = (sinHalfTheta < 1e-6f) ? 2.0f : (theta / sinHalfTheta);
-     float rollErr  = scale * qErrorRP.x;   // Roll error component.
-     float pitchErr = scale * qErrorRP.y;   // Pitch error component.
-     
-     // --- Apply Deadband to Filter Out Noise ---
-     float deadband = AttitudeControllerConfig::ATTITUDE_DEADBAND_RADS; 
-     if (fabs(rollErr) < deadband)   rollErr = 0.0f;
-     if (fabs(pitchErr) < deadband)  pitchErr = 0.0f;
-     if (fabs(yawErr) < deadband)    yawErr = 0.0f;
- 
-     // --- Feed Errors to PID Controllers ---
-     rollOut  = pidRoll.update(rollErr, dt);
-     pitchOut = pidPitch.update(pitchErr, dt);
-     yawOut   = pidYaw.update(yawErr, dt);
+    // Prevent a too-small timestep.
+    if (dt < 1e-3f) dt = 1e-3f;
+
+    // Retrieve desired orientation in a thread-safe manner.
+    FliteQuaternion localDesiredQ;
+    EulerAngles     localDesiredEulers;
+    xSemaphoreTake(attitudeMutex, portMAX_DELAY);
+    localDesiredQ = desiredQ;
+    localDesiredEulers = desiredEulers;
+    xSemaphoreGive(attitudeMutex);
+
+    // Normalize the measured quaternion.
+    FliteQuaternion measuredNormalized = measuredQ;
+    float normSq = measuredNormalized.normSq();
+    if (normSq < 1e-6f) {
+        measuredNormalized = FliteQuaternion(1, 0, 0, 0);
+    }
+
+    // --- Compute Yaw Error Separately ---
+    float desiredYaw = extractYaw(localDesiredQ);
+    float measuredYaw = extractYaw(measuredNormalized);
+    float yawErr = wrapAngle(desiredYaw - measuredYaw);
+
+    // --- Remove Yaw from Both Quaternions ---
+    FliteQuaternion desiredNoYaw = removeYaw(localDesiredQ);
+    FliteQuaternion measuredNoYaw = removeYaw(measuredNormalized);
+
+    // --- Compute Roll/Pitch Error Quaternion ---
+    FliteQuaternion qErrorRP = desiredNoYaw * measuredNoYaw.inverse();
+    qErrorRP.normalize();
+    // Ensure the error quaternion represents the smallest rotation.
+    if (qErrorRP.w < 0) {
+        qErrorRP.w = -qErrorRP.w;
+        qErrorRP.x = -qErrorRP.x;
+        qErrorRP.y = -qErrorRP.y;
+        qErrorRP.z = -qErrorRP.z;
+    }
+
+    // --- Convert Error Quaternion to Rotation Vector (Log Map) ---
+    float theta = 2.0f * acos(qErrorRP.w);
+    float sinHalfTheta = sqrt(1.0f - qErrorRP.w * qErrorRP.w);
+    float scale = (sinHalfTheta < 1e-6f) ? 2.0f : (theta / sinHalfTheta);
+    float rollErr  = scale * qErrorRP.x;   // Roll error component.
+    float pitchErr = scale * qErrorRP.y;   // Pitch error component.
+    
+    // --- Apply Deadband to Filter Out Noise ---
+    float deadband = AttitudeControllerConfig::ATTITUDE_DEADBAND_RADS; 
+    if (fabs(rollErr) < deadband)   rollErr = 0.0f;
+    if (fabs(pitchErr) < deadband)  pitchErr = 0.0f;
+    if (fabs(yawErr) < deadband)    yawErr = 0.0f;
+
+    // --- Feed Errors to PID Controllers ---
+    rollOut  = pidRoll.update(rollErr, dt);
+    pitchOut = pidPitch.update(pitchErr, dt);
+    //  yawOut   = pidYaw.update(yawErr, dt);
+    yawOut = localDesiredEulers.yaw * 1.5; //! we just pass on the yaw setpoint to the rate controller, as we have no fixed heading reference (no magnetometer).
  }
  
  /**

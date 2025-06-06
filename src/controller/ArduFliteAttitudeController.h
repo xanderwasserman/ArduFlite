@@ -10,8 +10,10 @@
 #define ARDU_FLITE_ATTITUDE_CONTROLLER_H
 
 #include "src/orientation/FliteQuaternion.h"
+#include "src/orientation/ArduFliteIMU.h"
 #include "src/controller/pid.h"
 #include "include/ControllerConfiguration.h"
+
 #include <Arduino.h>
 
 /**
@@ -124,10 +126,11 @@ public:
     void reset();
 
 private:
-    FliteQuaternion desiredQ; ///< The desired orientation.
-    PID pidRoll;              ///< PID controller for roll.
-    PID pidPitch;             ///< PID controller for pitch.
-    PID pidYaw;               ///< PID controller for yaw.
+    FliteQuaternion desiredQ;       ///< The desired orientation.
+    EulerAngles     desiredEulers;  ///< The desired orientation in degrees.
+    PID pidRoll;                    ///< PID controller for roll.
+    PID pidPitch;                   ///< PID controller for pitch.
+    PID pidYaw;                     ///< PID controller for yaw.
 
     /// Mutex to protect access to the desired orientation.
     SemaphoreHandle_t attitudeMutex;

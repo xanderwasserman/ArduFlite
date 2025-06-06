@@ -237,8 +237,6 @@ void ArduFliteController::OuterLoopTask(void* parameters)
             FliteQuaternion currentQ = controller->imu->getQuaternion();
             controller->attitudeCtrl->update(currentQ, dt, rollRateCmd, pitchRateCmd, yawRateCmd);
 
-            yawRateCmd   = 0; //! TODO This is so that the yaw is not influenced by the attitude controller, but only by the rate controller. We just want to go in a straight line for now.
-
             xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
             controller->lastAttitudeRollCmd  = rollRateCmd;
             controller->lastAttitudePitchCmd = pitchRateCmd;

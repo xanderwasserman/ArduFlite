@@ -8,28 +8,34 @@
  */
 #include "CLICommandsConfig.h"
 #include "src/utils/Logging.h"
+#include "src/utils/CommandSystem.h"
 
 // Global pointer for the controller (accessible in command functions).
 ArduFliteController* globalController = nullptr;
 ArduFliteIMU* globalIMU = nullptr;
 ArduFliteFlashTelemetry* globalFlashTelemetry = nullptr;
 
-void setCliController(ArduFliteController* controller) {
+void setCliController(ArduFliteController* controller) 
+{
     globalController = controller;
 }
 
-void setCliIMU(ArduFliteIMU* imu) {
+void setCliIMU(ArduFliteIMU* imu) 
+{
     globalIMU = imu;
 }
 
-void setFlashTelemetry(ArduFliteFlashTelemetry* flashTelemetry) {
+void setFlashTelemetry(ArduFliteFlashTelemetry* flashTelemetry) 
+{
     globalFlashTelemetry = flashTelemetry;
 }
 
 // Command functions:
-void cmdHelp(const String &args) {
+void cmdHelp(const String &args) 
+{
     LOG("Available commands:");
-    for (size_t i = 0; i < numCLICommands; i++) {
+    for (size_t i = 0; i < numCLICommands; i++)
+     {
         LOG_N("  ");
         LOG_N("%s", cliCommands[i].command);
         LOG_N(" - ");
@@ -37,52 +43,71 @@ void cmdHelp(const String &args) {
     }
 }
 
-void cmdReset(const String &args) {
+void cmdReset(const String &args) 
+{
     LOG("Resetting system...");
     ESP.restart();
 }
 
-void cmdStats(const String &args) {
-    if (!globalController) {
+void cmdStats(const String &args) 
+{
+    if (!globalController) 
+    {
         LOG_ERR("Controller not set!");
         return;
     }
     // Retrieve and print stats.
     LoopStats outerStats = globalController->getOuterLoopStats();
     LoopStats innerStats = globalController->getInnerLoopStats();
+
     LOG("Outer Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu",
                   outerStats.avgDt, outerStats.maxDt, outerStats.overrunCount, (outerStats.overrunCount/outerStats.sampleCount)*100);
     LOG("Inner Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu",
                   innerStats.avgDt, innerStats.maxDt, innerStats.overrunCount, (innerStats.overrunCount/innerStats.sampleCount)*100);
 }
 
-void cmdTasks(const String &args) {
+void cmdTasks(const String &args) 
+{
     char taskListBuffer[512];
     vTaskList(taskListBuffer);
     LOG("Task List:");
     LOG("%s", taskListBuffer);
 }
 
-void cmdSetMode(const String &args) {
+void cmdSetMode(const String &args) 
+{
     if (!globalController) {
         LOG_ERR("Controller not set!");
         return;
     }
     String argLower = args;
     argLower.toLowerCase();
-    if (argLower.indexOf("assist") >= 0) {
-        globalController->setMode(ASSIST_MODE);
-        LOG("Mode set to ASSIST_MODE.");
-    } else if (argLower.indexOf("stabilized") >= 0) {
-        globalController->setMode(STABILIZED_MODE);
-        LOG("Mode set to STABILIZED_MODE.");
-    } else {
+
+    SystemCommand cmd;
+    cmd.type = CMD_SET_MODE;
+
+    if (argLower.indexOf("assist") >= 0) 
+    {
+        LOG_INF("Changing Flight Control mode to: ASSIST_MODE.");
+        cmd.mode = ASSIST_MODE;
+        CommandSystem::instance().pushCommand(cmd);
+    } 
+    else if (argLower.indexOf("stabilized") >= 0) 
+    {
+        LOG_INF("Changing Flight Control mode to: STABILIZED_MODE.");
+        cmd.mode = STABILIZED_MODE;
+        CommandSystem::instance().pushCommand(cmd);
+    } 
+    else 
+    {
         LOG("Unknown mode. Use 'assist' or 'stabilized'.");
     }
 }
 
-void cmdCalibrateIMU(const String &args) {
-    if (!globalController || !globalIMU) {
+void cmdCalibrateIMU(const String &args) 
+{
+    if (!globalController || !globalIMU) 
+    {
         LOG("CLI Controller or IMU reference not set!");
         return;
     }
@@ -90,21 +115,31 @@ void cmdCalibrateIMU(const String &args) {
     String trimmed = args;
     trimmed.trim();
     trimmed.toLowerCase();
+
     if (trimmed.length() == 0 || trimmed.equals("imu")) {
+
         LOG("Starting IMU calibration...");
         bool success = globalIMU->selfCalibrate();
-        if (success) {
+
+        if (success) 
+        {
             LOG("IMU calibration complete.");
-        } else {
+        } 
+        else 
+        {
             LOG("IMU calibration failed.");
         }
-    } else {
+    } 
+    else 
+    {
         LOG("Unknown calibration target. Use 'calibrate imu'.");
     }
 }
 
-void cmdFlash(const String &args) {
-    if (!globalFlashTelemetry) {
+void cmdFlash(const String &args) 
+{
+    if (!globalFlashTelemetry) 
+    {
         LOG("Flash telemetry not initialized!");
         return;
     }
@@ -120,42 +155,55 @@ void cmdFlash(const String &args) {
     String param = (spacePos < 0) ? "" : in.substring(spacePos + 1);
     param.trim();
 
-    if (cmd == "start") {
+    if (cmd == "start") 
+    {
         globalFlashTelemetry->startLogging();
         LOG("Flash logging STARTED");
     }
-    else if (cmd == "stop") {
+    else if (cmd == "stop") 
+    {
         globalFlashTelemetry->stopLogging();
         LOG("Flash logging STOPPED");
     }
-    else if (cmd == "list") {
+    else if (cmd == "list") 
+    {
         LOG("Listing flash logs:");
         globalFlashTelemetry->listLogs();
     }
-    else if (cmd == "dump") {
-        if (param.length() == 0) {
+    else if (cmd == "dump") 
+    {
+        if (param.length() == 0) 
+        {
             LOG("Usage: flash dump <index>");
-        } else {
+        } 
+        else 
+        {
             int idx = param.toInt();
             LOG("Dumping log %d:\n", idx);
             globalFlashTelemetry->dumpLog(idx);
         }
     }
-    else if (cmd == "delete" || cmd == "del" || cmd == "rm") {
-        if (param.length() == 0) {
+    else if (cmd == "delete" || cmd == "del" || cmd == "rm") 
+    {
+        if (param.length() == 0) 
+        {
             LOG("Usage: flash delete <index>");
-        } else {
+        } 
+        else 
+        {
             int idx = param.toInt();
             LOG("Deleting log %d: ", idx);
             globalFlashTelemetry->deleteLog(idx);
         }
     }
-    else if (cmd == "reset") {
+    else if (cmd == "reset") 
+    {
         LOG("Formatting LittleFS (erasing all logs)...");
         globalFlashTelemetry->reset();
         LOG("Done.");
     }
-    else {
+    else 
+    {
         LOG("Unknown flash command. Available:");
         LOG("  flash start       → begin a new flight log");
         LOG("  flash stop        → end current flight log");
@@ -169,7 +217,7 @@ void cmdFlash(const String &args) {
 // Define the command table.
 CLICommand cliCommands[] = {
     { "help","      Show help message",                                                        cmdHelp         },
-    { "reset","     Resets the Flight Controller",                                             cmdReset         },
+    { "reset","     Resets the Flight Controller",                                             cmdReset        },
     { "stats","     Show control loop statistics",                                             cmdStats        },
     { "tasks","     Show FreeRTOS task stats",                                                 cmdTasks        },
     { "setmode","   Set mode; usage: setmode assist|stabilized",                               cmdSetMode      },

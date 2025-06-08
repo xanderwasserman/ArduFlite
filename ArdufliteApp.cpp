@@ -296,15 +296,21 @@ void onModeDoubleTap(void)
 {
     LOG_INF("Toggling Controller Mode...");
 
+    SystemCommand cmd;
+    cmd.type = CMD_SET_MODE;
+
     if (controller.getMode() == ASSIST_MODE) 
     {
-      controller.setMode(STABILIZED_MODE);
+        LOG_INF("Changing Flight Control mode to: STABILIZED_MODE.");
+        cmd.mode = STABILIZED_MODE;
+        CommandSystem::instance().pushCommand(cmd);
     } 
     else 
     {
-      controller.setMode(ASSIST_MODE);
+        LOG_INF("Changing Flight Control mode to: ASSIST_MODE.");
+        cmd.mode = ASSIST_MODE;
+        CommandSystem::instance().pushCommand(cmd);
     }
-    
 }
 
 // Callback for telemetry reset button.

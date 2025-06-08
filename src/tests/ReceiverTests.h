@@ -9,7 +9,7 @@
  #ifndef RECEIVER_TESTS_H
 #define RECEIVER_TESTS_H
 
-#include "src/receiver/ArduFlitePwmReceiver.h"
+#include "src/receiver/pwm/ArduFlitePwmReceiver.h"
 
 /**
 * @brief Runs a test sequence for the PWM receiver

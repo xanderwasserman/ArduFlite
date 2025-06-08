@@ -9,7 +9,7 @@
 #ifndef RECEIVER_CONFIG_H
 #define RECEIVER_CONFIG_H
 
-#include "src/receiver/ArduFlitePwmReceiver.h"
+#include "src/receiver/pwm/ArduFlitePwmReceiver.h"
 #include "include/PinConfiguration.h"
 
 namespace ReceiverSetupConfig 

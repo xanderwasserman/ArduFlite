@@ -1,0 +1,19 @@
+/**
+ * ArdufliteCRSFCallbacks.h
+ *
+ * ArduFlite - Advanced Flight Controller Framework
+ * Author: Alexander Wasserman | Version: 1.1 | 07 June 2025
+ *
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
+#ifndef ARDUFLITE_CSRF_CALLBACKS_H
+#define ARDUFLITE_CSRF_CALLBACKS_H
+
+#include <Arduino.h>
+
+void onRoll(uint8_t ch, float v);
+void onPitch(uint8_t ch, float v);
+void onYaw(uint8_t ch, float v);
+void onModeSwitch(uint8_t ch, float v);
+
+#endif //ARDUFLITE_CSRF_CALLBACKS_H

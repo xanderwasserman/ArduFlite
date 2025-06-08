@@ -76,6 +76,20 @@ namespace ButtonInputConfig
 #elif BOARD_TYPE == BOARD_TYPE_WEMOS
     constexpr int USER_BUTTON_PIN       = 9;
 #endif
-} // namespace PwmOutputConfig
+} // namespace ButtonInputConfig
+
+namespace CRSFPinConfig 
+{
+    // Serial pins from ELRS receiver
+#if BOARD_TYPE == BOARD_TYPE_FIREBEETLE
+    constexpr int PIN_CRSF_RX          = 6; //TODO
+    constexpr int PIN_CRSF_TX          = 8; //TODO
+#elif BOARD_TYPE == BOARD_TYPE_WEMOS
+    constexpr int PIN_CRSF_RX          = 6; //TODO
+    constexpr int PIN_CRSF_TX          = 8; //TODO
+#endif
+    
+
+} // namespace CRSFPinConfig
 
 #endif // PIN_CONFIGURATION_H

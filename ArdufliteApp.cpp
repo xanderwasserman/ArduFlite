@@ -20,16 +20,16 @@
  * ----------------------------------------------------------------------------
  */
 #include "include/ArduFlite.h"
-#include "src/actuators/ServoManager.h"
-#include "src/orientation/ArduFliteIMU.h"
-#include "src/cli/ArduFliteCLI.h"
-#include "src/receiver/ArduFlitePwmReceiver.h"
-#include "src/mission_planner/MissionPlanner.h"
-
 #include "include/ReceiverConfiguration.h"
 #include "include/PinConfiguration.h"
 #include "include/ControllerConfiguration.h"
 #include "include/ServoConfiguration.h"
+#include "include/CSRFConfiguration.h"
+
+#include "src/actuators/ServoManager.h"
+#include "src/orientation/ArduFliteIMU.h"
+#include "src/cli/ArduFliteCLI.h"
+#include "src/mission_planner/MissionPlanner.h"
 
 #include "src/utils/HoldButton.h"
 #include "src/utils/HoldButtonManager.h"
@@ -49,6 +49,10 @@
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
 #include "src/telemetry/serial/ArduFliteDebugSerialTelemetry.h"
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
+#include "src/telemetry/crsf/ArdufliteCRSFTelemetry.h"
+
+#include "src/receiver/pwm/ArduFlitePwmReceiver.h"
+#include "src/receiver/crsf/ArdufliteCRSFReceiver.h"
 
 #include "src/tests/AttitudeTests.h"
 #include "src/tests/ReceiverTests.h"
@@ -63,13 +67,17 @@ void resetSystemCommand(void);
 void pauseController(void);
 void resumeController(void);
 
-// Declare system commands instnaces
-CommandSystem commandSystem;
+// Serial ports for CRSF
+HardwareSerial crsfSerial(1);
+HardwareSerial telemSerial(2);
+
+ArdufliteCRSFReceiver  crsfRx(crsfSerial,  CRSFPinConfig::PIN_CRSF_RX);
+ArdufliteCRSFTelemetry crsfTx(telemSerial, CRSFPinConfig::PIN_CRSF_TX);
 
 // Declare telemetry instnaces.
 TelemetryData               telemetryData;
 ConfigData                  configData;
-ArduFliteMqttTelemetry      telemetry(20.0f, &commandSystem);           // 20 Hz telemetry frequency
+ArduFliteMqttTelemetry      telemetry(20.0f);           // 20 Hz telemetry frequency
 ArduFliteFlashTelemetry     flashTelemetry(50.0f);                      // 50 Hz logging
 // ArduFliteDebugSerialTelemetry    debugTelemetry(1.0f);               // 1 Hz telemetry frequency
 // ArduFliteQSerialTelemetry        telemetry(20.0f);
@@ -114,6 +122,14 @@ void arduflite_init()
     while (!Serial && millis() < 2000);  // wait max 2 seconds
 
     pinMode(ButtonInputConfig::USER_BUTTON_PIN, INPUT_PULLUP);
+
+    crsfRx.begin();
+    crsfTx.begin();
+
+    // configure every channel in one loop
+    for (uint8_t ch = 0; ch < 16; ++ch) {
+        crsfRx.configureChannel(ch, CRSFConfig::CRSF_CHANNEL_CONFIGS[ch]);
+    }
 
     telemetry.begin();
     flashTelemetry.begin();
@@ -251,6 +267,7 @@ void arduflite_loop()
     telemetryData.update(myIMU, controller);
     configData.update(controller);
 
+    crsfTx.publish(telemetryData, configData);
     telemetry.publish(telemetryData, configData);
     flashTelemetry.publish(telemetryData, configData);
 

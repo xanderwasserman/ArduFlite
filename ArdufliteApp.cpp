@@ -172,7 +172,7 @@ void arduflite_init()
 void arduflite_loop() 
 {
     // Process any pending commands.
-    commandSystem.processCommands(&controller, &myIMU);
+    CommandSystem::instance().processCommands(&controller, &myIMU);
     
     // Update buttons.
     HoldButtonManager::updateAll();

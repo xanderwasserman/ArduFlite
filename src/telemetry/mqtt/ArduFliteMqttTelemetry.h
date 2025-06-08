@@ -24,7 +24,7 @@
 
 class ArduFliteMqttTelemetry : public ArduFliteTelemetry {
 public:
-    ArduFliteMqttTelemetry(float frequencyHz, CommandSystem* cmdSys);
+    ArduFliteMqttTelemetry(float frequencyHz);
     virtual ~ArduFliteMqttTelemetry() {}
 
     void begin() override;
@@ -71,9 +71,6 @@ private:
     SemaphoreHandle_t   telemetryMutex = nullptr;
     TelemetryData       pendingData;
     ConfigData          pendingConfigData;
-
-    // Pointer to the shared command‐queue
-    CommandSystem* _cmdSys;    
 
     // FreeRTOS Task handle so we can kill/restart it on reset()
     TaskHandle_t      taskHandle     = nullptr;

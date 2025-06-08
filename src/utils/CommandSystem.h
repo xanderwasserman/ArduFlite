@@ -9,9 +9,12 @@
 #ifndef COMMAND_SYSTEM_H
 #define COMMAND_SYSTEM_H
 
-#include <Arduino.h>
 #include "src/controller/ArduFliteController.h"
 #include "src/orientation/ArduFliteIMU.h"
+
+#include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 
 /**
  * @brief Command types for system commands.
@@ -48,30 +51,25 @@ struct SystemCommand
 };
 
 /**
- * @brief CommandSystem class.
+ * @class CommandSystem
+ * @brief Thread-safe singleton queue for SystemCommand.
  *
  * This class implements a thread-safe command system using a FreeRTOS queue.
  * Any module can push a SystemCommand onto this queue.
  * The main loop (or another designated part of your code) should periodically call
  * processCommands() to handle and execute any pending commands, using the provided
  * pointers to ArduFliteController and ArduFliteIMU.
+ * 
+ * Use CommandSystem::instance() to access the one and only instance.
  */
 class CommandSystem 
 {
 public:
     /**
-     * @brief Constructor.
-     *
-     * Creates a FreeRTOS queue to hold SystemCommand items.
+     * @brief Get the single shared instance.
+     * @return reference to the CommandSystem
      */
-    CommandSystem();
-
-    /**
-     * @brief Destructor.
-     *
-     * Frees the command queue.
-     */
-    ~CommandSystem();
+    static CommandSystem& instance();
 
     /**
      * @brief Pushes a command onto the queue.
@@ -94,7 +92,17 @@ public:
     void processCommands(ArduFliteController *controller, ArduFliteIMU *imu);
 
 private:
-    QueueHandle_t commandQueue; ///< FreeRTOS queue handle for storing commands.
+    QueueHandle_t commandQueue_;  ///< FreeRTOS queue handle
+
+    /// Private ctor/dtor for singleton enforcement
+    CommandSystem();
+    ~CommandSystem();
+
+    /// No copies or moves
+    CommandSystem(const CommandSystem&)            = delete;
+    CommandSystem& operator=(const CommandSystem&) = delete;
+    CommandSystem(CommandSystem&&)                 = delete;
+    CommandSystem& operator=(CommandSystem&&)      = delete;
 };
 
 #endif // COMMAND_SYSTEM_H

@@ -14,13 +14,12 @@
 
 ArduFliteMqttTelemetry* ArduFliteMqttTelemetry::instance = nullptr;
 
-ArduFliteMqttTelemetry::ArduFliteMqttTelemetry(float frequencyHz, CommandSystem* cmdSys)
+ArduFliteMqttTelemetry::ArduFliteMqttTelemetry(float frequencyHz)
   : custom_mqtt_server("server", "MQTT Server", mqttServer.c_str(), 40)
   , custom_mqtt_port("port", "MQTT Port", String(mqttPort).c_str(), 6)
   , custom_mqtt_user("user", "MQTT Username", mqttUser.c_str(), 32)
   , custom_mqtt_pass("pass", "MQTT Password", mqttPass.c_str(), 32)
   , mqttClient(wifiClient)
-  , _cmdSys(cmdSys)
 {
     intervalMs = (1.0f / frequencyHz) * 1000.0f;
 
@@ -147,9 +146,9 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters)
     // Optionally set timeouts:
     // self->wifiManager.setConfigPortalTimeout(30); // e.g. 30s
 
-#if BOARD_TYPE == BOARD_TYPE_WEMOS
-    WiFi.setTxPower(WIFI_POWER_8_5dBm);
-#endif
+// #if BOARD_TYPE == BOARD_TYPE_WEMOS
+//     WiFi.setTxPower(WIFI_POWER_8_5dBm);
+// #endif
 
     // Attempt to connect or open the config portal
     if (!localManager.autoConnect("ArduFliteAP")) 
@@ -412,7 +411,7 @@ void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned i
     //
     // --- ALL REMAINING TOPICS EXPECT A JSON PAYLOAD ---
     //
-    DynamicJsonDocument doc(256);
+    JsonDocument doc;
     DeserializationError err = deserializeJson(doc, payload, length);
     if (err) 
     {
@@ -492,8 +491,7 @@ void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned i
 
 void ArduFliteMqttTelemetry::pushSystemCommand(SystemCommand cmd) 
 {
-    if (!_cmdSys) return;
-    _cmdSys->pushCommand(cmd);
+    CommandSystem::instance().pushCommand(cmd);
 }
 
 void ArduFliteMqttTelemetry::handleAttitudeControl(const JsonDocument& doc) 
@@ -509,7 +507,7 @@ void ArduFliteMqttTelemetry::handleAttitudeControl(const JsonDocument& doc)
     cmd.type            = CMD_SET_CONFIG_ATTITUDE;
     cmd.attitudeConfig  = ea;
 
-    _cmdSys->pushCommand(cmd);
+    pushSystemCommand(cmd);
 }
 
 void ArduFliteMqttTelemetry::handlePidConfig(ControlLoopType loop, const JsonDocument& doc) 
@@ -529,7 +527,7 @@ void ArduFliteMqttTelemetry::handlePidConfig(ControlLoopType loop, const JsonDoc
     cmd.pidLoop   = loop;
     cmd.pidConfig = pc;
 
-    _cmdSys->pushCommand(cmd);
+    pushSystemCommand(cmd);
 }
 
 
@@ -539,7 +537,7 @@ void ArduFliteMqttTelemetry::handleRateAlpha(float alpha)
     cmd.type      = CMD_SET_CONFIG_RATE_ALPHA;
     cmd.rateAlpha = alpha;
 
-    _cmdSys->pushCommand(cmd);
+    pushSystemCommand(cmd);
 }
 
 /**

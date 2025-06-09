@@ -49,7 +49,7 @@
   *
   * @param qd The desired orientation as a quaternion.
   */
- void ArduFliteAttitudeController::setDesiredQuaternion(const FliteQuaternion &qd) 
+ void ArduFliteAttitudeController::setAttitudeControlSetpointQuaternion(const FliteQuaternion &qd) 
  {
      xSemaphoreTake(attitudeMutex, portMAX_DELAY);
      desiredQ = qd;
@@ -63,16 +63,14 @@
   * quaternion (using standard aerospace conventions) and sets the desired
   * orientation.
   *
-  * @param roll  Roll angle in radians.
-  * @param pitch Pitch angle in radians.
-  * @param yaw   Yaw angle in radians.
+  * @param setpointRads Attitude setpoint in radians.
   */
- void ArduFliteAttitudeController::setDesiredEulerRads(float roll, float pitch, float yaw) 
+ void ArduFliteAttitudeController::setAttitudeControlSetpointRads(EulerAngles setpointRads) 
  { 
     // Compute half-angles.
-    float halfRoll  = roll  * 0.5f;
-    float halfPitch = pitch * 0.5f;
-    float halfYaw   = yaw   * 0.5f;
+    float halfRoll  = setpointRads.roll  * 0.5f;
+    float halfPitch = setpointRads.pitch * 0.5f;
+    float halfYaw   = setpointRads.yaw   * 0.5f;
 
     // Pre-compute sine and cosine for efficiency.
     float cr = cos(halfRoll);
@@ -90,28 +88,30 @@
     q.z = cr * cp * sy - sr * sp * cy;
 
     // Set the desired orientation with thread protection.
-    setDesiredQuaternion(q);
+    setAttitudeControlSetpointQuaternion(q);
  }
  
  /**
   * @brief Sets the desired orientation using Euler angles in degrees.
   *
-  * This method converts degrees to radians and calls setDesiredEulerRads().
+  * This method converts degrees to radians and calls setAttitudeControlSetpointRads().
   *
-  * @param roll  Roll angle in degrees.
-  * @param pitch Pitch angle in degrees.
-  * @param yaw   Yaw angle in degrees.
+  * @param setpointDegs  Attitude Setpoint in degrees.
   */
- void ArduFliteAttitudeController::setDesiredEulerDegs(float roll, float pitch, float yaw) 
+ void ArduFliteAttitudeController::setAttitudeControlSetpoint(EulerAngles setpointDegs) 
  {
     xSemaphoreTake(attitudeMutex, portMAX_DELAY);
-    desiredEulers.roll     = roll;
-    desiredEulers.pitch    = pitch;
-    desiredEulers.yaw      = yaw;
+    attitudeSetpointDegs       = setpointDegs;
     xSemaphoreGive(attitudeMutex);
     
-     const float deg2rad = PI / 180.0f;
-     setDesiredEulerRads(roll * deg2rad, pitch * deg2rad, yaw * deg2rad);
+    const float         deg2rad = PI / 180.0f;
+    EulerAngles         setpointRad;
+
+    setpointRad.roll    = setpointDegs.roll * deg2rad;
+    setpointRad.pitch   = setpointDegs.pitch * deg2rad;
+    setpointRad.yaw     = setpointDegs.yaw * deg2rad;
+
+    setAttitudeControlSetpointRads(setpointRad);
  }
  
  /**
@@ -125,21 +125,20 @@
   *
   * @param measuredQ The measured orientation as a quaternion.
   * @param dt        Time step in seconds.
-  * @param rollOut   (Output) Control output for roll.
-  * @param pitchOut  (Output) Control output for pitch.
-  * @param yawOut    (Output) Control output for yaw.
+  * @param rateOut   (Output) Control output for rates.
   */
- void ArduFliteAttitudeController::update(const FliteQuaternion &measuredQ, float dt, float &rollOut, float &pitchOut, float &yawOut) 
+ void ArduFliteAttitudeController::update(const FliteQuaternion &measuredQ, float dt, EulerAngles &rateOut) 
  {
     // Prevent a too-small timestep.
     if (dt < 1e-3f) dt = 1e-3f;
 
     // Retrieve desired orientation in a thread-safe manner.
     FliteQuaternion localDesiredQ;
-    EulerAngles     localDesiredEulers;
+    EulerAngles     localAttitudeSetpointDegs;
+
     xSemaphoreTake(attitudeMutex, portMAX_DELAY);
     localDesiredQ = desiredQ;
-    localDesiredEulers = desiredEulers;
+    localAttitudeSetpointDegs = attitudeSetpointDegs;
     xSemaphoreGive(attitudeMutex);
 
     // Normalize the measured quaternion.
@@ -183,10 +182,10 @@
     if (fabs(yawErr) < deadband)    yawErr = 0.0f;
 
     // --- Feed Errors to PID Controllers ---
-    rollOut  = pidRoll.update(rollErr, dt);
-    pitchOut = pidPitch.update(pitchErr, dt);
-    //  yawOut   = pidYaw.update(yawErr, dt);
-    yawOut = localDesiredEulers.yaw; //! we just pass on the yaw setpoint to the rate controller, as we have no fixed heading reference (no magnetometer).
+    rateOut.roll  = pidRoll.update(rollErr, dt);
+    rateOut.pitch = pidPitch.update(pitchErr, dt);
+    //  rateOut.yaw   = pidYaw.update(yawErr, dt);
+    rateOut.yaw = localAttitudeSetpointDegs.yaw; //! we just pass on the yaw setpoint to the rate controller, as we have no fixed heading reference (no magnetometer).
  }
  
  /**

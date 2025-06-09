@@ -76,7 +76,7 @@ public:
      *
      * @param qd The desired orientation as a quaternion.
      */
-    void setDesiredQuaternion(const FliteQuaternion &qd);
+    void setAttitudeControlSetpointQuaternion(const FliteQuaternion &qd);
 
     /**
      * @brief Sets the desired orientation using Euler angles in radians.
@@ -84,11 +84,9 @@ public:
      * Converts the provided Euler angles (roll, pitch, yaw) to a quaternion and updates
      * the desired orientation.
      *
-     * @param roll Roll angle in radians.
-     * @param pitch Pitch angle in radians.
-     * @param yaw Yaw angle in radians.
+     * @param setpointRads Attitude setpoint in radians.
      */
-    void setDesiredEulerRads(float roll, float pitch, float yaw);
+    void setAttitudeControlSetpointRads(EulerAngles setpointRads);
 
     /**
      * @brief Sets the desired orientation using Euler angles in degrees.
@@ -96,11 +94,9 @@ public:
      * Converts the provided Euler angles (roll, pitch, yaw) from degrees to radians and
      * updates the desired orientation.
      *
-     * @param roll Roll angle in degrees.
-     * @param pitch Pitch angle in degrees.
-     * @param yaw Yaw angle in degrees.
+     * @param setpointDegs  Attitude Setpoint in degrees.
      */
-    void setDesiredEulerDegs(float roll, float pitch, float yaw);
+    void setAttitudeControlSetpoint(EulerAngles setpointDegs);
 
     /**
      * @brief Updates the attitude controller.
@@ -116,7 +112,7 @@ public:
      * @param pitchOut Output control signal for pitch (normalized to [-1, 1]).
      * @param yawOut Output control signal for yaw (normalized to [-1, 1]).
      */
-    void update(const FliteQuaternion &measuredQ, float dt, float &rollOut, float &pitchOut, float &yawOut);
+    void update(const FliteQuaternion &measuredQ, float dt, EulerAngles &rateOut);
 
     /**
      * @brief Resets the PID controllers.
@@ -126,11 +122,11 @@ public:
     void reset();
 
 private:
-    FliteQuaternion desiredQ;       ///< The desired orientation.
-    EulerAngles     desiredEulers;  ///< The desired orientation in degrees.
-    PID pidRoll;                    ///< PID controller for roll.
-    PID pidPitch;                   ///< PID controller for pitch.
-    PID pidYaw;                     ///< PID controller for yaw.
+    FliteQuaternion desiredQ;               //< The desired orientation.
+    EulerAngles     attitudeSetpointDegs;   //< The desired orientation in degrees.
+    PID             pidRoll;                //< PID controller for roll.
+    PID             pidPitch;               //< PID controller for pitch.
+    PID             pidYaw;                 //< PID controller for yaw.
 
     /// Mutex to protect access to the desired orientation.
     SemaphoreHandle_t attitudeMutex;

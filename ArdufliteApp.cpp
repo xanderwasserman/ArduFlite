@@ -148,11 +148,12 @@ void arduflite_init()
     servoMgr.testControlSurfaces();
 
     // Start with a level attitude (Assist mode).
-    controller.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
-    controller.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
+    EulerAngles initialSetpoint {0.0f};
+    controller.setAttitudeSetpoint(initialSetpoint);
+    controller.setRateSetpoint(initialSetpoint);
 
-    // Set the mode (default is ASSIST_MODE).
-    controller.setMode(ASSIST_MODE);
+    // Set the mode (default is ATTITUDE_MODE).
+    controller.setMode(ATTITUDE_MODE);
 
     // Start the overall control tasks.
     controller.startTasks();
@@ -202,12 +203,12 @@ void arduflite_loop()
     {
         switch (currentMode) 
         {
-            case ASSIST_MODE:
+            case ATTITUDE_MODE:
                 #if BOARD_TYPE == BOARD_TYPE_WEMOS
                 statusLED.setPattern(Patterns::Assist);
                 #endif
                 break;
-            case STABILIZED_MODE:
+            case RATE_MODE:
                 #if BOARD_TYPE == BOARD_TYPE_WEMOS
                 statusLED.setPattern(Patterns::Stabilized);
                 #endif
@@ -222,6 +223,8 @@ void arduflite_loop()
     static FlightState lastState = UNKNOWN_STATE;
     FlightState currentState = myIMU.getFlightState();
     
+    EulerAngles preflightSetpoint {0.0f};
+
     // Print transitions when they occur.
     if (currentState != lastState) 
     {
@@ -229,8 +232,8 @@ void arduflite_loop()
         {
             case PREFLIGHT:
                 LOG_INF("Aircraft is in PREFLIGHT state.");
-                controller.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
-                controller.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
+                controller.setAttitudeSetpoint(preflightSetpoint);
+                controller.setRateSetpoint(preflightSetpoint);
                 break;
             case INFLIGHT:
                 LOG_INF("Aircraft is in FLIGHT state.");
@@ -251,8 +254,8 @@ void arduflite_loop()
 
                 flashTelemetry.stopLogging();
 
-                controller.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
-                controller.setPilotRateSetpoints(0.0f, 0.0f, 0.0f);
+                controller.setAttitudeSetpoint(preflightSetpoint);
+                controller.setRateSetpoint(preflightSetpoint);
                 break;
             default:
                 break;
@@ -299,16 +302,16 @@ void onModeDoubleTap(void)
     SystemCommand cmd;
     cmd.type = CMD_SET_MODE;
 
-    if (controller.getMode() == ASSIST_MODE) 
+    if (controller.getMode() == ATTITUDE_MODE) 
     {
-        LOG_INF("Changing Flight Control mode to: STABILIZED_MODE.");
-        cmd.mode = STABILIZED_MODE;
+        LOG_INF("Changing Flight Control mode to: RATE_MODE.");
+        cmd.mode = RATE_MODE;
         CommandSystem::instance().pushCommand(cmd);
     } 
     else 
     {
-        LOG_INF("Changing Flight Control mode to: ASSIST_MODE.");
-        cmd.mode = ASSIST_MODE;
+        LOG_INF("Changing Flight Control mode to: ATTITUDE_MODE.");
+        cmd.mode = ATTITUDE_MODE;
         CommandSystem::instance().pushCommand(cmd);
     }
 }

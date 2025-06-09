@@ -30,14 +30,14 @@ struct LoopStats {
  * @brief Operating modes for the ArduFlite controller.
  *
  * The controller can operate in one of two modes:
- * - ASSIST_MODE: The pilot provides a desired attitude setpoint (SAFE-like).
- * - STABILIZED_MODE: The pilot directly provides angular rate setpoints.
+ * - ATTITUDE_MODE: The pilot provides a desired attitude setpoint (SAFE-like).
+ * - RATE_MODE: The pilot directly provides angular rate setpoints.
  */
 enum ArduFliteMode 
 {
-    ASSIST_MODE     = 0,     // Pilot controls the attitude setpoint.
-    STABILIZED_MODE = 1,     // Pilot directly controls the rate setpoints.
-    UNKNOWN_MODE    = 3,     // Pilot directly controls the rate setpoints.
+    ATTITUDE_MODE   = 0,     // Pilot controls the attitude setpoint.
+    RATE_MODE       = 1,     // Pilot directly controls the rate setpoints.
+    UNKNOWN_MODE    = 3,     
     FLIGHT_MODE_LENGTH
 };
 
@@ -58,7 +58,7 @@ enum ControlLoopType
  * combining an outer loop (attitude controller) and an inner loop (rate controller).
  * It runs two FreeRTOS tasks:
  * - OuterLoopTask (approx. 100Hz): Computes desired angular rates based on the current
- *   attitude (or uses direct pilot input in STABILIZED_MODE).
+ *   attitude (or uses direct pilot input in RATE_MODE).
  * - InnerLoopTask (approx. 500Hz): Updates the IMU, runs the rate controller, and outputs
  *   servo commands.
  *
@@ -92,30 +92,83 @@ public:
     /**
      * @brief Sets the desired orientation in Assist mode.
      *
-     * In ASSIST_MODE, the pilot sets a desired attitude which the attitude controller
+     * In ATTITUDE_MODE, the pilot sets a desired attitude which the attitude controller
      * uses to compute the desired angular rates.
      *
-     * @param roll Roll angle in degrees.
-     * @param pitch Pitch angle in degrees.
-     * @param yaw Yaw angle in degrees.
+     * @param setpoint EulerAngles attitude setpoint in degrees.
      */
-    void setDesiredEulerDegs(float roll, float pitch, float yaw);
+    void setAttitudeSetpoint(EulerAngles setpointDeg);
 
     /**
-     * @brief Sets the pilot-provided rate setpoints in Stabilized mode.
+     * @brief Sets the desired roll attitude (in Euler angles, degrees) for Attitude mode.
+     * 
+     * In Assist mode, the attitude controller will use this values to compute the
+     * desired angular roll rate.
      *
-     * In STABILIZED_MODE, the pilot directly provides angular rate setpoints.
-     *
-     * @param rollRate Desired roll rate (deg/s).
-     * @param pitchRate Desired pitch rate (deg/s).
-     * @param yawRate Desired yaw rate (deg/s).
+     * @param rollSetpointDeg Roll attitude setpoint in degrees.
      */
-    void setPilotRateSetpoints(float rollRate, float pitchRate, float yawRate);
+    void setAttitudeSetpoint_roll(float rollSetpointDeg);
+    
+    /**
+     * @brief Sets the desired pitch attitude (in Euler angles, degrees) for Attitude mode.
+     * 
+     * In Assist mode, the attitude controller will use this values to compute the
+     * desired angular pitch rate.
+     *
+     * @param pitchSetpointDeg Pitch attitude setpoint in degrees.
+     */
+    void setAttitudeSetpoint_pitch(float pitchSetpointDeg);
+
+    /**
+     * @brief Sets the desired yaw attitude (in Euler angles, degrees) for Attitude mode.
+     * 
+     * In Assist mode, the attitude controller will use this values to compute the
+     * desired angular yaw rate.
+     *
+     * @param pitchSetpointDeg Yaw attitude setpoint in degrees.
+     */
+    void setAttitudeSetpoint_yaw(float yawSetpointDeg);
+
+    /**
+     * @brief Sets the pilot-provided rate setpoints in Rate mode.
+     *
+     * In RATE_MODE, the pilot directly provides angular rate setpoints.
+     *
+     * @param setpoint EulerAngles rate setpoint in degrees/s.
+     */
+    void setRateSetpoint(EulerAngles rateSetpoint);
+
+    /**
+     * @brief Sets the pilot-provided roll rate setpoint in Rate mode.
+     *
+     * In RATE_MODE, the pilot directly provides angular rate setpoints.
+     *
+     * @param rollRateSetpoint Roll rate setpoint in degrees/s.
+     */
+    void setRateSetpoint_roll(float rollRateSetpoint);
+
+    /**
+     * @brief Sets the pilot-provided pitch rate setpoint in Rate mode.
+     *
+     * In RATE_MODE, the pilot directly provides angular rate setpoints.
+     *
+     * @param rollRateSetpoint Pitch rate setpoint in degrees/s.
+     */
+    void setRateSetpoint_pitch(float pitchRateSetpoint);
+
+    /**
+     * @brief Sets the pilot-provided yaw rate setpoint in Rate mode.
+     *
+     * In RATE_MODE, the pilot directly provides angular rate setpoints.
+     *
+     * @param rollRateSetpoint Yaw rate setpoint in degrees/s.
+     */
+    void setRateSetpoint_yaw(float yawRateSetpoint);
 
     /**
      * @brief Sets the operating mode.
      *
-     * This method switches between ASSIST_MODE and STABILIZED_MODE.
+     * This method switches between ATTITUDE_MODE and RATE_MODE.
      *
      * @param mode The mode to set.
      */
@@ -148,35 +201,27 @@ public:
     LoopStats getInnerLoopStats();
 
 private:
-    ArduFliteIMU* imu;                          ///< Pointer to the IMU instance.
-    ArduFliteAttitudeController* attitudeCtrl;  ///< Pointer to the outer loop controller.
-    ArduFliteRateController* rateCtrl;          ///< Pointer to the inner loop controller.
-    ServoManager* servoMgr;                     ///< Pointer to the servo manager.
+    ArduFliteIMU* imu;                                      //< Pointer to the IMU instance.
+    ArduFliteAttitudeController* attitudeCtrl;              //< Pointer to the outer loop controller.
+    ArduFliteRateController* rateCtrl;                      //< Pointer to the inner loop controller.
+    ServoManager* servoMgr;                                 //< Pointer to the servo manager.
 
-    TaskHandle_t outerTaskHandle;               ///< Handle for the outer loop task.
-    TaskHandle_t innerTaskHandle;               ///< Handle for the inner loop task.
+    TaskHandle_t outerTaskHandle;                           //< Handle for the outer loop task.
+    TaskHandle_t innerTaskHandle;                           //< Handle for the inner loop task.
 
-    volatile ArduFliteMode mode;                ///< Current operating mode.
-    volatile float pilotRollRateSetpoint;       ///< Pilot roll rate setpoint (deg/s) for STABILIZED_MODE.
-    volatile float pilotPitchRateSetpoint;      ///< Pilot pitch rate setpoint (deg/s) for STABILIZED_MODE.
-    volatile float pilotYawRateSetpoint;        ///< Pilot yaw rate setpoint (deg/s) for STABILIZED_MODE.
-    volatile float pilotRollAngleSetpoint;       ///< Pilot roll angle setpoint for ASSIST_MODE.
-    volatile float pilotPitchAngleSetpoint;      ///< Pilot pitch angle setpoint for ASSIST_MODE.
-    volatile float pilotYawAngleSetpoint;        ///< Pilot yaw angle setpoint for ASSIST_MODE.
+    ArduFliteMode mode;                                     //< Current operating mode.
+    EulerAngles pilotRateSetpoint       {0.0f};             //< Pilot rate setpoint (deg/s) for RATE_MODE.
+    EulerAngles pilotAttitudeSetpoint   {0.0f};             //< Pilot attitude setpoint for ATTITUDE_MODE.
 
     // Shared command variables
-    float lastAttitudeRollCmd = 0.0f;
-    float lastAttitudePitchCmd = 0.0f;
-    float lastAttitudeYawCmd = 0.0f;
-    float lastRateRollCmd = 0.0f;
-    float lastRatePitchCmd = 0.0f;
-    float lastRateYawCmd = 0.0f;
+    EulerAngles lastAttitudeCmd         {0.0f};
+    EulerAngles lastRateCmd             {0.0f};
 
     // Statistics for the outer and inner loops.
-    LoopStats outerLoopStats = {0, 0, 0, 0};
-    LoopStats innerLoopStats = {0, 0, 0, 0};
+    LoopStats outerLoopStats            = {0, 0, 0, 0};
+    LoopStats innerLoopStats            = {0, 0, 0, 0};
 
-    SemaphoreHandle_t ctrlMutex;                ///< Mutex to protect shared state.
+    SemaphoreHandle_t ctrlMutex;                            //< Mutex to protect shared state.
 
     // Mutexes for thread-safe access to these stats.
     SemaphoreHandle_t outerStatsMutex;
@@ -186,8 +231,8 @@ private:
      * @brief Outer loop FreeRTOS task function.
      *
      * Runs at approximately 100Hz, reads the current IMU orientation, and computes
-     * desired angular rates using either the attitude controller (in ASSIST_MODE) or
-     * direct pilot setpoints (in STABILIZED_MODE). The computed rates are passed to
+     * desired angular rates using either the attitude controller (in ATTITUDE_MODE) or
+     * direct pilot setpoints (in RATE_MODE). The computed rates are passed to
      * the rate controller.
      *
      * @param parameters Pointer to the ArduFliteController instance.

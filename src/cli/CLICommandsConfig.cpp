@@ -88,14 +88,14 @@ void cmdSetMode(const String &args)
 
     if (argLower.indexOf("assist") >= 0) 
     {
-        LOG_INF("Changing Flight Control mode to: ASSIST_MODE.");
-        cmd.mode = ASSIST_MODE;
+        LOG_INF("Changing Flight Control mode to: ATTITUDE_MODE.");
+        cmd.mode = ATTITUDE_MODE;
         CommandSystem::instance().pushCommand(cmd);
     } 
     else if (argLower.indexOf("stabilized") >= 0) 
     {
-        LOG_INF("Changing Flight Control mode to: STABILIZED_MODE.");
-        cmd.mode = STABILIZED_MODE;
+        LOG_INF("Changing Flight Control mode to: RATE_MODE.");
+        cmd.mode = RATE_MODE;
         CommandSystem::instance().pushCommand(cmd);
     } 
     else 

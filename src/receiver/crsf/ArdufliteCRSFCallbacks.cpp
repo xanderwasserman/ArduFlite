@@ -28,12 +28,12 @@ void onModeSwitch(uint8_t ch, float v) {
     bool newState  = (v > 0.5f);  // v is 0.0 or 1.0, but guard anyway
 
     if (!newState) { //Stabilized mode when receiving false
-        LOG_INF("Changing Flight Control mode to: STABILIZED_MODE.");
-        cmd.mode = STABILIZED_MODE;
+        LOG_INF("Changing Flight Control mode to: RATE_MODE.");
+        cmd.mode = RATE_MODE;
         CommandSystem::instance().pushCommand(cmd);
     } else {
-        LOG_INF("Changing Flight Control mode to: ASSIST_MODE.");
-        cmd.mode = ASSIST_MODE;
+        LOG_INF("Changing Flight Control mode to: ATTITUDE_MODE.");
+        cmd.mode = ATTITUDE_MODE;
         CommandSystem::instance().pushCommand(cmd);
     }
 }

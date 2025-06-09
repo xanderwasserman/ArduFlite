@@ -102,9 +102,9 @@ Once the system is running:
 
     - `tasks` – Shows FreeRTOS task statistics.
 
-    - `setmode assist` – Switches the controller to ASSIST_MODE.
+    - `setmode assist` – Switches the controller to ATTITUDE_MODE.
 
-    - `setmode stabilized` – Switches the controller to STABILIZED_MODE.
+    - `setmode stabilized` – Switches the controller to RATE_MODE.
 
     - `calibrate imu` – Triggers an IMU self-calibration routine.
 

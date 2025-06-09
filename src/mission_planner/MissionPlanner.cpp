@@ -71,10 +71,14 @@ void MissionPlanner::start()
             _stepStartMs  = millis();
 
             // grab a const‐ref to the first step
-            const auto &first = _steps[_currentIndex];
+            const auto &first   = _steps[_currentIndex];
+            EulerAngles         stepSetpoint;
+            stepSetpoint.roll   = first.rollDeg;
+            stepSetpoint.pitch  = first.pitchDeg;
+            stepSetpoint.yaw    = first.yawDeg;
 
             // apply it right away
-            _ctrl.setDesiredEulerDegs(first.rollDeg, first.pitchDeg, first.yawDeg);
+            _ctrl.setAttitudeSetpoint(stepSetpoint);
 
             // log it
             LOG_INF("MissionPlanner: step %u → roll=%.1f°, pitch=%.1f°, yaw=%.1f°", (unsigned)_currentIndex, first.rollDeg, first.pitchDeg, first.yawDeg);
@@ -136,7 +140,12 @@ void MissionPlanner::run()
                     {
                         // apply next step
                         const auto &next = _steps[_currentIndex];
-                        _ctrl.setDesiredEulerDegs(next.rollDeg, next.pitchDeg, next.yawDeg);
+                        EulerAngles         stepSetpoint;
+                        stepSetpoint.roll   = next.rollDeg;
+                        stepSetpoint.pitch  = next.pitchDeg;
+                        stepSetpoint.yaw    = next.yawDeg;
+
+                        _ctrl.setAttitudeSetpoint(stepSetpoint);
                         LOG_INF( "MissionPlanner: step %u → roll=%.1f°, pitch=%.1f°, yaw=%.1f°", (unsigned)_currentIndex, next.rollDeg, next.pitchDeg, next.yawDeg);
                         // reset the timer
                         _stepStartMs = now;

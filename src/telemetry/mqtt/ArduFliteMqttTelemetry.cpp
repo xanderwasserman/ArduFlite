@@ -392,13 +392,13 @@ void ArduFliteMqttTelemetry::mqttCallback(char* topic, byte* payload, unsigned i
         switch (modeValue) 
         {
             case 1:
-                LOG_INF("Mode command received: Setting mode to ASSIST_MODE.");
-                cmd.mode = ASSIST_MODE;
+                LOG_INF("Mode command received: Setting mode to ATTITUDE_MODE.");
+                cmd.mode = ATTITUDE_MODE;
                 instance->pushSystemCommand(cmd);
                 break;
             case 2:
-                LOG_INF("Mode command received: Setting mode to STABILIZED_MODE.");
-                cmd.mode = STABILIZED_MODE;
+                LOG_INF("Mode command received: Setting mode to RATE_MODE.");
+                cmd.mode = RATE_MODE;
                 instance->pushSystemCommand(cmd);
                 break;
             default:

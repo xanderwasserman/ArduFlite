@@ -13,8 +13,9 @@
 
 void runAttitudeTest_wiggle(ArduFliteController &arduflite, float angle, float time)
 {
-    static unsigned long lastSetpointUpdate = millis();
-    unsigned long currentTime = millis();
+    static unsigned long    lastSetpointUpdate  = millis();
+    unsigned long           currentTime         = millis();
+    EulerAngles             setpoint            {0.0f};
     
     if (currentTime - lastSetpointUpdate > time) 
     {
@@ -23,22 +24,24 @@ void runAttitudeTest_wiggle(ArduFliteController &arduflite, float angle, float t
         switch (state) 
         {
             case 0:
-                arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
+                arduflite.setAttitudeSetpoint(setpoint);
                 LOG_INF("Test: Level attitude (0° roll)");
                 state++;
                 break;
             case 1:
-                arduflite.setDesiredEulerDegs(angle, 0.0f, 0.0f);
+                setpoint.roll = angle;
+                arduflite.setAttitudeSetpoint(setpoint);
                 LOG_INF("Test: Roll +%f°", angle);
                 state++;
                 break;
             case 2:
-                arduflite.setDesiredEulerDegs(0.0f, 0.0f, 0.0f);
+                arduflite.setAttitudeSetpoint(setpoint);
                 LOG_INF("Test: Level attitude (0° roll)");
                 state++;
                 break;
             case 3:
-                arduflite.setDesiredEulerDegs(-angle, 0.0f, 0.0f);
+                setpoint.roll = -angle;
+                arduflite.setAttitudeSetpoint(setpoint);
                 LOG_INF("Test: Roll -%f°", angle);
                 state = 0;
                 break;

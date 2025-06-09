@@ -33,7 +33,7 @@
  * 
  * Initializes the controller with pointers to the shared components: IMU,
  * attitude controller, rate controller, and ServoManager. Also initializes the
- * operating mode to ASSIST_MODE and creates a mutex to protect shared state.
+ * operating mode to ATTITUDE_MODE and creates a mutex to protect shared state.
  *
  * @param imu Pointer to the ArduFliteIMU instance.
  * @param attitudeCtrl Pointer to the ArduFliteAttitudeController instance.
@@ -41,7 +41,14 @@
  * @param servoMgr Pointer to the ServoManager instance.
  */
 ArduFliteController::ArduFliteController(ArduFliteIMU* imu, ArduFliteAttitudeController* attitudeCtrl, ArduFliteRateController* rateCtrl, ServoManager* servoMgr)
-    : imu(imu), attitudeCtrl(attitudeCtrl), rateCtrl(rateCtrl), servoMgr(servoMgr), outerTaskHandle(NULL), innerTaskHandle(NULL), mode(ASSIST_MODE), pilotRollRateSetpoint(0.0f), pilotPitchRateSetpoint(0.0f), pilotYawRateSetpoint(0.0f)
+    : imu(imu)
+    , attitudeCtrl(attitudeCtrl)
+    , rateCtrl(rateCtrl)
+    , servoMgr(servoMgr)
+    , outerTaskHandle(NULL)
+    , innerTaskHandle(NULL)
+    , mode(ATTITUDE_MODE)
+    , pilotRateSetpoint{ 0.0f, 0.0f, 0.0f }
 {
     // Create the mutex for protecting shared state.
     ctrlMutex = xSemaphoreCreateMutex();
@@ -65,9 +72,9 @@ ArduFliteController::ArduFliteController(ArduFliteIMU* imu, ArduFliteAttitudeCon
 /**
  * @brief Sets the operating mode of the controller.
  * 
- * This function allows switching between ASSIST_MODE (where the pilot controls the
+ * This function allows switching between ATTITUDE_MODE (where the pilot controls the
  * attitude setpoint and the controller computes desired angular rates) and 
- * STABILIZED_MODE (where the pilot directly provides rate setpoints).
+ * RATE_MODE (where the pilot directly provides rate setpoints).
  *
  * @param newMode The new mode to set.
  */
@@ -81,7 +88,7 @@ void ArduFliteController::setMode(ArduFliteMode newMode)
 /**
  * @brief Returns the current operating mode.
  * 
- * @return ArduFliteMode The current mode (ASSIST_MODE or STABILIZED_MODE).
+ * @return ArduFliteMode The current mode (ATTITUDE_MODE or RATE_MODE).
  */
 ArduFliteMode ArduFliteController::getMode() const 
 {
@@ -100,20 +107,79 @@ ArduFliteMode ArduFliteController::getMode() const
  * In Assist mode, the attitude controller will use these values to compute the
  * desired angular rates.
  *
- * @param roll Roll angle in degrees.
- * @param pitch Pitch angle in degrees.
- * @param yaw Yaw angle in degrees.
+ * @param setpoint EulerAngles attitude setpoint in degrees.
  */
-void ArduFliteController::setDesiredEulerDegs(float roll, float pitch, float yaw) 
+void ArduFliteController::setAttitudeSetpoint(EulerAngles setpointDeg) 
 {
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    pilotRollAngleSetpoint  = roll;
-    pilotPitchAngleSetpoint = pitch;
-    pilotYawAngleSetpoint   = yaw;
+    pilotAttitudeSetpoint   = setpointDeg;
     xSemaphoreGive(ctrlMutex);
 
     // Forward the request to the attitude controller.
-    attitudeCtrl->setDesiredEulerDegs(roll, pitch, yaw);
+    attitudeCtrl->setAttitudeControlSetpoint(setpointDeg);
+}
+
+/**
+ * @brief Sets the desired roll attitude (in Euler angles, degrees) for Assist mode.
+ * 
+ * In Assist mode, the attitude controller will use this values to compute the
+ * desired angular roll rate.
+ *
+ * @param rollSetpointDeg Roll attitude setpoint in degrees.
+ */
+void ArduFliteController::setAttitudeSetpoint_roll(float rollSetpointDeg) 
+{
+    EulerAngles localCopy;
+
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    pilotAttitudeSetpoint.roll  = rollSetpointDeg;
+    localCopy                   = pilotAttitudeSetpoint;
+    xSemaphoreGive(ctrlMutex);
+
+    // Forward the request to the attitude controller.
+    attitudeCtrl->setAttitudeControlSetpoint(localCopy);
+}
+
+/**
+ * @brief Sets the desired pitch attitude (in Euler angles, degrees) for Assist mode.
+ * 
+ * In Assist mode, the attitude controller will use this values to compute the
+ * desired angular pitch rate.
+ *
+ * @param pitchSetpointDeg Pitch attitude setpoint in degrees.
+ */
+void ArduFliteController::setAttitudeSetpoint_pitch(float pitchSetpointDeg) 
+{
+    EulerAngles localCopy;
+
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    pilotAttitudeSetpoint.pitch = pitchSetpointDeg;
+    localCopy                   = pilotAttitudeSetpoint;
+    xSemaphoreGive(ctrlMutex);
+
+    // Forward the request to the attitude controller.
+    attitudeCtrl->setAttitudeControlSetpoint(localCopy);
+}
+ 
+/**
+ * @brief Sets the desired yaw attitude (in Euler angles, degrees) for Assist mode.
+ * 
+ * In Assist mode, the attitude controller will use this values to compute the
+ * desired angular yaw rate.
+ *
+ * @param pitchSetpointDeg Yaw attitude setpoint in degrees.
+ */
+void ArduFliteController::setAttitudeSetpoint_yaw(float yawSetpointDeg) 
+{
+    EulerAngles localCopy;
+
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    pilotAttitudeSetpoint.yaw   = yawSetpointDeg;
+    localCopy                   = pilotAttitudeSetpoint;
+    xSemaphoreGive(ctrlMutex);
+
+    // Forward the request to the attitude controller.
+    attitudeCtrl->setAttitudeControlSetpoint(localCopy);
 }
  
 /**
@@ -122,16 +188,54 @@ void ArduFliteController::setDesiredEulerDegs(float roll, float pitch, float yaw
  * When operating in Stabilized mode, these values are used directly as the desired
  * angular rates.
  *
- * @param rollRate Desired roll rate setpoint (e.g., in deg/s).
- * @param pitchRate Desired pitch rate setpoint.
- * @param yawRate Desired yaw rate setpoint.
+ * @param setpoint EulerAngles rate setpoint in degrees/s.
  */
-void ArduFliteController::setPilotRateSetpoints(float rollRate, float pitchRate, float yawRate) 
+void ArduFliteController::setRateSetpoint(EulerAngles rateSetpoint) 
 {
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    pilotRollRateSetpoint  = rollRate;
-    pilotPitchRateSetpoint = pitchRate;
-    pilotYawRateSetpoint   = yawRate;
+    pilotRateSetpoint  = rateSetpoint;
+    xSemaphoreGive(ctrlMutex);
+}
+
+/**
+ * @brief Sets the pilot-provided roll rate setpoint in Rate mode.
+ *
+ * In RATE_MODE, the pilot directly provides angular rate setpoints.
+ *
+ * @param rollRateSetpoint Roll rate setpoint in degrees/s.
+ */
+void ArduFliteController::setRateSetpoint_roll(float rollRateSetpoint)
+{
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    pilotRateSetpoint.roll  = rollRateSetpoint;
+    xSemaphoreGive(ctrlMutex);
+}
+
+/**
+ * @brief Sets the pilot-provided pitch rate setpoint in Rate mode.
+ *
+ * In RATE_MODE, the pilot directly provides angular rate setpoints.
+ *
+ * @param rollRateSetpoint Pitch rate setpoint in degrees/s.
+ */
+void ArduFliteController::setRateSetpoint_pitch(float pitchRateSetpoint)
+{
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    pilotRateSetpoint.pitch  = pitchRateSetpoint;
+    xSemaphoreGive(ctrlMutex);
+}
+
+/**
+ * @brief Sets the pilot-provided yaw rate setpoint in Rate mode.
+ *
+ * In RATE_MODE, the pilot directly provides angular rate setpoints.
+ *
+ * @param rollRateSetpoint Yaw rate setpoint in degrees/s.
+ */
+void ArduFliteController::setRateSetpoint_yaw(float yawRateSetpoint)
+{
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+    pilotRateSetpoint.yaw  = yawRateSetpoint;
     xSemaphoreGive(ctrlMutex);
 }
  
@@ -204,10 +308,10 @@ void ArduFliteController::OuterLoopTask(void* parameters)
 
     // Desired period in microseconds for the outer loop (10 ms = 10,000 µs)
     const unsigned long desiredPeriodOuter = OUTER_LOOP_DT*1000UL;
-    
-    float rollRateCmd = 0, pitchRateCmd = 0, yawRateCmd = 0;
+
+    EulerAngles rateCommand     {0.0f};
+    EulerAngles rateSetpoint    {0.0f};
     ArduFliteMode currentMode;
-    float localPilotRoll = 0, localPilotPitch = 0, localPilotYaw = 0;
      
     while(1) 
     {
@@ -226,39 +330,31 @@ void ArduFliteController::OuterLoopTask(void* parameters)
         // Protect reading of the mode and pilot setpoints.
         xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
         currentMode = controller->mode;
-        localPilotRoll  = controller->pilotRollRateSetpoint;
-        localPilotPitch = controller->pilotPitchRateSetpoint;
-        localPilotYaw   = controller->pilotYawRateSetpoint;
+        rateSetpoint = controller->pilotRateSetpoint;
         xSemaphoreGive(controller->ctrlMutex);
 
-        if (currentMode == ASSIST_MODE) 
+        if (currentMode == ATTITUDE_MODE) 
         {
             // In Assist mode, use the attitude controller to compute desired rates.
             FliteQuaternion currentQ = controller->imu->getQuaternion();
-            controller->attitudeCtrl->update(currentQ, dt, rollRateCmd, pitchRateCmd, yawRateCmd);
+            controller->attitudeCtrl->update(currentQ, dt, rateCommand);
 
             xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
-            controller->lastAttitudeRollCmd  = rollRateCmd;
-            controller->lastAttitudePitchCmd = pitchRateCmd;
-            controller->lastAttitudeYawCmd   = yawRateCmd;
+            controller->lastAttitudeCmd  = rateCommand;
             xSemaphoreGive(controller->ctrlMutex);
         } 
         else 
         {
             // In Stabilized mode, use pilot-provided rate setpoints.
-            rollRateCmd  = localPilotRoll;
-            pitchRateCmd = localPilotPitch;
-            yawRateCmd   = localPilotYaw;
+            rateCommand  = rateSetpoint;
 
             xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
-            controller->lastAttitudeRollCmd  = rollRateCmd;
-            controller->lastAttitudePitchCmd = pitchRateCmd;
-            controller->lastAttitudeYawCmd   = yawRateCmd;
+            controller->lastAttitudeCmd = rateCommand;
             xSemaphoreGive(controller->ctrlMutex); 
         }
         
         // Pass the desired angular rates to the rate controller.
-        controller->rateCtrl->setDesiredRates(rollRateCmd, pitchRateCmd, yawRateCmd);
+        controller->rateCtrl->setRateControlSetpoint(rateCommand);
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
@@ -282,7 +378,7 @@ void ArduFliteController::InnerLoopTask(void* parameters)
     // Desired period in microseconds for the outer loop (10 ms = 10,000 µs)
     const unsigned long desiredPeriodInner = INNER_LOOP_DT*1000UL;
 
-    float rollCmd, pitchCmd, yawCmd;
+    EulerAngles actuatorCmd {0.0f};
     
     for (;;) 
     {
@@ -302,15 +398,13 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         Vector3 gyro = controller->imu->getGyro();
         
         // Update the rate controller (inner loop) to compute servo commands.
-        controller->rateCtrl->update(gyro.x, gyro.y, gyro.z, dt, rollCmd, pitchCmd, yawCmd);
+        controller->rateCtrl->update(gyro, dt, actuatorCmd);
         
         // Write the computed servo commands (normalized to [-1, 1]).
-        controller->servoMgr->writeCommands(rollCmd, pitchCmd, yawCmd);
+        controller->servoMgr->writeCommands(actuatorCmd.roll, actuatorCmd.pitch, actuatorCmd.yaw);
 
         xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
-        controller->lastRateRollCmd  = rollCmd;
-        controller->lastRatePitchCmd = pitchCmd;
-        controller->lastRateYawCmd   = yawCmd;
+        controller->lastRateCmd  = actuatorCmd;
         xSemaphoreGive(controller->ctrlMutex);
 
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -322,9 +416,7 @@ EulerAngles ArduFliteController::getAttitudeSetpoint() const
     EulerAngles value;
 
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value.roll  = pilotRollAngleSetpoint;
-    value.pitch = pilotPitchAngleSetpoint;
-    value.yaw   = pilotYawAngleSetpoint;
+    value  = pilotAttitudeSetpoint;
     xSemaphoreGive(ctrlMutex);
 
     return value;
@@ -335,9 +427,7 @@ EulerAngles ArduFliteController::getRateSetpoint() const
     EulerAngles value;
 
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value.roll  = pilotRollRateSetpoint;
-    value.pitch = pilotRollRateSetpoint;
-    value.yaw   = pilotRollRateSetpoint;
+    value  = pilotRateSetpoint;
     xSemaphoreGive(ctrlMutex);
 
     return value;
@@ -348,9 +438,7 @@ EulerAngles ArduFliteController::getRateCmd() const
     EulerAngles value;
 
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value.roll = lastRateRollCmd;
-    value.pitch = lastRatePitchCmd;
-    value.yaw = lastRateYawCmd;
+    value = lastRateCmd;
     xSemaphoreGive(ctrlMutex);
     
     return value;
@@ -361,9 +449,7 @@ EulerAngles ArduFliteController::getAttitudeCmd() const
     EulerAngles value;
 
     xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value.roll = lastAttitudeRollCmd;
-    value.pitch = lastAttitudePitchCmd;
-    value.yaw = lastAttitudeYawCmd;
+    value = lastAttitudeCmd;
     xSemaphoreGive(ctrlMutex);
 
     return value;

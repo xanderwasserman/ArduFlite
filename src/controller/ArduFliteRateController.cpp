@@ -7,6 +7,7 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "src/controller/ArduFliteRateController.h"
+#include "src/orientation/ArduFliteIMU.h"
 #include "src/utils/Logging.h"
 
 // Constructor with initial PID parameters.
@@ -26,38 +27,33 @@ ArduFliteRateController::ArduFliteRateController()
 }
 
 // Set the desired angular rates (e.g., from the outer loop's output)
-void ArduFliteRateController::setDesiredRates(float rollRate, float pitchRate, float yawRate) 
+void ArduFliteRateController::setRateControlSetpoint(EulerAngles setpoint) 
 {
     // Protect the update to desired rates.
     xSemaphoreTake(rateMutex, portMAX_DELAY);
-
-    desiredRollRate  = rollRate;
-    desiredPitchRate = pitchRate;
-    desiredYawRate   = yawRate;
-
+    setpointRate = setpoint;
     xSemaphoreGive(rateMutex);
 }
 
 // Update the rate controller with the measured angular rates.
 // The error is computed as (desiredRate - measuredRate) for each axis.
-void ArduFliteRateController::update(float measuredRollRate, float measuredPitchRate, float measuredYawRate, float dt, float &rollOut, float &pitchOut, float &yawOut) 
+void ArduFliteRateController::update(Vector3 measuredRate, float dt, EulerAngles &actuatorOut) 
 {
     // Prevent a too-small dt.
     if (dt < 1e-3f) dt = 1e-3f;
 
     float localDesiredRoll, localDesiredPitch, localDesiredYaw;
+    EulerAngles localSetpointRate;
 
     // Take mutex to safely read the desired rates.
     xSemaphoreTake(rateMutex, portMAX_DELAY);
-    localDesiredRoll  = desiredRollRate;
-    localDesiredPitch = desiredPitchRate;
-    localDesiredYaw   = desiredYawRate;
+    localSetpointRate = setpointRate;
     xSemaphoreGive(rateMutex);
 
     // Compute errors for each axis.
-    float rollError  = desiredRollRate  - measuredRollRate;
-    float pitchError = desiredPitchRate - measuredPitchRate;
-    float yawError   = desiredYawRate   - measuredYawRate;
+    float rollError  = localSetpointRate.roll  - measuredRate.x;
+    float pitchError = localSetpointRate.pitch - measuredRate.y;
+    float yawError   = localSetpointRate.yaw   - measuredRate.z;
 
     // Compute raw PID outputs.
     float newRollOut  = pidRoll.update(rollError, dt);
@@ -65,14 +61,12 @@ void ArduFliteRateController::update(float measuredRollRate, float measuredPitch
     float newYawOut   = pidYaw.update(yawError, dt);
 
     // Apply an exponential moving average filter to smooth the output.
-    filteredRollOutput  = outputAlpha * newRollOut  + (1.0f - outputAlpha) * filteredRollOutput;
-    filteredPitchOutput = outputAlpha * newPitchOut + (1.0f - outputAlpha) * filteredPitchOutput;
-    filteredYawOutput   = outputAlpha * newYawOut   + (1.0f - outputAlpha) * filteredYawOutput;
+    filteredRateOutput.roll  = outputAlpha * newRollOut  + (1.0f - outputAlpha) * filteredRateOutput.roll;
+    filteredRateOutput.pitch = outputAlpha * newPitchOut + (1.0f - outputAlpha) * filteredRateOutput.pitch;
+    filteredRateOutput.yaw   = outputAlpha * newYawOut   + (1.0f - outputAlpha) * filteredRateOutput.yaw;
 
     // Use the filtered outputs as the final command.
-    rollOut  = filteredRollOutput;
-    pitchOut = filteredPitchOutput;
-    yawOut   = filteredYawOutput;
+    actuatorOut  = filteredRateOutput;
 }
 
 // Reset all PID controllers.

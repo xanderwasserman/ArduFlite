@@ -118,7 +118,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
 
             if (controller != nullptr)
             {
-                controller->setDesiredEulerDegs(cmd.attitudeConfig.roll, cmd.attitudeConfig.pitch, cmd.attitudeConfig.yaw);
+                controller->setAttitudeSetpoint(cmd.attitudeConfig);
             }
             else
             {
@@ -138,6 +138,52 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
             else
             {
                 LOG_ERR("CMD_SET_CONFIG_RATE_ALPHA: Controller pointer not provided.");
+            }
+            break;
+        }
+
+        case CMD_RECEIVER_SETPOINT_ROLL:
+        {
+            // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
+            LOG_INF("Processing CMD_RECEIVER_SETPOINT_ROLL: roll=%.3f", cmd.attitudeConfig.roll);
+
+            if (controller != nullptr)
+            {
+                controller->setAttitudeSetpoint_roll(cmd.attitudeConfig.roll);
+            }
+            else
+            {
+                LOG_ERR("CMD_RECEIVER_SETPOINT_ROLL: Controller pointer not provided.");
+            }
+            break;
+        }
+        case CMD_RECEIVER_SETPOINT_PITCH:
+        {
+            // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
+            LOG_INF("Processing CMD_RECEIVER_SETPOINT_PITCH: pitch=%.3f", cmd.attitudeConfig.pitch);
+
+            if (controller != nullptr)
+            {
+                controller->setAttitudeSetpoint_pitch(cmd.attitudeConfig.pitch);
+            }
+            else
+            {
+                LOG_ERR("CMD_RECEIVER_SETPOINT_PITCH: Controller pointer not provided.");
+            }
+            break;
+        }
+        case CMD_RECEIVER_SETPOINT_YAW:
+        {
+            // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
+            LOG_INF("Processing CMD_RECEIVER_SETPOINT_YAW: yaw=%.3f", cmd.attitudeConfig.yaw);
+
+            if (controller != nullptr)
+            {
+                controller->setAttitudeSetpoint_yaw(cmd.attitudeConfig.yaw);
+            }
+            else
+            {
+                LOG_ERR("CMD_RECEIVER_SETPOINT_YAW: Controller pointer not provided.");
             }
             break;
         }

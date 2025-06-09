@@ -13,7 +13,7 @@
 
 void onRoll(uint8_t ch, float v) 
 {
-    SystemCommand cmd;
+    SystemCommand cmd{};
     cmd.type = CMD_RECEIVER_SETPOINT_ROLL;
     cmd.attitudeConfig.roll = v;
     CommandSystem::instance().pushCommand(cmd);
@@ -21,7 +21,7 @@ void onRoll(uint8_t ch, float v)
 
 void onPitch(uint8_t ch, float v) 
 {
-    SystemCommand cmd;
+    SystemCommand cmd{};
     cmd.type = CMD_RECEIVER_SETPOINT_PITCH;
     cmd.attitudeConfig.pitch = v;
     CommandSystem::instance().pushCommand(cmd);
@@ -29,7 +29,7 @@ void onPitch(uint8_t ch, float v)
 
 void onYaw(uint8_t ch, float v) 
 {
-    SystemCommand cmd;
+    SystemCommand cmd{};
     cmd.type = CMD_RECEIVER_SETPOINT_YAW;
     cmd.attitudeConfig.yaw = v;
     CommandSystem::instance().pushCommand(cmd);
@@ -38,7 +38,7 @@ void onYaw(uint8_t ch, float v)
 void onModeSwitch(uint8_t ch, float v) 
 {
 
-    SystemCommand cmd;
+    SystemCommand cmd{};
     cmd.type = CMD_SET_MODE;
     bool newState  = (v > 0.5f);  // v is 0.0 or 1.0, but guard anyway
 

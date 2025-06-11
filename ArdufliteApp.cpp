@@ -25,12 +25,14 @@
 #include "include/ControllerConfiguration.h"
 #include "include/ServoConfiguration.h"
 #include "include/CSRFConfiguration.h"
+#include "include/ControlMixerConfiguration.h"
 
 #include "src/actuators/ServoManager.h"
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/cli/ArduFliteCLI.h"
 #include "src/mission_planner/MissionPlanner.h"
 
+#include "src/utils/ControlMixer.h"
 #include "src/utils/HoldButton.h"
 #include "src/utils/HoldButtonManager.h"
 #include "src/utils/MultiTapButton.h"
@@ -122,6 +124,8 @@ void arduflite_init()
     while (!Serial && millis() < 2000);  // wait max 2 seconds
 
     pinMode(ButtonInputConfig::USER_BUTTON_PIN, INPUT_PULLUP);
+
+    ControlMapper::init(controller);
 
     crsfRx.begin();
     crsfTx.begin();

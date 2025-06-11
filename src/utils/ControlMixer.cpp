@@ -2,48 +2,104 @@
  * ControlMixer.cpp
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.1 | 09 June 2025
+ * Author: Alexander Wasserman | Version: 1.1 | 11 June 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "src/utils/ControlMixer.h"
+#include "src/utils/Logging.h"
 
-ControlMixer::ControlMixer()
-  : currentMode_(ASSIST_MODE)
-  , raw_{0.0f,0.0f,0.0f}
-  , maxAttDeg_(45.0f)
-  , maxRateDeg_(180.0f)
-#ifdef ENABLE_SAFE_MIXING
-  , mixYtoR_(0.5f)
-  , mixPtoR_(0.5f)
-#endif
-#ifdef ENABLE_SINGLE_AXIS_CONTROL
-  , axisEn_{ true, true, true }
-#endif
-{}
+// statics
+EulerAngles          ControlMixer::s_raw{};
+ArduFliteController* ControlMixer::s_ctrl = nullptr;
 
-void ControlMixer::begin(float maxAtt, float maxRate) {
-    maxAttDeg_  = maxAtt;
-    maxRateDeg_ = maxRate;
+void ControlMixer::init(ArduFliteController& ctrl) 
+{
+    s_ctrl = &ctrl;
 }
 
-void ControlMixer::setMode(ArduFliteMode m) {
-    currentMode_ = m;
-}
+void ControlMixer::handleChannelInput(uint8_t ch, float v) 
+{
+    if (!s_ctrl) 
+    {
+        LOG_ERR("ControlMixer: not initialized!");
+        return;
+    }
 
-void ControlMixer::setRawRoll(float v) {
-    raw_[0] = constrain(v, -1.0f, 1.0f);
-    computeAndPush_();
-}
+    // ——— optional single-axis tuning ———
+  #ifdef ENABLE_SINGLE_AXIS_TUNING
+    if (ch != TUNED_AXIS_CH) return;
+  #endif
 
-void ControlMixer::setRawPitch(float v) {
-    raw_[1] = constrain(v, -1.0f, 1.0f);
-    computeAndPush_();
-}
+    // update raw value
+    switch (ch) 
+    {
+      case CH_ROLL:
+        s_raw.roll  = v; 
+        break;
+      case CH_PITCH:
+        s_raw.pitch = v; 
+        break;
+      case CH_YAW:
+        s_raw.yaw   = v; 
+        break;
+      default: 
+        return;
+    }
 
-void ControlMixer::setRawYaw(float v) {
-    raw_[2] = constrain(v, -1.0f, 1.0f);
-    computeAndPush_();
-}
+    // grab mode
+    auto mode = s_ctrl->getMode();
+    EulerAngles sp{0.0f, 0.0f, 0.0f};
 
-#ifdef ENABLE_SAFE_MIXING
+  #ifdef ENABLE_CONTROL_MAPPING
+    if (mode == ATTITUDE_MODE) 
+    {
+        // — scale into absolute angles —
+        sp.roll  = s_raw.roll  * MAX_ATT_ROLL;
+        sp.pitch = s_raw.pitch * MAX_ATT_PITCH;
+        sp.yaw   = s_raw.yaw   * MAX_ATT_YAW;
+
+        #ifdef ENABLE_MIXING // SAFE-style mixing
+          
+          // roll ← yaw
+          sp.roll  += MIX_ATT_ROLL_FROM_YAW * (s_raw.yaw  * MAX_ATT_ROLL);
+
+          // pitch ← roll
+          sp.pitch += MIX_ATT_PITCH_FROM_ROLL * (s_raw.roll  * MAX_ATT_PITCH);
+
+          // yaw ← roll
+          sp.yaw   += MIX_ATT_YAW_FROM_ROLL  *  (s_raw.roll   * MAX_ATT_YAW);
+        #endif
+
+        sp.roll  = constrain(sp.roll,  -MAX_ATT_ROLL,  MAX_ATT_ROLL);
+        sp.pitch = constrain(sp.pitch, -MAX_ATT_PITCH, MAX_ATT_PITCH);
+        sp.yaw   = constrain(sp.yaw,   -MAX_ATT_YAW,   MAX_ATT_YAW);
+
+        // send one attitude-setpoint command
+        SystemCommand cmd{};
+        cmd.type            = CMD_SET_CONFIG_ATTITUDE;
+        cmd.attitudeConfig  = sp;
+        CommandSystem::instance().pushCommand(cmd);
+
+    } 
+    else 
+    {
+        // — RATE_MODE (and others) —
+        sp.roll  = s_raw.roll  * MAX_RATE_ROLL;
+        sp.pitch = s_raw.pitch * MAX_RATE_PITCH;
+        sp.yaw   = s_raw.yaw   * MAX_RATE_YAW;
+
+        // send one attitude-setpoint command
+        SystemCommand cmd{};
+        cmd.type            = CMD_SET_CONFIG_ATTITUDE;
+        cmd.attitudeConfig  = sp;
+        CommandSystem::instance().pushCommand(cmd);
+    }
+  #else
+    // — no mapping: forward raw as rate setpoints —
+    SystemCommand cmd{};
+    cmd.type            = CMD_SET_CONFIG_ATTITUDE;
+    cmd.attitudeConfig  = s_raw;
+    CommandSystem::instance().pushCommand(cmd);
+  #endif
+}

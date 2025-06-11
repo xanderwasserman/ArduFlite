@@ -13,26 +13,17 @@
 
 void onRoll(uint8_t ch, float v) 
 {
-    SystemCommand cmd{};
-    cmd.type = CMD_RECEIVER_SETPOINT_ROLL;
-    cmd.attitudeConfig.roll = v;
-    CommandSystem::instance().pushCommand(cmd);
+    ControlMapper::handleChannelInput(ch, v);
 }
 
 void onPitch(uint8_t ch, float v) 
 {
-    SystemCommand cmd{};
-    cmd.type = CMD_RECEIVER_SETPOINT_PITCH;
-    cmd.attitudeConfig.pitch = v;
-    CommandSystem::instance().pushCommand(cmd);
+    ControlMapper::handleChannelInput(ch, v);
 }
 
 void onYaw(uint8_t ch, float v) 
 {
-    SystemCommand cmd{};
-    cmd.type = CMD_RECEIVER_SETPOINT_YAW;
-    cmd.attitudeConfig.yaw = v;
-    CommandSystem::instance().pushCommand(cmd);
+    ControlMapper::handleChannelInput(ch, v);
 }
 
 void onModeSwitch(uint8_t ch, float v) 

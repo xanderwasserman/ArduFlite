@@ -9,6 +9,10 @@
 #ifndef ARDUFLITE_CSRF_CALLBACKS_H
 #define ARDUFLITE_CSRF_CALLBACKS_H
 
+#include "src/controller/ArduFliteController.h"
+#include "src/utils/CommandSystem.h"
+#include "src/utils/ControlMixer.h"
+
 #include <Arduino.h>
 
 void onRoll(uint8_t ch, float v);

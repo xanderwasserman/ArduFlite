@@ -7,8 +7,6 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "src/receiver/crsf/ArdufliteCRSFCallbacks.h"
-#include "src/controller/ArduFliteController.h"
-#include "src/utils/CommandSystem.h"
 #include "src/utils/Logging.h"
 
 void onRoll(uint8_t ch, float v) 

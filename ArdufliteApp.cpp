@@ -125,7 +125,7 @@ void arduflite_init()
 
     pinMode(ButtonInputConfig::USER_BUTTON_PIN, INPUT_PULLUP);
 
-    ControlMapper::init(controller);
+    ControlMixer::init(controller);
 
     crsfRx.begin();
     crsfTx.begin();

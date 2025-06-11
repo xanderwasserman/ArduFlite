@@ -13,17 +13,17 @@
 
 void onRoll(uint8_t ch, float v) 
 {
-    ControlMapper::handleChannelInput(ch, v);
+    ControlMixer::handleChannelInput(ch, v);
 }
 
 void onPitch(uint8_t ch, float v) 
 {
-    ControlMapper::handleChannelInput(ch, v);
+    ControlMixer::handleChannelInput(ch, v);
 }
 
 void onYaw(uint8_t ch, float v) 
 {
-    ControlMapper::handleChannelInput(ch, v);
+    ControlMixer::handleChannelInput(ch, v);
 }
 
 void onModeSwitch(uint8_t ch, float v) 

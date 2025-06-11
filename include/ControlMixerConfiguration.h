@@ -6,7 +6,7 @@
  *
  * Licensed under the MIT License. See LICENSE file for details.
  *
- * @brief Compile-time options & limits for ControlMapper.
+ * @brief Compile-time options & limits for ControlMixer.
  */
 #ifndef CONTROL_MIXER_CONFIG_H
 #define CONTROL_MIXER_CONFIG_H

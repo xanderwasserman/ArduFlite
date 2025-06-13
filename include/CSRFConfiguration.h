@@ -60,8 +60,8 @@ namespace CRSFConfig
         }},
         */
 
-        // ch 6–15 = leave as Raw (0…2047) with no callback:
-        {},{},{},{},{},{},{},{},{},{}
+        // ch 9–15 = leave as Raw (0…2047) with no callback:
+        {},{},{},{},{},{},{},{},{}
     };
 } 
 

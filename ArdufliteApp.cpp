@@ -31,6 +31,7 @@
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/cli/ArduFliteCLI.h"
 #include "src/mission_planner/MissionPlanner.h"
+#include "src/state/StateManagement.h"
 
 #include "src/utils/ControlMixer.h"
 #include "src/utils/HoldButton.h"
@@ -39,6 +40,7 @@
 #include "src/utils/MultiTapButtonManager.h"
 #include "src/utils/CommandSystem.h"
 #include "src/utils/StatusLED.h"
+#include "src/utils/ButtonCallbacks.h"
 #include "src/utils/Logging.h"
 
 #include "src/controller/ArduFliteAttitudeController.h"
@@ -127,14 +129,6 @@ void arduflite_init()
 
     ControlMixer::init(controller);
 
-    crsfRx.begin();
-    crsfTx.begin();
-
-    // configure every channel in one loop
-    for (uint8_t ch = 0; ch < 16; ++ch) {
-        crsfRx.configureChannel(ch, CRSFConfig::CRSF_CHANNEL_CONFIGS[ch]);
-    }
-
     telemetry.begin();
     flashTelemetry.begin();
     // debugTelemetry.begin();
@@ -187,6 +181,14 @@ void arduflite_init()
     MultiTapButtonManager::registerButton(modeButton);
     LOG_INF("  2x tap - toggle ArduFlite Mode.");
 
+    crsfRx.begin();
+    crsfTx.begin();
+
+    // configure every channel in one loop
+    for (uint8_t ch = 0; ch < 16; ++ch) {
+        crsfRx.configureChannel(ch, CRSFConfig::CRSF_CHANNEL_CONFIGS[ch]);
+    }
+
     LOG_INF("ArduFlite Controller initialised.");
 }
 
@@ -199,76 +201,8 @@ void arduflite_loop()
     HoldButtonManager::updateAll();
     MultiTapButtonManager::updateAll();
 
-    // Retrieve the current flight state from the IMU.
-    static ArduFliteMode lastMode = UNKNOWN_MODE;
-    ArduFliteMode currentMode = controller.getMode();
-
-    if (currentMode != lastMode) 
-    {
-        switch (currentMode) 
-        {
-            case ATTITUDE_MODE:
-                #if BOARD_TYPE == BOARD_TYPE_WEMOS
-                statusLED.setPattern(Patterns::Assist);
-                #endif
-                break;
-            case RATE_MODE:
-                #if BOARD_TYPE == BOARD_TYPE_WEMOS
-                statusLED.setPattern(Patterns::Stabilized);
-                #endif
-                break;
-            default:
-                break;
-        }
-        lastMode = currentMode;
-    }
-
-    // Retrieve the current flight state from the IMU.
-    static FlightState lastState = UNKNOWN_STATE;
-    FlightState currentState = myIMU.getFlightState();
-    
-    EulerAngles preflightSetpoint {0.0f};
-
-    // Print transitions when they occur.
-    if (currentState != lastState) 
-    {
-        switch (currentState) 
-        {
-            case PREFLIGHT:
-                LOG_INF("Aircraft is in PREFLIGHT state.");
-                controller.setAttitudeSetpoint(preflightSetpoint);
-                controller.setRateSetpoint(preflightSetpoint);
-                break;
-            case INFLIGHT:
-                LOG_INF("Aircraft is in FLIGHT state.");
-                flashTelemetry.startLogging();
-                
-                if (!mission.isRunning())
-                {
-                    mission.start();
-                }
-                
-                break;
-            case LANDED:
-                LOG_INF("Aircraft has LANDED.");
-                if (mission.isRunning())
-                {
-                    mission.stop();
-                }
-
-                flashTelemetry.stopLogging();
-
-                controller.setAttitudeSetpoint(preflightSetpoint);
-                controller.setRateSetpoint(preflightSetpoint);
-                break;
-            default:
-                break;
-        }
-        lastState = currentState;
-    }
-
-    //TODO
-    // runReceiverTest_print(pilotReceiver, numReceiverChannels);
+    handleModeState();
+    handleFlightState();
         
     // Update telemetry with the latest sensor and control information.
     telemetryData.update(myIMU, controller);
@@ -279,50 +213,4 @@ void arduflite_loop()
     flashTelemetry.publish(telemetryData, configData);
 
     vTaskDelay(pdMS_TO_TICKS(1));
-}
-
-// Callback for calibrate button.
-void onCalibrateHold(void) 
-{
-#if BOARD_TYPE == BOARD_TYPE_WEMOS
-    statusLED.setPattern({0,0,255, 100,100});// fast blue blink
-#endif
-    LOG_INF("Calibrating IMU...");
-    controller.pauseTasks();     // Pause control loop tasks
-    myIMU.pauseTask();           // Pause the IMU update task
-    myIMU.selfCalibrate();       // Run calibration
-    myIMU.resumeTask();          // Resume the IMU update task
-    controller.resumeTasks();    // Resume control loop tasks
-#if BOARD_TYPE == BOARD_TYPE_WEMOS
-    statusLED.setPattern({0,255,0, 500,150});// slow green blink
-#endif
-}
-
-// Callback for telemetry reset button.
-void onModeDoubleTap(void) 
-{
-    LOG_INF("Toggling Controller Mode...");
-
-    SystemCommand cmd;
-    cmd.type = CMD_SET_MODE;
-
-    if (controller.getMode() == ATTITUDE_MODE) 
-    {
-        LOG_INF("Changing Flight Control mode to: RATE_MODE.");
-        cmd.mode = RATE_MODE;
-        CommandSystem::instance().pushCommand(cmd);
-    } 
-    else 
-    {
-        LOG_INF("Changing Flight Control mode to: ATTITUDE_MODE.");
-        cmd.mode = ATTITUDE_MODE;
-        CommandSystem::instance().pushCommand(cmd);
-    }
-}
-
-// Callback for telemetry reset button.
-void onResetTripleTap(void) 
-{
-    LOG_INF("Resetting Telemetry layer...");
-    telemetry.reset();
 }

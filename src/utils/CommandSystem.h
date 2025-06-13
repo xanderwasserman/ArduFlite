@@ -25,8 +25,10 @@ enum SystemCommandType
     CMD_RESET,
     CMD_CALIBRATE,
     CMD_SET_MODE,
+    CMD_SET_MISSION,
     CMD_SET_CONFIG_PID,
     CMD_SET_CONFIG_ATTITUDE,
+    CMD_SET_CONFIG_RATE,
     CMD_SET_CONFIG_RATE_ALPHA,
     CMD_RECEIVER_SETPOINT_ROLL,
     CMD_RECEIVER_SETPOINT_PITCH,
@@ -50,8 +52,9 @@ struct SystemCommand
     // for CMD_SET_ATTITUDE_CONFIG
     EulerAngles                     attitudeConfig;
 
-    // for CMD_SET_RATE_ALPHA
-    float                           rateAlpha;
+    // for any generic value
+    float                           value;
+    bool                            x_value;
 };
 
 /**

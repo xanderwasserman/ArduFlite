@@ -20,7 +20,7 @@
 // Channel indices (match your CRSF config)
 static constexpr uint8_t CH_ROLL  = 0;
 static constexpr uint8_t CH_PITCH = 1;
-static constexpr uint8_t CH_YAW   = 2;
+static constexpr uint8_t CH_YAW   = 3;
 
 /**
  * @class ControlMixer

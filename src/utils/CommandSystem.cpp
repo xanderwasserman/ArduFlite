@@ -7,7 +7,10 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "src/utils/CommandSystem.h"
+#include "src/mission_planner/MissionPlanner.h"
 #include "src/utils/Logging.h"
+
+extern MissionPlanner mission;
 
 CommandSystem& CommandSystem::instance() 
 {
@@ -110,15 +113,21 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
 
         case CMD_SET_CONFIG_ATTITUDE:
         {
+            
+            
             // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
-            LOG_INF("Processing CMD_SET_CONFIG_ATTITUDE: roll=%.3f, pitch=%.3f, yaw=%.3f",
-                    cmd.attitudeConfig.roll,
-                    cmd.attitudeConfig.pitch,
-                    cmd.attitudeConfig.yaw);
+            // LOG_INF("Processing CMD_SET_CONFIG_ATTITUDE: roll=%.3f, pitch=%.3f, yaw=%.3f", cmd.attitudeConfig.roll, cmd.attitudeConfig.pitch, cmd.attitudeConfig.yaw);
 
             if (controller != nullptr)
             {
-                controller->setAttitudeSetpoint(cmd.attitudeConfig);
+                if (controller->getMode() == ATTITUDE_MODE)
+                {
+                    controller->setAttitudeSetpoint(cmd.attitudeConfig);
+                }
+                else
+                {
+                    controller->setRateSetpoint(cmd.attitudeConfig);
+                }
             }
             else
             {
@@ -129,8 +138,8 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
 
         case CMD_SET_CONFIG_RATE_ALPHA:
         {
-            // cmd.rateAlpha is a single float
-            LOG_INF("Processing CMD_SET_CONFIG_RATE_ALPHA: alpha=%.3f", cmd.rateAlpha);
+            // cmd.value is a single float
+            LOG_INF("Processing CMD_SET_CONFIG_RATE_ALPHA: alpha=%.3f", cmd.value);
             if (controller != nullptr)
             {
                 LOG_ERR("Setting of Rate controller Alpha is not supported yet! Please implement me :-)"); //TODO
@@ -138,6 +147,28 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
             else
             {
                 LOG_ERR("CMD_SET_CONFIG_RATE_ALPHA: Controller pointer not provided.");
+            }
+            break;
+        }
+
+        case CMD_SET_MISSION:
+        {
+            // cmd.x_value is a bool
+            LOG_INF("Processing CMD_SET_MISSION: state=%s", cmd.x_value?"START":"STOP");
+            if (controller != nullptr)
+            {
+                if (cmd.x_value && !mission.isRunning())
+                {
+                    mission.start();
+                }
+                else if (!cmd.x_value && mission.isRunning())
+                {
+                    mission.stop();
+                }
+            }
+            else
+            {
+                LOG_ERR("CMD_SET_MISSION: Mission Planner pointer not provided.");
             }
             break;
         }

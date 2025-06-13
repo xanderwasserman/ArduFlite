@@ -11,36 +11,50 @@
 
 void onRoll(uint8_t ch, float v) 
 {
+    LOG_DBG("onRoll: %f", v);
     ControlMixer::handleChannelInput(ch, v);
 }
 
 void onPitch(uint8_t ch, float v) 
 {
+    LOG_DBG("onPitch: %f", v);
     ControlMixer::handleChannelInput(ch, v);
 }
 
 void onYaw(uint8_t ch, float v) 
 {
+    LOG_DBG("onYaw: %f", v);
     ControlMixer::handleChannelInput(ch, v);
 }
 
 void onModeSwitch(uint8_t ch, float v) 
 {
-
+    LOG_DBG("onModeSwitch: %f", v);
     SystemCommand cmd{};
     cmd.type = CMD_SET_MODE;
     bool newState  = (v > 0.5f);  // v is 0.0 or 1.0, but guard anyway
 
-    if (!newState) //rate mode when receiving false
+    if (newState) //rate mode when receiving false
     { 
-        LOG_INF("Changing Flight Control mode to: RATE_MODE.");
+        LOG_DBG("Changing Flight Control mode to: RATE_MODE.");
         cmd.mode = RATE_MODE;
         CommandSystem::instance().pushCommand(cmd);
     } 
     else 
     {
-        LOG_INF("Changing Flight Control mode to: ATTITUDE_MODE.");
+        LOG_DBG("Changing Flight Control mode to: ATTITUDE_MODE.");
         cmd.mode = ATTITUDE_MODE;
         CommandSystem::instance().pushCommand(cmd);
     }
+}
+
+void onActivateMission(uint8_t ch, float v) 
+{
+    SystemCommand cmd;
+    cmd.type = CMD_SET_MISSION;
+    bool newState  = (v > 0.5f);  // v is 0.0 or 1.0, but guard anyway
+
+    LOG_INF("Changing Mission state to: %S.", newState?"START":"STOP");
+    cmd.x_value = ATTITUDE_MODE;
+    CommandSystem::instance().pushCommand(cmd);
 }

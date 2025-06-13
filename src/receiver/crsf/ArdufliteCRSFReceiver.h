@@ -100,6 +100,9 @@ private:
 
     ChannelConfig _chCfg[16];
 
+    // Remember last raw values so we only callback on change
+    uint16_t      _lastRaw[16];
+
     // FreeRTOS entrypoint
     static void taskLoop(void* pv);
 

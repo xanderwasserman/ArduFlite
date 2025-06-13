@@ -22,19 +22,25 @@ namespace CRSFConfig
 {
     // Inline so you can #include in multiple translation units without ODR
     inline ChannelConfig CRSF_CHANNEL_CONFIGS[16] = {
-        // ch 0 = roll: bipolar stick → –1…+1
+        // ch 1 = roll: bipolar stick → –1…+1
         { .type      = ChannelType::DualThrow,
         .callback  = onRoll },
 
-        // ch 1 = pitch: bipolar stick → –1…+1
+        // ch 2 = pitch: bipolar stick → –1…+1
         { .type      = ChannelType::DualThrow,
         .callback  = onPitch },
 
-        // ch 2 = yaw: bipolar stick → 0…+1
+        {}, //throttle
+
+        // ch 3 = yaw: bipolar stick → 0…+1
         { .type      = ChannelType::DualThrow,
         .callback  = onYaw },
 
-        // ch 3 = mode switch: boolean (off/on)
+        // ch 4 = mode switch: boolean (off/on)
+        { .type      = ChannelType::Boolean,
+        .callback  = onModeSwitch },
+
+        // ch 5 = mode switch: boolean (off/on)
         { .type      = ChannelType::Boolean,
         .callback  = onModeSwitch },
 
@@ -49,8 +55,8 @@ namespace CRSFConfig
         }},
         */
 
-        // ch 4–15 = leave as Raw (0…2047) with no callback:
-        {},{},{},{},{},{},{},{},{},{},{},{}
+        // ch 6–15 = leave as Raw (0…2047) with no callback:
+        {},{},{},{},{},{},{},{},{},{}
     };
 } 
 

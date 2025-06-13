@@ -534,8 +534,8 @@ void ArduFliteMqttTelemetry::handlePidConfig(ControlLoopType loop, const JsonDoc
 void ArduFliteMqttTelemetry::handleRateAlpha(float alpha) 
 {
     SystemCommand cmd;
-    cmd.type      = CMD_SET_CONFIG_RATE_ALPHA;
-    cmd.rateAlpha = alpha;
+    cmd.type    = CMD_SET_CONFIG_RATE_ALPHA;
+    cmd.value   = alpha;
 
     pushSystemCommand(cmd);
 }

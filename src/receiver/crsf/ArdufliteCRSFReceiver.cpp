@@ -10,6 +10,7 @@
  */
 
 #include "src/receiver/crsf/ArdufliteCRSFReceiver.h"
+#include "src/utils/Logging.h"
 
 ArdufliteCRSFReceiver::ArdufliteCRSFReceiver(HardwareSerial& ser, int rxPin, float freqHz)
   : _serial(ser)
@@ -17,18 +18,26 @@ ArdufliteCRSFReceiver::ArdufliteCRSFReceiver(HardwareSerial& ser, int rxPin, flo
   , _intervalMs(1000.0f/freqHz)
 {
     _lock = xSemaphoreCreateMutex();
+    // initialize lastRaw to invalid so first reading always fires
+    for (uint8_t i = 0; i < 16; ++i) {
+        _lastRaw[i] = 0xFFFF;
+    }
 }
 
-ArdufliteCRSFReceiver::~ArdufliteCRSFReceiver() {
-    if (_taskHandle) {
+ArdufliteCRSFReceiver::~ArdufliteCRSFReceiver() 
+{
+    if (_taskHandle) 
+    {
         vTaskDelete(_taskHandle);
     }
-    if (_lock) {
+    if (_lock) 
+    {
         vSemaphoreDelete(_lock);
     }
 }
 
-void ArdufliteCRSFReceiver::begin() {
+void ArdufliteCRSFReceiver::begin() 
+{
     // 420 000 baud, 8N1, RX only
     _serial.begin(420000, SERIAL_8N1, _rxPin, -1);
     if (_taskHandle) return;
@@ -41,32 +50,40 @@ void ArdufliteCRSFReceiver::begin() {
         tskIDLE_PRIORITY+1,
         &_taskHandle
     );
-    if (res != pdPASS) {
-        // handle error…
+    if (res != pdPASS) 
+    {
+        LOG_ERR("Failed to create CRSFRecv Task!");
     }
 }
 
-void ArdufliteCRSFReceiver::configureChannel(uint8_t idx, const ChannelConfig& cfg) {
+void ArdufliteCRSFReceiver::configureChannel(uint8_t idx, const ChannelConfig& cfg) 
+{
+    LOG_INF("Configured channel: %u", idx);
     xSemaphoreTake(_lock, portMAX_DELAY);
     if (idx < 16) _chCfg[idx] = cfg;
     xSemaphoreGive(_lock);
 }
 
-void ArdufliteCRSFReceiver::taskLoop(void* pv) {
+void ArdufliteCRSFReceiver::taskLoop(void* pv) 
+{
     auto* self = static_cast<ArdufliteCRSFReceiver*>(pv);
     self->run();
 }
 
-void ArdufliteCRSFReceiver::run() {
-    while (true) {
-        while (_serial.available()) {
+void ArdufliteCRSFReceiver::run() 
+{
+    while (true) 
+    {
+        while (_serial.available()) 
+        {
             parseByte((uint8_t)_serial.read());
         }
         vTaskDelay(pdMS_TO_TICKS(_intervalMs));
     }
 }
 
-uint8_t ArdufliteCRSFReceiver::crc8(const uint8_t* data, uint8_t len) {
+uint8_t ArdufliteCRSFReceiver::crc8(const uint8_t* data, uint8_t len) 
+{
     uint8_t crc = 0;
     while (len--) {
         crc ^= *data++;
@@ -77,41 +94,55 @@ uint8_t ArdufliteCRSFReceiver::crc8(const uint8_t* data, uint8_t len) {
     return crc;
 }
 
-void ArdufliteCRSFReceiver::parseByte(uint8_t b) {
-    if (_bufLen == 0) {
+void ArdufliteCRSFReceiver::parseByte(uint8_t b) 
+{
+    LOG_DBG("Received: %u", b);
+    if (_bufLen == 0) 
+    {
         if (b != DestFC) return;
         _buf[0] = b; 
         _bufLen = 1;
         return;
     }
     _buf[_bufLen++] = b;
-    if (_bufLen == 2) {
+    if (_bufLen == 2) 
+    {
         _expectedLen = b + 2;
         if (_expectedLen > MaxFrame) _bufLen = 0;
         return;
     }
+
     if (_bufLen < _expectedLen) return;
+
     // full frame
     uint8_t type = _buf[2];
     uint8_t crcR = _buf[_expectedLen-1];
-    if (crc8(_buf+2, _expectedLen-3) == crcR) {
+
+    if (crc8(_buf+2, _expectedLen-3) == crcR) 
+    {
         dispatchFrame(_buf, _expectedLen);
     }
     _bufLen = 0;
 }
 
-void ArdufliteCRSFReceiver::dispatchFrame(const uint8_t* frame, size_t len) {
+void ArdufliteCRSFReceiver::dispatchFrame(const uint8_t* frame, size_t len) 
+{
     if (frame[2] != TypeRC) return;
     xSemaphoreTake(_lock, portMAX_DELAY);
     handleRC(frame+3, len-4);
     xSemaphoreGive(_lock);
 }
 
-void ArdufliteCRSFReceiver::handleRC(const uint8_t* payload, size_t) {
+void ArdufliteCRSFReceiver::handleRC(const uint8_t* payload, size_t) 
+{
     uint16_t raw[16];
     decodeChannels(payload, raw);
-    for (uint8_t ch = 0; ch < 16; ++ch) {
-        if (_chCfg[ch].callback) {
+    for (uint8_t ch = 0; ch < 16; ++ch) 
+    {
+        // only fire when the raw value changed
+        if (_chCfg[ch].callback && raw[ch] != _lastRaw[ch]) 
+        {
+            _lastRaw[ch] = raw[ch];
             float v = applyMapping(_chCfg[ch], raw[ch]);
             _chCfg[ch].callback(ch, v);
         }
@@ -119,7 +150,8 @@ void ArdufliteCRSFReceiver::handleRC(const uint8_t* payload, size_t) {
 }
 
 void ArdufliteCRSFReceiver::decodeChannels(const uint8_t* p, uint16_t out[16]) {
-    for (uint8_t i = 0; i < 16; ++i) {
+    for (uint8_t i = 0; i < 16; ++i) 
+    {
         uint32_t bit = i*11;
         uint32_t byte = bit/8;
         uint32_t off = bit%8;
@@ -130,8 +162,10 @@ void ArdufliteCRSFReceiver::decodeChannels(const uint8_t* p, uint16_t out[16]) {
     }
 }
 
-float ArdufliteCRSFReceiver::applyMapping(const ChannelConfig& c, uint16_t r) {
-    switch (c.type) {
+float ArdufliteCRSFReceiver::applyMapping(const ChannelConfig& c, uint16_t r) 
+{
+    switch (c.type) 
+    {
         case ChannelType::Raw:
             return (float)r;
         case ChannelType::DualThrow:
@@ -140,7 +174,8 @@ float ArdufliteCRSFReceiver::applyMapping(const ChannelConfig& c, uint16_t r) {
             return (float)r/2047.0f;
         case ChannelType::Boolean:
             return r > 1024 ? 1.0f : 0.0f;
-        case ChannelType::TriState: {
+        case ChannelType::TriState: 
+        {
             float n = (float)r/2047.0f;
             if (n < c.thrLow)   return -1.0f;
             if (n > c.thrHigh)  return +1.0f;

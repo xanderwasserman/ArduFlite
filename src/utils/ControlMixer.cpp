@@ -65,7 +65,7 @@ void ControlMixer::handleChannelInput(uint8_t ch, float v)
           sp.roll  += MIX_ATT_ROLL_FROM_YAW * (s_raw.yaw  * MAX_ATT_ROLL);
 
           // pitch ← roll
-          sp.pitch += MIX_ATT_PITCH_FROM_ROLL * (s_raw.roll  * MAX_ATT_PITCH);
+          sp.pitch += MIX_ATT_PITCH_FROM_ROLL * ( fabsf(s_raw.roll) * MAX_ATT_PITCH );
 
           // yaw ← roll
           sp.yaw   += MIX_ATT_YAW_FROM_ROLL  *  (s_raw.roll   * MAX_ATT_YAW);

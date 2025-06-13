@@ -23,9 +23,9 @@ constexpr float MAX_ATT_PITCH =  45.0f;  ///< ± pitch angle
 constexpr float MAX_ATT_YAW   = 180.0f;  ///< ± yaw heading offset
 
 // ——— Rate limits (°/s) ———
-constexpr float MAX_RATE_ROLL  = 180.0f; ///< ± roll rate in RATE_MODE
-constexpr float MAX_RATE_PITCH = 180.0f; ///< ± pitch rate
-constexpr float MAX_RATE_YAW   = 360.0f; ///< ± yaw rate
+constexpr float MAX_RATE_ROLL  = 90.0f; ///< ± roll rate in RATE_MODE
+constexpr float MAX_RATE_PITCH = 60.0f; ///< ± pitch rate
+constexpr float MAX_RATE_YAW   = 60.0f; ///< ± yaw rate
 
 // ——— Mixing coefficients ———
 constexpr float MIX_ATT_ROLL_FROM_YAW   = 0.00f; ///< yaw→roll 

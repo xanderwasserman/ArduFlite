@@ -6,151 +6,135 @@ import serial
 import serial.tools.list_ports
 import time
 import sys
+import re
+from pathlib import Path
 
 def find_candidate_ports():
-    """
-    Return a list of serial ports that look like ESP32/USB-serial adapters.
-    - Windows: COMx
-    - macOS: /dev/cu.* or /dev/tty.*
-    - Linux: /dev/ttyUSB* or /dev/ttyACM* or description containing "usbser"
-    """
     ports = serial.tools.list_ports.comports()
-    candidates = []
-
+    cands = []
     for p in ports:
         dev = p.device.lower()
         desc = p.description.lower()
-
         if sys.platform.startswith("win"):
             if dev.startswith("com"):
-                candidates.append(p.device)
+                cands.append(p.device)
         elif sys.platform.startswith("darwin"):
             if dev.startswith("/dev/cu.") or dev.startswith("/dev/tty."):
-                candidates.append(p.device)
+                cands.append(p.device)
         else:
             if dev.startswith("/dev/ttyusb") or dev.startswith("/dev/ttyacm") or "usbser" in desc:
-                candidates.append(p.device)
-
-    # Remove duplicates while preserving order
-    seen = set()
-    unique = []
-    for c in candidates:
+                cands.append(p.device)
+    # dedupe
+    seen = set(); unique = []
+    for c in cands:
         if c not in seen:
-            unique.append(c)
-            seen.add(c)
-
+            unique.append(c); seen.add(c)
     return unique
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Dump ArduFlite flash log over serial into a CSV file"
-    )
-    parser.add_argument(
-        "-p", "--port",
-        help="Serial port (e.g. COM3, /dev/cu.SLAB_USBtoUART). If omitted, tries to autodetect."
-    )
-    parser.add_argument(
-        "-b", "--baud",
-        type=int, default=115200,
-        help="Baud rate (default: 115200)"
-    )
-    parser.add_argument(
-        "-i", "--index",
-        type=int, default=0,
-        help="Log index to dump (default: 0)"
-    )
-    parser.add_argument(
-        "-o", "--output",
-        default=None,
-        help="Output CSV filename (default: log_XXX.csv)"
-    )
-    args = parser.parse_args()
-
-    # 1) Determine serial port
-    port = args.port
-    if not port:
-        candidates = find_candidate_ports()
-        if len(candidates) == 1:
-            port = candidates[0]
-            print(f"→ Autodetected port: {port}")
-        elif len(candidates) == 0:
-            print("→ No ESP32-like serial ports found.")
-            print("Available ports:")
-            for p in serial.tools.list_ports.comports():
-                print(f"  {p.device} ({p.description})")
-            print("Please specify a port with -p <port>.")
-            sys.exit(1)
-        else:
-            print("→ Multiple candidate ports found:")
-            for idx, dev in enumerate(candidates):
-                print(f"  [{idx}] {dev}")
-            choice = input("Enter the index of the port you want to use: ").strip()
-            if not choice.isdigit():
-                print("Invalid input; exiting.")
-                sys.exit(1)
-            idx = int(choice)
-            if idx < 0 or idx >= len(candidates):
-                print("Index out of range; exiting.")
-                sys.exit(1)
-            port = candidates[idx]
-            print(f"→ Using port: {port}")
-
-    # 2) Prepare output filename
-    if args.output is None:
-        args.output = f"log_{args.index:03d}.csv"
-
-    # 3) Open serial port without causing auto-reset on close
-    try:
-        ser = serial.Serial()
-        ser.port     = port
-        ser.baudrate = args.baud
-        ser.timeout  = 1
-        ser.dsrdtr   = False  # disable DSR/DTR handshake
-        ser.rtscts   = False  # disable RTS/CTS handshake
-
-        # Force DTR low *before* opening to avoid reset
-        ser.dtr = False
-        ser.rts = False
-
-        ser.open()
-    except serial.SerialException as e:
-        print(f"Error opening serial port {port}: {e}")
-        sys.exit(1)
-
-    # 4) Give the ESP32 a moment to reset and settle
-    time.sleep(2)
+def list_logs(ser):
+    """Send 'flash list' and return a list of indices (ints) found."""
     ser.reset_input_buffer()
+    ser.write(b"flash list\n")
+    pattern = re.compile(r"^log_(\d{3})\.csv$")
+    found = []
+    t0 = time.time()
+    while time.time() - t0 < 5:
+        line = ser.readline().decode("utf-8", "ignore").strip()
+        if not line:
+            continue
+        m = pattern.match(line)
+        if m:
+            found.append(int(m.group(1)))
+        elif found:
+            # once we've started seeing logs, any non-log line ends the list
+            break
+    return sorted(set(found))
 
-    # 5) Send the dump command
-    cmd = f"flash dump {args.index}\n"
-    ser.write(cmd.encode("utf-8"))
-
+def dump_one(ser, idx, out_dir):
+    """Dump a single log index to out_dir/log_###.csv"""
+    out_path = Path(out_dir) / f"log_{idx:03d}.csv"
+    ser.reset_input_buffer()
+    ser.write(f"flash dump {idx}\n".encode())
     recording = False
-    with open(args.output, "w", newline="") as fout:
-        print(f"→ Listening for log #{args.index}, writing to {args.output} …")
-        while True:
-            line = ser.readline()
-            if not line:
-                # timeout without data
-                continue
-            text = line.decode("utf-8", errors="ignore").rstrip("\r\n")
 
-            # 6a) Look for the BEGIN marker
+    with open(out_path, "w", newline="") as fout:
+        print(f"→ Dumping log {idx:03d} → {out_path}")
+        while True:
+            raw = ser.readline()
+            if not raw:
+                continue
+            text = raw.decode("utf-8", "ignore").rstrip("\r\n")
             if not recording:
                 if text.startswith("--- BEGIN"):
                     recording = True
                 continue
-
-            # 6b) Look for the END marker
             if text.startswith("--- END"):
-                print("→ End of log reached.")
                 break
-
-            # 6c) Otherwise, write this CSV row
             fout.write(text + "\n")
 
-    ser.close()
-    print("→ Done.")
+def open_port(port, baud):
+    ser = serial.Serial()
+    ser.port     = port
+    ser.baudrate = baud
+    ser.timeout  = 1
+    ser.dsrdtr   = False
+    ser.rtscts   = False
+    # try to suppress resets
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    time.sleep(2)
+    ser.reset_input_buffer()
+    return ser
 
-if __name__ == "__main__":
+def main():
+    p = argparse.ArgumentParser(description="Dump ArduFlite flash log(s) to CSV")
+    p.add_argument("-p","--port", help="Serial port; if omitted, will try to autodetect")
+    p.add_argument("-b","--baud", type=int, default=115200, help="Baud rate (default 115200)")
+    p.add_argument("-i","--index", type=int, help="Single log index to dump (e.g. 0).")
+    p.add_argument("-o","--output", default=".", help="Output directory (default: current).")
+    p.add_argument("--all", action="store_true", help="Dump *all* logs returned by `flash list`")
+    args = p.parse_args()
+
+    # pick port
+    port = args.port
+    if not port:
+        cands = find_candidate_ports()
+        if len(cands)==1:
+            port = cands[0]; print(f"→ Autodetected port: {port}")
+        elif not cands:
+            print("No serial ports found. Use -p to specify one."); sys.exit(1)
+        else:
+            print("Multiple ports found:")
+            for i,dev in enumerate(cands): print(f"  [{i}] {dev}")
+            sel = input("Choose index: ").strip()
+            if not sel.isdigit() or int(sel) not in range(len(cands)):
+                print("Invalid selection"); sys.exit(1)
+            port = cands[int(sel)]
+
+    out_dir = args.output
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+    try:
+        ser = open_port(port, args.baud)
+    except Exception as e:
+        print("Failed to open port:", e); sys.exit(1)
+
+    indices = []
+    if args.all:
+        indices = list_logs(ser)
+        if not indices:
+            print("No logs to dump."); sys.exit(0)
+    else:
+        if args.index is None:
+            print("Specify either --index or --all"); sys.exit(1)
+        indices = [args.index]
+
+    for idx in indices:
+        dump_one(ser, idx, out_dir)
+
+    ser.close()
+    print("→ All done.")
+
+if __name__=="__main__":
     main()

@@ -54,7 +54,18 @@ void onActivateMission(uint8_t ch, float v)
     cmd.type = CMD_SET_MISSION;
     bool newState  = (v > 0.5f);  // v is 0.0 or 1.0, but guard anyway
 
-    LOG_INF("Changing Mission state to: %S.", newState?"START":"STOP");
-    cmd.x_value = ATTITUDE_MODE;
+    LOG_INF("Changing Mission state to: %s.", newState?"START":"STOP");
+    cmd.x_value = newState;
+    CommandSystem::instance().pushCommand(cmd);
+}
+
+void onArm(uint8_t ch, float v) 
+{
+    SystemCommand cmd;
+    cmd.type = CMD_SET_ARM;
+    bool newState  = (v > 0.5f);  // v is 0.0 or 1.0, but guard anyway
+
+    LOG_INF("Controller ARMED: %s.", newState?"YES":"NO");
+    cmd.x_value = newState;
     CommandSystem::instance().pushCommand(cmd);
 }

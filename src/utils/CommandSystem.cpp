@@ -155,20 +155,37 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
         {
             // cmd.x_value is a bool
             LOG_INF("Processing CMD_SET_MISSION: state=%s", cmd.x_value?"START":"STOP");
+            
+            if (cmd.x_value && !mission.isRunning())
+            {
+                mission.start();
+            }
+            else if (!cmd.x_value && mission.isRunning())
+            {
+                mission.stop();
+            }
+            break;
+        }
+
+        case CMD_SET_ARM:
+        {
+            // cmd.x_value is a bool
+            LOG_INF("Processing CMD_SET_ARM: state=%s", cmd.x_value?"YES":"NO");
             if (controller != nullptr)
             {
-                if (cmd.x_value && !mission.isRunning())
+                if (cmd.x_value)
                 {
-                    mission.start();
+                    controller->resumeTasks();
                 }
-                else if (!cmd.x_value && mission.isRunning())
+                else
                 {
-                    mission.stop();
+                    controller->pauseTasks();
                 }
+                
             }
             else
             {
-                LOG_ERR("CMD_SET_MISSION: Mission Planner pointer not provided.");
+                LOG_ERR("CMD_SET_ARM: Controller pointer not provided.");
             }
             break;
         }

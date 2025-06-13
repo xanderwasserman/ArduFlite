@@ -30,19 +30,24 @@ namespace CRSFConfig
         { .type      = ChannelType::DualThrow,
         .callback  = onPitch },
 
-        {}, //throttle
+        //ch 3 = throttle
+        {}, 
 
-        // ch 3 = yaw: bipolar stick → 0…+1
-        { .type      = ChannelType::DualThrow,
-        .callback  = onYaw },
-
-        // ch 4 = mode switch: boolean (off/on)
-        { .type      = ChannelType::Boolean,
-        .callback  = onModeSwitch },
+        // ch 4 = yaw: bipolar stick → 0…+1
+        { .type     = ChannelType::DualThrow,
+        .callback   = onYaw },
 
         // ch 5 = mode switch: boolean (off/on)
-        { .type      = ChannelType::Boolean,
-        .callback  = onModeSwitch },
+        { .type     = ChannelType::Boolean,
+        .callback   = onModeSwitch },
+
+        // ch 6 = mode switch: boolean (off/on)
+        { .type     = ChannelType::Boolean,
+        .callback   = onActivateMission },
+
+        // ch 7 = mission switch: boolean (off/on)
+        { .type     = ChannelType::Boolean,
+        .callback   = onArm },
 
         /*
         // ch 4 = flight-mode switch: tri-state (–1,0,+1)

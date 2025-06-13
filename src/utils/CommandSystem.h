@@ -24,6 +24,7 @@ enum SystemCommandType
     CMD_NONE = 0,
     CMD_RESET,
     CMD_CALIBRATE,
+    CMD_SET_ARM,
     CMD_SET_MODE,
     CMD_SET_MISSION,
     CMD_SET_CONFIG_PID,

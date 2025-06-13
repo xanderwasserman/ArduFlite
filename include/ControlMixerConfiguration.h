@@ -30,6 +30,6 @@ constexpr float MAX_RATE_YAW   = 60.0f; ///< ± yaw rate
 // ——— Mixing coefficients ———
 constexpr float MIX_ATT_ROLL_FROM_YAW   = 0.00f; ///< yaw→roll 
 constexpr float MIX_ATT_PITCH_FROM_ROLL = 0.05f; ///< roll→pitch
-constexpr float MIX_ATT_YAW_FROM_ROLL   = 0.20f; ///< roll→yaw
+constexpr float MIX_ATT_YAW_FROM_ROLL   = 0.10f; ///< roll→yaw
 
 #endif // CONTROL_MIXER_CONFIG_H

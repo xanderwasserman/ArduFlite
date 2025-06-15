@@ -123,69 +123,28 @@ void ArduFliteController::setAttitudeSetpoint(EulerAngles setpointDeg)
 }
 
 /**
- * @brief Sets the desired roll attitude (in Euler angles, degrees) for Assist mode.
+ * @brief Sets the desired attitude for a specified axis (in Euler angles, degrees) for ATTITUDE_MODE.
  * 
- * In Assist mode, the attitude controller will use this values to compute the
+ * In ATTITUDE_MODE mode, the attitude controller will use this values to compute the
  * desired angular roll rate.
  *
- * @param rollSetpointDeg Roll attitude setpoint in degrees.
+ * @param axis The axis to set the setpoint for (0=roll, 1=pitch, 2=yaw)
+ * @param value Roll attitude setpoint in degrees.
  */
-void ArduFliteController::setAttitudeSetpoint_roll(float rollSetpointDeg) 
+void setAttitudeSetpointAxis(uint8_t axis, float value) 
 {
     EulerAngles localCopy;
 
     {
         SemaphoreLock lock(ctrlMutex);
-        pilotAttitudeSetpoint.roll  = rollSetpointDeg;
-        localCopy                   = pilotAttitudeSetpoint;
+        switch(axis) {
+            case 0: pilotAttitudeSetpoint.roll  = value; break;
+            case 1: pilotAttitudeSetpoint.pitch = value; break;
+            case 2: pilotAttitudeSetpoint.yaw   = value; break;
+            default: return;
+        }
     }
-
-    // Forward the request to the attitude controller.
-    attitudeCtrl->setAttitudeControlSetpoint(localCopy);
-}
-
-/**
- * @brief Sets the desired pitch attitude (in Euler angles, degrees) for Assist mode.
- * 
- * In Assist mode, the attitude controller will use this values to compute the
- * desired angular pitch rate.
- *
- * @param pitchSetpointDeg Pitch attitude setpoint in degrees.
- */
-void ArduFliteController::setAttitudeSetpoint_pitch(float pitchSetpointDeg) 
-{
-    EulerAngles localCopy;
-
-    {
-        SemaphoreLock lock(ctrlMutex);
-        pilotAttitudeSetpoint.pitch = pitchSetpointDeg;
-        localCopy                   = pilotAttitudeSetpoint;
-    }
-
-    // Forward the request to the attitude controller.
-    attitudeCtrl->setAttitudeControlSetpoint(localCopy);
-}
- 
-/**
- * @brief Sets the desired yaw attitude (in Euler angles, degrees) for Assist mode.
- * 
- * In Assist mode, the attitude controller will use this values to compute the
- * desired angular yaw rate.
- *
- * @param pitchSetpointDeg Yaw attitude setpoint in degrees.
- */
-void ArduFliteController::setAttitudeSetpoint_yaw(float yawSetpointDeg) 
-{
-    EulerAngles localCopy;
-
-    {
-        SemaphoreLock lock(ctrlMutex);
-        pilotAttitudeSetpoint.yaw   = yawSetpointDeg;
-        localCopy                   = pilotAttitudeSetpoint;
-    }
-
-    // Forward the request to the attitude controller.
-    attitudeCtrl->setAttitudeControlSetpoint(localCopy);
+  attitudeCtrl->setAttitudeControlSetpoint(pilotAttitudeSetpoint);
 }
  
 /**

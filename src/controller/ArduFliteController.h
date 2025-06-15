@@ -103,34 +103,15 @@ public:
     void setAttitudeSetpoint(EulerAngles setpointDeg);
 
     /**
-     * @brief Sets the desired roll attitude (in Euler angles, degrees) for Attitude mode.
+     * @brief Sets the desired attitude for a specified axis (in Euler angles, degrees) for ATTITUDE_MODE.
      * 
-     * In Assist mode, the attitude controller will use this values to compute the
+     * In ATTITUDE_MODE mode, the attitude controller will use this values to compute the
      * desired angular roll rate.
      *
-     * @param rollSetpointDeg Roll attitude setpoint in degrees.
+     * @param axis The axis to set the setpoint for (0=roll, 1=pitch, 2=yaw)
+     * @param value Roll attitude setpoint in degrees.
      */
-    void setAttitudeSetpoint_roll(float rollSetpointDeg);
-    
-    /**
-     * @brief Sets the desired pitch attitude (in Euler angles, degrees) for Attitude mode.
-     * 
-     * In Assist mode, the attitude controller will use this values to compute the
-     * desired angular pitch rate.
-     *
-     * @param pitchSetpointDeg Pitch attitude setpoint in degrees.
-     */
-    void setAttitudeSetpoint_pitch(float pitchSetpointDeg);
-
-    /**
-     * @brief Sets the desired yaw attitude (in Euler angles, degrees) for Attitude mode.
-     * 
-     * In Assist mode, the attitude controller will use this values to compute the
-     * desired angular yaw rate.
-     *
-     * @param pitchSetpointDeg Yaw attitude setpoint in degrees.
-     */
-    void setAttitudeSetpoint_yaw(float yawSetpointDeg);
+    void setAttitudeSetpointAxis(uint8_t axis, float value);
 
     /**
      * @brief Sets the pilot-provided rate setpoints in Rate mode.

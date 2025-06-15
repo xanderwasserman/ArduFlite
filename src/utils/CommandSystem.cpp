@@ -197,7 +197,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
 
             if (controller != nullptr)
             {
-                controller->setAttitudeSetpoint_roll(cmd.attitudeConfig.roll);
+                controller->setAttitudeSetpointAxis(0, cmd.attitudeConfig.roll);
             }
             else
             {
@@ -212,7 +212,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
 
             if (controller != nullptr)
             {
-                controller->setAttitudeSetpoint_pitch(cmd.attitudeConfig.pitch);
+                controller->setAttitudeSetpointAxis(1, cmd.attitudeConfig.pitch);
             }
             else
             {
@@ -227,7 +227,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
 
             if (controller != nullptr)
             {
-                controller->setAttitudeSetpoint_yaw(cmd.attitudeConfig.yaw);
+                controller->setAttitudeSetpointAxis(2, cmd.attitudeConfig.yaw);
             }
             else
             {

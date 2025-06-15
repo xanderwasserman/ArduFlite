@@ -23,31 +23,45 @@ namespace CRSFConfig
     // Inline so you can #include in multiple translation units without ODR
     inline ChannelConfig CRSF_CHANNEL_CONFIGS[16] = {
         // ch 1 = roll: bipolar stick → –1…+1
-        { .type      = ChannelType::DualThrow,
-        .callback  = onRoll },
+        { 
+            .type      = ChannelType::DualThrow,
+            .callback  = onRoll 
+        },
 
         // ch 2 = pitch: bipolar stick → –1…+1
-        { .type      = ChannelType::DualThrow,
-        .callback  = onPitch },
+        { 
+            .type      = ChannelType::DualThrow,
+            .callback  = onPitch 
+        },
 
         //ch 3 = throttle
         {}, 
 
         // ch 4 = yaw: bipolar stick → 0…+1
-        { .type     = ChannelType::DualThrow,
-        .callback   = onYaw },
+        { 
+            .type     = ChannelType::DualThrow,
+            .callback   = onYaw 
+        },
 
-        // ch 5 = mode switch: boolean (off/on)
-        { .type     = ChannelType::Boolean,
-        .callback   = onModeSwitch },
+        // ch 5 = ARM switch: boolean (off/on)
+        { 
+            .type     = ChannelType::Boolean,
+            .callback   = onArm 
+        },
 
-        // ch 6 = mode switch: boolean (off/on)
-        { .type     = ChannelType::Boolean,
-        .callback   = onActivateMission },
+        // ch 6 = mission switch: boolean (off/on)
+        { 
+            .type     = ChannelType::Boolean,
+            .callback   = onActivateMission 
+        },
 
-        // ch 7 = mission switch: boolean (off/on)
-        { .type     = ChannelType::Boolean,
-        .callback   = onArm },
+        // ch 7 = mode switch: boolean (off/on)
+        { 
+            .type     = ChannelType::TriState,
+            .thrLow    = 0.33f,
+            .thrHigh   = 0.66f,
+            .callback   = onModeSwitch 
+        },
 
         /*
         // ch 4 = flight-mode switch: tri-state (–1,0,+1)

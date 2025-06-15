@@ -36,8 +36,9 @@ struct LoopStats {
 enum ArduFliteMode 
 {
     ATTITUDE_MODE   = 0,     // Pilot controls the attitude setpoint.
-    RATE_MODE       = 1,     // Pilot directly controls the rate setpoints.
-    UNKNOWN_MODE    = 3,     
+    RATE_MODE,              // Pilot directly controls the rate setpoints.
+    MANUAL_MODE,            // Pilot directly controls the servos.
+    UNKNOWN_MODE,
     FLIGHT_MODE_LENGTH
 };
 
@@ -168,7 +169,7 @@ public:
     /**
      * @brief Sets the operating mode.
      *
-     * This method switches between ATTITUDE_MODE and RATE_MODE.
+     * This method switches between ATTITUDE_MODE, RATE_MODE and MANUAL_MODE.
      *
      * @param mode The mode to set.
      */

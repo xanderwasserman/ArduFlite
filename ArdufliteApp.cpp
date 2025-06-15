@@ -205,7 +205,7 @@ void arduflite_loop()
     handleFlightState();
         
     // Update telemetry with the latest sensor and control information.
-    telemetryData.update(myIMU, controller);
+    telemetryData.update(myIMU, controller, crsfRx);
     configData.update(controller);
 
     crsfTx.publish(telemetryData, configData);

@@ -2,7 +2,7 @@
  * ArduFliteController.cpp
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 08 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  *
@@ -342,8 +342,11 @@ void ArduFliteController::OuterLoopTask(void* parameters)
             xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
             controller->lastAttitudeCmd  = rateCommand;
             xSemaphoreGive(controller->ctrlMutex);
+
+            // Pass the desired angular rates to the rate controller.
+            controller->rateCtrl->setRateControlSetpoint(rateCommand);
         } 
-        else 
+        else if (currentMode == RATE_MODE)
         {
             // In Stabilized mode, use pilot-provided rate setpoints.
             rateCommand  = rateSetpoint;
@@ -351,10 +354,12 @@ void ArduFliteController::OuterLoopTask(void* parameters)
             xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
             controller->lastAttitudeCmd = rateCommand;
             xSemaphoreGive(controller->ctrlMutex); 
+
+            // Pass the desired angular rates to the rate controller.
+            controller->rateCtrl->setRateControlSetpoint(rateCommand);
         }
+        // else if MANUAL_MODE: do nothing here (we bypass both loops)
         
-        // Pass the desired angular rates to the rate controller.
-        controller->rateCtrl->setRateControlSetpoint(rateCommand);
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
@@ -397,11 +402,36 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         // Retrieve measured angular rates from the IMU.
         Vector3 gyro = controller->imu->getGyro();
         
-        // Update the rate controller (inner loop) to compute servo commands.
-        controller->rateCtrl->update(gyro, dt, actuatorCmd);
-        
-        // Write the computed servo commands (normalized to [-1, 1]).
-        controller->servoMgr->writeCommands(actuatorCmd.roll, actuatorCmd.pitch, actuatorCmd.yaw);
+        // Fetch current mode + pilot setpoints:
+        ArduFliteMode mode;
+        EulerAngles  pilot = {0,0,0};
+        xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
+          mode  = controller->mode;
+          pilot = controller->pilotRateSetpoint;
+        xSemaphoreGive(controller->ctrlMutex);
+
+        if (mode == MANUAL_MODE) 
+        {
+        // Use stick values as the “actuator command”:
+        actuatorCmd = pilot;
+
+        // and send them directly:
+        controller->servoMgr->writeCommands(
+            actuatorCmd.roll,
+            actuatorCmd.pitch,
+            actuatorCmd.yaw
+        );
+        }
+        else 
+        {
+            // Normal inner‐loop: run rate controller
+            controller->rateCtrl->update(gyro, dt, actuatorCmd);
+            controller->servoMgr->writeCommands(
+                actuatorCmd.roll,
+                actuatorCmd.pitch,
+                actuatorCmd.yaw
+            );
+        }
 
         xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
         controller->lastRateCmd  = actuatorCmd;

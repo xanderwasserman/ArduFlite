@@ -34,16 +34,22 @@ void onModeSwitch(uint8_t ch, float v)
     cmd.type = CMD_SET_MODE;
     bool newState  = (v > 0.5f);  // v is 0.0 or 1.0, but guard anyway
 
-    if (newState) //rate mode when receiving false
+    if (v == -1) // ATTITUDE_MODE
     { 
-        LOG_DBG("Changing Flight Control mode to: RATE_MODE.");
-        cmd.mode = RATE_MODE;
+        LOG_INF("Changing Flight Control mode to: ATTITUDE_MODE.");
+        cmd.mode = ATTITUDE_MODE;
         CommandSystem::instance().pushCommand(cmd);
     } 
-    else 
+    else if (v == 0) // RATE_MODE
     {
-        LOG_DBG("Changing Flight Control mode to: ATTITUDE_MODE.");
-        cmd.mode = ATTITUDE_MODE;
+        LOG_INF("Changing Flight Control mode to: RATE_MODE.");
+        cmd.mode = RATE_MODE;
+        CommandSystem::instance().pushCommand(cmd);
+    }
+    else // MANUAL_MODE (v == 1)
+    {
+        LOG_INF("Changing Flight Control mode to: MANUAL_MODE.");
+        cmd.mode = MANUAL_MODE;
         CommandSystem::instance().pushCommand(cmd);
     }
 }

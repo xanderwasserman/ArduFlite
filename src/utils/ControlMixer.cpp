@@ -82,7 +82,7 @@ void ControlMixer::handleChannelInput(uint8_t ch, float v)
         CommandSystem::instance().pushCommand(cmd);
 
     } 
-    else 
+    else if (mode == RATE_MODE) 
     {
         // — RATE_MODE (and others) —
         sp.roll  = s_raw.roll  * MAX_RATE_ROLL;
@@ -94,6 +94,19 @@ void ControlMixer::handleChannelInput(uint8_t ch, float v)
         cmd.type            = CMD_SET_CONFIG_ATTITUDE;
         cmd.attitudeConfig  = sp;
         CommandSystem::instance().pushCommand(cmd);
+    }
+    else if (mode == MANUAL_MODE) 
+    {
+      // — RATE_MODE (and others) —
+      sp.roll  = s_raw.roll;
+      sp.pitch = s_raw.pitch;
+      sp.yaw   = s_raw.yaw ;
+
+      // send one attitude-setpoint command
+      SystemCommand cmd{};
+      cmd.type            = CMD_SET_CONFIG_ATTITUDE;
+      cmd.attitudeConfig  = sp;
+      CommandSystem::instance().pushCommand(cmd);
     }
   #else
     // — no mapping: forward raw as rate setpoints —

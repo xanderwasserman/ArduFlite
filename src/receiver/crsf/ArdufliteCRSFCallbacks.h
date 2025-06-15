@@ -15,12 +15,14 @@
 
 #include <Arduino.h>
 
-void onFailsafe();
-void onRoll(uint8_t ch, float v);
-void onPitch(uint8_t ch, float v);
-void onYaw(uint8_t ch, float v);
-void onModeSwitch(uint8_t ch, float v);
-void onActivateMission(uint8_t ch, float v);
-void onArm(uint8_t ch, float v);
+namespace CRSFCallbacks {
+  void onFailsafe();
+  void onRoll(uint8_t ch, float v);
+  void onPitch(uint8_t ch, float v);
+  void onYaw(uint8_t ch, float v);
+  void onModeSwitch(uint8_t ch, float v);
+  void onActivateMission(uint8_t ch, float v);
+  void onArm(uint8_t ch, float v);
+}
 
 #endif //ARDUFLITE_CSRF_CALLBACKS_H

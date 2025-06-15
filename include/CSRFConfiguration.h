@@ -25,13 +25,13 @@ namespace CRSFConfig
         // ch 1 = roll: bipolar stick → –1…+1
         { 
             .type      = ChannelType::DualThrow,
-            .callback  = onRoll 
+            .callback  = CRSFCallbacks::onRoll 
         },
 
         // ch 2 = pitch: bipolar stick → –1…+1
         { 
             .type      = ChannelType::DualThrow,
-            .callback  = onPitch 
+            .callback  = CRSFCallbacks::onPitch 
         },
 
         //ch 3 = throttle
@@ -40,27 +40,27 @@ namespace CRSFConfig
         // ch 4 = yaw: bipolar stick → 0…+1
         { 
             .type     = ChannelType::DualThrow,
-            .callback   = onYaw 
+            .callback   = CRSFCallbacks::onYaw 
         },
 
         // ch 5 = ARM switch: boolean (off/on)
         { 
             .type     = ChannelType::Boolean,
-            .callback   = onArm 
+            .callback   = CRSFCallbacks::onArm 
         },
 
         // ch 6 = mission switch: boolean (off/on)
         { 
             .type     = ChannelType::Boolean,
-            .callback   = onActivateMission 
+            .callback   = CRSFCallbacks::onActivateMission 
         },
 
-        // ch 7 = mode switch: boolean (off/on)
+        // ch 7 = mode switch: tri-state (–1,0,+1)
         { 
             .type     = ChannelType::TriState,
             .thrLow    = 0.33f,
             .thrHigh   = 0.66f,
-            .callback   = onModeSwitch 
+            .callback   = CRSFCallbacks::onModeSwitch 
         },
 
         /*
@@ -77,6 +77,6 @@ namespace CRSFConfig
         // ch 9–15 = leave as Raw (0…2047) with no callback:
         {},{},{},{},{},{},{},{},{}
     };
-} 
+}
 
 #endif //CSRF_CONFIG_H

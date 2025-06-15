@@ -62,6 +62,12 @@ void ArdufliteCRSFReceiver::configureChannel(uint8_t idx, const ChannelConfig& c
     }
 }
 
+void ArdufliteCRSFReceiver::setFailsafeCallback(void (*cb)()) 
+{
+    SemaphoreLock lock(_lock);
+    _failsafeCb = cb;
+}
+
 bool ArdufliteCRSFReceiver::getLinkStats(crsfLinkStatistics_t& out) const
 {
     bool ok = false;
@@ -91,6 +97,25 @@ void ArdufliteCRSFReceiver::run()
         {
             parseByte((uint8_t)_serial.read());
         }
+
+        // check for RC failsafe
+        {
+            uint32_t now = micros();
+            SemaphoreLock lock(_lock);
+            if (_lastRcMicros != 0 && (now - _lastRcMicros) > _failsafeTimeoutMs * 1000u)
+            {
+                if (!_inFailsafe) 
+                {
+                    LOG_WARN("Entering RC failsafe");
+                    _inFailsafe = true;
+                }
+                if (_failsafeCb) 
+                {
+                    _failsafeCb();
+                }
+            }
+        }
+
         vTaskDelay(pdMS_TO_TICKS(_intervalMs));
     }
 }
@@ -143,6 +168,17 @@ void ArdufliteCRSFReceiver::dispatchFrame(const uint8_t* frame, size_t len)
     uint8_t type = frame[2];
     if (type == CRSF_FRAMETYPE_RC_CHANNELS_PACKED) 
     {
+        // got a real RC frame: reset failsafe timer
+        {
+            SemaphoreLock lock(_lock);
+            _lastRcMicros = micros();
+            if (_inFailsafe) 
+            {
+                LOG_INF("Exiting RC failsafe");
+                _inFailsafe = false;
+            }
+        }
+        
         {
             SemaphoreLock lock(_lock);
             handleRC(frame + 3, len - 4);

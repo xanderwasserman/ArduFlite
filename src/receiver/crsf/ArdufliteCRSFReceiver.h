@@ -122,6 +122,12 @@ public:
      */
     bool getLinkStats(crsfLinkStatistics_t& out) const;
 
+    /**
+     * @brief Register a callback to run when RC failsafe is triggered.
+     * @param cb  function to call once upon timeout (and each poll while in failsafe)
+     */
+    void setFailsafeCallback(void (*cb)());
+
 private:
     HardwareSerial&    _serial;
     int                _rxPin;
@@ -144,6 +150,12 @@ private:
     // link‐stats storage
     crsfLinkStatistics_t _latestLinkStats{};
     bool                 _haveLinkStats = false;
+
+    // failsafe
+    uint32_t    _failsafeTimeoutMs = 500;   ///< ms without RC until failsafe
+    uint32_t    _lastRcMicros     = 0;     ///< micros() of last RC frame
+    bool        _inFailsafe       = false; ///< are we currently in failsafe?
+    void      (*_failsafeCb)()     = nullptr; ///< user callback
 
     // FreeRTOS entrypoint
     static void taskLoop(void* pv);

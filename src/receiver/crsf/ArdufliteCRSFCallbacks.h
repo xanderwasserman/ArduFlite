@@ -15,6 +15,7 @@
 
 #include <Arduino.h>
 
+void onFailsafe();
 void onRoll(uint8_t ch, float v);
 void onPitch(uint8_t ch, float v);
 void onYaw(uint8_t ch, float v);

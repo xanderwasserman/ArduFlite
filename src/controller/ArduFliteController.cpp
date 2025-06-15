@@ -269,8 +269,8 @@ void ArduFliteController::arm()
     {
         SemaphoreLock lock(ctrlMutex);
         // Reset any integrators or last‐commands here if you like:
-        rateCtrl->resetIntegrator();
-        attitudeCtrl->resetIntegrator();
+        rateCtrl->reset();
+        attitudeCtrl->reset();
         armed = true;
     }
 }

@@ -217,8 +217,15 @@ void ArduFliteController::setRateSetpoint_yaw(float yawRateSetpoint)
  */
 void ArduFliteController::startTasks() 
 {
-    xTaskCreate(OuterLoopTask, "OuterLoop", 4096, this, 2, &outerTaskHandle);
-    xTaskCreate(InnerLoopTask, "InnerLoop", 4096, this, 3, &innerTaskHandle);
+    if (xTaskCreate(OuterLoopTask, "OuterLoop", 4096, this, 2, &outerTaskHandle) != pdPASS)
+    {
+        LOG_ERR("OuterLoopTask creation failed!");
+    }
+
+    if (xTaskCreate(InnerLoopTask, "InnerLoop", 4096, this, 3, &innerTaskHandle) !- pdPASS)
+    {
+        LOG_ERR("InnerLoopTask creation failed!");
+    }
 }
 
 /**

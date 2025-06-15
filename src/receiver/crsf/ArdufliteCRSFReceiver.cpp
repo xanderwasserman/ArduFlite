@@ -68,6 +68,12 @@ void ArdufliteCRSFReceiver::setFailsafeCallback(void (*cb)())
     _failsafeCb = cb;
 }
 
+void ArdufliteCRSFReceiver::setFailsafeTimeout(uint32_t timeout)
+{
+    SemaphoreLock lock(_lock);
+    _failsafeTimeoutMs = timeout;
+}
+
 bool ArdufliteCRSFReceiver::getLinkStats(crsfLinkStatistics_t& out) const
 {
     bool ok = false;

@@ -192,6 +192,22 @@ public:
     */
     void resumeTasks();
 
+    /**
+     * @brief Arm the controller: enable servo outputs.
+     *        Never suspends the loops—just gates them.
+     */
+    void arm();
+
+    /**
+     * @brief Disarm the controller: disable servo outputs immediately.
+     */
+    void disarm();
+
+    /**
+     * @brief Returns true if we’re currently armed.
+     */
+    bool isArmed() const;
+
     EulerAngles getAttitudeSetpoint() const;
     EulerAngles getRateSetpoint() const;
 
@@ -227,6 +243,8 @@ private:
     // Mutexes for thread-safe access to these stats.
     SemaphoreHandle_t outerStatsMutex;
     SemaphoreHandle_t innerStatsMutex;
+
+    bool armed = false;                                     //< true once we’ve called arm()
 
     /**
      * @brief Outer loop FreeRTOS task function.

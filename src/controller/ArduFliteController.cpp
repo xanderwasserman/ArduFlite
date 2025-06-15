@@ -287,6 +287,35 @@ void ArduFliteController::resumeTasks()
     }
     LOG_INF("Control tasks resumed.");
 }
+
+void ArduFliteController::arm() 
+{
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+      // Reset any integrators or last‐commands here if you like:
+      rateCtrl->resetIntegrator();
+      attitudeCtrl->resetIntegrator();
+      armed = true;
+    xSemaphoreGive(ctrlMutex);
+}
+
+void ArduFliteController::disarm() 
+{
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+      armed = false;
+      // Optionally send neutral servos immediately:
+      servoMgr->writeCommands(0,0,0);
+    xSemaphoreGive(ctrlMutex);
+}
+
+bool ArduFliteController::isArmed() const 
+{
+    bool a;
+    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
+      a = armed;
+    xSemaphoreGive(ctrlMutex);
+    return a;
+}
+
  
 /**
  * @brief Outer loop task.
@@ -325,7 +354,10 @@ void ArduFliteController::OuterLoopTask(void* parameters)
         xSemaphoreGive(controller->outerStatsMutex);
 
         float dt = dtMicro / 1000000.0f;
+        const float maxDt = 0.02f;  // 20 ms max dt
+
         if (dt < 1e-3f) dt = 1e-3f;
+        if (dt > maxDt) dt = maxDt;
 
         // Protect reading of the mode and pilot setpoints.
         xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
@@ -397,7 +429,10 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         xSemaphoreGive(controller->innerStatsMutex);
 
         float dt = dtMicro / 1000000.0f;
+        const float maxDt = 0.02f;  // 20 ms max dt
+
         if (dt < 1e-3f) dt = 1e-3f;
+        if (dt > maxDt) dt = maxDt;
         
         // Retrieve measured angular rates from the IMU.
         Vector3 gyro = controller->imu->getGyro();
@@ -412,25 +447,24 @@ void ArduFliteController::InnerLoopTask(void* parameters)
 
         if (mode == MANUAL_MODE) 
         {
-        // Use stick values as the “actuator command”:
-        actuatorCmd = pilot;
-
-        // and send them directly:
-        controller->servoMgr->writeCommands(
-            actuatorCmd.roll,
-            actuatorCmd.pitch,
-            actuatorCmd.yaw
-        );
-        }
+            actuatorCmd = pilot;
+        } 
         else 
         {
-            // Normal inner‐loop: run rate controller
             controller->rateCtrl->update(gyro, dt, actuatorCmd);
-            controller->servoMgr->writeCommands(
-                actuatorCmd.roll,
-                actuatorCmd.pitch,
-                actuatorCmd.yaw
-            );
+        }
+
+        // Only actually drive servos if we’re armed:
+        if (controller->armed) 
+        {
+            controller->servoMgr->writeCommands(actuatorCmd.roll,
+                                    actuatorCmd.pitch,
+                                    actuatorCmd.yaw);
+        } 
+        else 
+        {
+            // hold neutral
+            controller->servoMgr->writeCommands(0,0,0);
         }
 
         xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);

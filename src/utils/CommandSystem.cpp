@@ -175,11 +175,11 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
             {
                 if (cmd.x_value)
                 {
-                    controller->resumeTasks();
+                    controller->arm();
                 }
                 else
                 {
-                    controller->pauseTasks();
+                    controller->disarm();
                 }
                 
             }

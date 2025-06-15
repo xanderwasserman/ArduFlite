@@ -16,6 +16,7 @@
  */
  #include "src/controller/ArduFliteAttitudeController.h"
 #include "src/utils/Logging.h"
+#include "include/ArduFlite.h"
 
  #include <math.h>
  #include <Arduino.h>
@@ -51,9 +52,10 @@
   */
  void ArduFliteAttitudeController::setAttitudeControlSetpointQuaternion(const FliteQuaternion &qd) 
  {
-     xSemaphoreTake(attitudeMutex, portMAX_DELAY);
-     desiredQ = qd;
-     xSemaphoreGive(attitudeMutex);
+    {
+        SemaphoreLock lock(attitudeMutex);
+        desiredQ = qd;
+    }
  }
  
  /**
@@ -100,9 +102,10 @@
   */
  void ArduFliteAttitudeController::setAttitudeControlSetpoint(EulerAngles setpointDegs) 
  {
-    xSemaphoreTake(attitudeMutex, portMAX_DELAY);
-    attitudeSetpointDegs       = setpointDegs;
-    xSemaphoreGive(attitudeMutex);
+    {
+        SemaphoreLock lock(attitudeMutex);
+        attitudeSetpointDegs       = setpointDegs;
+    }
     
     const float         deg2rad = PI / 180.0f;
     EulerAngles         setpointRad;
@@ -136,10 +139,11 @@
     FliteQuaternion localDesiredQ;
     EulerAngles     localAttitudeSetpointDegs;
 
-    xSemaphoreTake(attitudeMutex, portMAX_DELAY);
-    localDesiredQ = desiredQ;
-    localAttitudeSetpointDegs = attitudeSetpointDegs;
-    xSemaphoreGive(attitudeMutex);
+    {
+        SemaphoreLock lock(attitudeMutex);
+        localDesiredQ = desiredQ;
+        localAttitudeSetpointDegs = attitudeSetpointDegs;
+    }
 
     // Normalize the measured quaternion.
     FliteQuaternion measuredNormalized = measuredQ;

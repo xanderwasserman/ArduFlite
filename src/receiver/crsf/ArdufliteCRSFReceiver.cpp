@@ -11,6 +11,7 @@
 
 #include "src/receiver/crsf/ArdufliteCRSFReceiver.h"
 #include "src/utils/Logging.h"
+#include "include/ArduFlite.h"
 
 #include <cstring>
 
@@ -54,21 +55,26 @@ void ArdufliteCRSFReceiver::configureChannel(uint8_t idx, const ChannelConfig& c
 {
     LOG_INF("Configured channel: %u", idx);
     if (idx >= 16) return;
-    xSemaphoreTake(_lock, portMAX_DELAY);
-      _chCfg[idx] = cfg;
-    xSemaphoreGive(_lock);
+
+    {
+        SemaphoreLock lock(_lock);
+        _chCfg[idx] = cfg;
+    }
 }
 
 bool ArdufliteCRSFReceiver::getLinkStats(crsfLinkStatistics_t& out) const
 {
     bool ok = false;
-    xSemaphoreTake(_lock, portMAX_DELAY);
-      if (_haveLinkStats) 
-      {
-        out = _latestLinkStats;
-        ok = true;
-      }
-    xSemaphoreGive(_lock);
+
+    {
+        SemaphoreLock lock(_lock);
+        if (_haveLinkStats) 
+        {
+            out = _latestLinkStats;
+            ok = true;
+        }
+    }
+
     return ok;
 }
 
@@ -137,9 +143,10 @@ void ArdufliteCRSFReceiver::dispatchFrame(const uint8_t* frame, size_t len)
     uint8_t type = frame[2];
     if (type == CRSF_FRAMETYPE_RC_CHANNELS_PACKED) 
     {
-        xSemaphoreTake(_lock, portMAX_DELAY);
-          handleRC(frame + 3, len - 4);
-        xSemaphoreGive(_lock);
+        {
+            SemaphoreLock lock(_lock);
+            handleRC(frame + 3, len - 4);
+        }
 
     } 
     else if (type == CRSF_FRAMETYPE_LINK_STATISTICS) 
@@ -147,10 +154,11 @@ void ArdufliteCRSFReceiver::dispatchFrame(const uint8_t* frame, size_t len)
         crsfLinkStatistics_t stats;
         std::memcpy(&stats, frame + 3, sizeof(stats));
 
-        xSemaphoreTake(_lock, portMAX_DELAY);
-          _latestLinkStats = stats;
-          _haveLinkStats   = true;
-        xSemaphoreGive(_lock);
+        {
+            SemaphoreLock lock(_lock);
+            _latestLinkStats = stats;
+            _haveLinkStats   = true;
+        }
     } 
     else if (type == CRSF_FRAMETYPE_DEVICE_PING) 
     {

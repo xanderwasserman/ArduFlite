@@ -12,12 +12,14 @@
 
 #include "src/telemetry/ArduFliteTelemetry.h"
 #include "src/telemetry/ConfigData.h"
+#include "include/ArduFlite.h"
 
 #include <Arduino.h>
 #include <FS.h>
 #include <LittleFS.h>
 
-class ArduFliteFlashTelemetry : public ArduFliteTelemetry {
+class ArduFliteFlashTelemetry : public ArduFliteTelemetry 
+{
 public:
     explicit ArduFliteFlashTelemetry(float frequencyHz = 50.0f);
     ~ArduFliteFlashTelemetry();
@@ -35,11 +37,14 @@ public:
     void deleteLog(int index);
 
     // Erase entire filesystem (use with care)
-    void reset() override { 
-        if (_mutex) {
-            xSemaphoreTake(_mutex, portMAX_DELAY);
-            LittleFS.format();
-            xSemaphoreGive(_mutex);
+    void reset() override 
+    { 
+        if (_mutex) 
+        {
+            {
+                SemaphoreLock lock(_mutex);
+                LittleFS.format();    
+            }
         }
     }
 

@@ -8,13 +8,15 @@
  */
 #include "ArduFliteQSerialTelemetry.h"
 #include "src/utils/Logging.h"
+#include "include/ArduFlite.h"
 
 ArduFliteQSerialTelemetry::ArduFliteQSerialTelemetry(float frequencyHz)
 {
     intervalMs = (1.0f / frequencyHz) * 1000.0f;
 }
 
-void ArduFliteQSerialTelemetry::begin() {
+void ArduFliteQSerialTelemetry::begin() 
+{
     // Create a mutex to protect pendingData
     telemetryMutex = xSemaphoreCreateMutex();
 
@@ -32,25 +34,26 @@ void ArduFliteQSerialTelemetry::begin() {
 void ArduFliteQSerialTelemetry::publish(const TelemetryData& telemData, const ConfigData& configData)
 {
     // Store new data so the task can print it
-    if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(10)) == pdTRUE) 
     {
-        pendingData = telemData;
-        xSemaphoreGive(telemetryMutex);
+        SemaphoreLock lock(telemetryMutex);
+        pendingData = telemData; 
     }
 }
 
-void ArduFliteQSerialTelemetry::telemetryTask(void* pvParameters) {
+void ArduFliteQSerialTelemetry::telemetryTask(void* pvParameters) 
+{
     ArduFliteQSerialTelemetry* self = static_cast<ArduFliteQSerialTelemetry*>(pvParameters);
 
-    for (;;) {
+    for (;;) 
+    {
         unsigned long startMs = millis();
 
         // Copy local data under mutex
         TelemetryData localCopy;
-        if (xSemaphoreTake(self->telemetryMutex, pdMS_TO_TICKS(5)) == pdTRUE) 
+
         {
+            SemaphoreLock lock(self->telemetryMutex);
             localCopy = self->pendingData;
-            xSemaphoreGive(self->telemetryMutex);
         }
 
         // Print the quaternion

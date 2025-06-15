@@ -13,6 +13,8 @@
 #include "src/controller/ArduFliteAttitudeController.h"
 #include "src/controller/ArduFliteRateController.h"
 #include "src/actuators/ServoManager.h"
+#include "include/ArduFlite.h"
+
 #include <Arduino.h>
 
 /**
@@ -245,6 +247,9 @@ private:
     SemaphoreHandle_t innerStatsMutex;
 
     bool armed = false;                                     //< true once we’ve called arm()
+
+    static constexpr TickType_t outerLoopMs = 10;
+    static constexpr TickType_t innerLoopMs = 2;
 
     /**
      * @brief Outer loop FreeRTOS task function.

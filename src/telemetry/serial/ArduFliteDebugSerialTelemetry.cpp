@@ -8,6 +8,7 @@
  */
 #include "ArduFliteDebugSerialTelemetry.h"
 #include "src/utils/Logging.h"
+#include "include/ArduFlite.h"
 
 ArduFliteDebugSerialTelemetry::ArduFliteDebugSerialTelemetry(float frequencyHz)
 {
@@ -32,24 +33,26 @@ void ArduFliteDebugSerialTelemetry::begin() {
 void ArduFliteDebugSerialTelemetry::publish(const TelemetryData& telemData, const ConfigData& configData) 
 {
     // Store new data so the task can print it
-    if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(10)) == pdTRUE) 
     {
-        pendingData = telemData;
-        xSemaphoreGive(telemetryMutex);
+        SemaphoreLock lock(telemetryMutex);
+        pendingData = telemData; 
     }
 }
 
-void ArduFliteDebugSerialTelemetry::telemetryTask(void* pvParameters) {
+void ArduFliteDebugSerialTelemetry::telemetryTask(void* pvParameters) 
+{
     ArduFliteDebugSerialTelemetry* self = static_cast<ArduFliteDebugSerialTelemetry*>(pvParameters);
 
-    for (;;) {
+    for (;;) 
+    {
         unsigned long startMs = millis();
 
         // Copy local data under mutex
         TelemetryData localCopy;
-        if (xSemaphoreTake(self->telemetryMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-            localCopy = self->pendingData;
-            xSemaphoreGive(self->telemetryMutex);
+        
+        {
+            SemaphoreLock lock(self->telemetryMutex);
+            localCopy = self->pendingData; 
         }
 
         LOG_N("\033[2J\033[H");

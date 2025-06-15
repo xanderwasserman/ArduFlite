@@ -8,6 +8,7 @@
  */
 #include "src/controller/ArduFliteRateController.h"
 #include "src/orientation/ArduFliteIMU.h"
+#include "include/ArduFlite.h"
 #include "src/utils/Logging.h"
 
 // Constructor with initial PID parameters.
@@ -30,9 +31,10 @@ ArduFliteRateController::ArduFliteRateController()
 void ArduFliteRateController::setRateControlSetpoint(EulerAngles setpoint) 
 {
     // Protect the update to desired rates.
-    xSemaphoreTake(rateMutex, portMAX_DELAY);
-    setpointRate = setpoint;
-    xSemaphoreGive(rateMutex);
+    {
+        SemaphoreLock lock(rateMutex);
+        setpointRate = setpoint;
+    }
 }
 
 // Update the rate controller with the measured angular rates.
@@ -46,9 +48,10 @@ void ArduFliteRateController::update(Vector3 measuredRate, float dt, EulerAngles
     EulerAngles localSetpointRate;
 
     // Take mutex to safely read the desired rates.
-    xSemaphoreTake(rateMutex, portMAX_DELAY);
-    localSetpointRate = setpointRate;
-    xSemaphoreGive(rateMutex);
+    {
+        SemaphoreLock lock(rateMutex);
+        localSetpointRate = setpointRate;
+    }
 
     // Compute errors for each axis.
     float rollError  = localSetpointRate.roll  - measuredRate.x;

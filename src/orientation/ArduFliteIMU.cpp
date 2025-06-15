@@ -16,6 +16,7 @@
 
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/utils/Logging.h"
+#include "include/ArduFlite.h"
 
 #include <math.h>
 
@@ -24,7 +25,8 @@
 *
 * Initializes calibration offsets to zero and creates a mutex to protect the IMU data.
 */
-ArduFliteIMU::ArduFliteIMU() {
+ArduFliteIMU::ArduFliteIMU() 
+{
     // Initialize calibration offsets to zero.
     offsets = {
         0.0f,  // accelX
@@ -41,7 +43,8 @@ ArduFliteIMU::ArduFliteIMU() {
 
     // Create the mutex for protecting sensor data.
     imuMutex = xSemaphoreCreateMutex();
-    if (imuMutex == NULL) {
+    if (imuMutex == NULL) 
+    {
         LOG_ERR("Failed to create IMU mutex!");
     }
 }
@@ -54,7 +57,8 @@ ArduFliteIMU::ArduFliteIMU() {
 *
 * @return true if the IMU is successfully initialized, false otherwise.
 */
-bool ArduFliteIMU::begin() {
+bool ArduFliteIMU::begin() 
+{
     // For ESP32, initialize EEPROM.
     EEPROM.begin(EEPROM_SIZE);
     Wire.begin(I2CConfig::I2C_SDA_PIN, I2CConfig::I2C_SCL_PIN);
@@ -62,7 +66,8 @@ bool ArduFliteIMU::begin() {
 
     // Initialize IMU with calibration data.
     int err = IMU.init(calib, IMU_ADDRESS);
-    if (err != 0) {
+    if (err != 0) 
+    {
         LOG_ERR("FastIMU init error: %d", err);
         return false;
     }
@@ -70,13 +75,15 @@ bool ArduFliteIMU::begin() {
     // Set sensor ranges.
     err = IMU.setGyroRange(300);
     err = IMU.setAccelRange(4);
-    if (err == -1) {
+    if (err == -1) 
+    {
         LOG_ERR("Error setting IMU sensor ranges: %d", err);
         return false;
     }
 
     // Load calibration offsets from EEPROM; if unavailable, perform self-calibration.
-    if (!applyCalibrations()) {
+    if (!applyCalibrations()) 
+    {
         LOG_ERR("FastIMU failed to apply calibrations!");
         return false;
     }
@@ -136,7 +143,8 @@ void ArduFliteIMU::startTask()
  */
 void ArduFliteIMU::pauseTask() 
 {
-    if (imuTaskHandle != NULL) {
+    if (imuTaskHandle != NULL) 
+    {
         vTaskSuspend(imuTaskHandle);
         LOG_INF("IMU Task paused.");
     }
@@ -149,7 +157,8 @@ void ArduFliteIMU::pauseTask()
   */
 void ArduFliteIMU::resumeTask() 
 {
-    if (imuTaskHandle != NULL) {
+    if (imuTaskHandle != NULL) 
+    {
         vTaskResume(imuTaskHandle);
         LOG_INF("IMU Task resumed.");
     }
@@ -202,7 +211,8 @@ void ArduFliteIMU::initFilter()
 
     // Warm up the filter by updating it for 2000 iterations.
     unsigned long lastMicros = micros();
-    for (int i = 0; i < 2000; i++) {
+    for (int i = 0; i < 2000; i++) 
+    {
         // Calculate delta time in seconds.
         unsigned long currentMicros = micros();
         float dt = (currentMicros - lastMicros) / 1000000.0f;
@@ -277,67 +287,66 @@ void ArduFliteIMU::update(float dt)
     if (dt > MAX_DT) dt = MAX_DT;
 
     // Protect the sensor update with a mutex.
-    xSemaphoreTake(imuMutex, portMAX_DELAY);
-
-    IMU.update();
-    IMU.getAccel(&accelData);
-    IMU.getGyro(&gyroData);
-
-    if (IMU.hasMagnetometer()) 
     {
-        IMU.getMag(&magData);
-    }
+        SemaphoreLock lock(imuMutex);
+        IMU.update();
+        IMU.getAccel(&accelData);
+        IMU.getGyro(&gyroData);
 
-    // For BMP280, update barometer reading.
-#if BARO_TYPE == BARO_TYPE_BMP280
-    altitude = bmp280.readAltitude(offsets.referencePressure); 
-#endif
+        if (IMU.hasMagnetometer()) 
+        {
+            IMU.getMag(&magData);
+        }
 
-    // Remove calibration offsets.
-    accelX = accelData.accelX - offsets.accelX;
-    accelY = accelData.accelY - offsets.accelY;
-    accelZ = accelData.accelZ - offsets.accelZ;
-    gyroX  = gyroData.gyroX - offsets.gyroX;
-    gyroY  = gyroData.gyroY - offsets.gyroY;
-    gyroZ  = gyroData.gyroZ - offsets.gyroZ;
-
-    // Apply sensor orientation adjustments.
-    applyOrientation();
-
-    // Update low-pass filters.
-    applyLowPassFilters();
-
-    // Now update your orientation filter with the smoothed values:
-#if FILTER_TYPE == FILTER_TYPE_MADGWICK
-
-    #if IMU_TYPE == IMU_TYPE_MPU9250
-    filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, 
-                filteredAccelX, filteredAccelY, filteredAccelZ, 
-                filteredMagX, filteredMagY, filteredMagZ, 
-                dt );
-    #else 
-    filter.updateIMU(filteredGyroX, filteredGyroY, filteredGyroZ, 
-                filteredAccelX, filteredAccelY, filteredAccelZ,  
-                dt);
+        // For BMP280, update barometer reading.
+    #if BARO_TYPE == BARO_TYPE_BMP280
+        altitude = bmp280.readAltitude(offsets.referencePressure); 
     #endif
 
-#elif FILTER_TYPE == FILTER_TYPE_KALMAN
-    // Update the EKF filter.
-    filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, 
-                filteredAccelX, filteredAccelY, filteredAccelZ, 
-                filteredMagX, filteredMagY, filteredMagZ);
-#endif
+        // Remove calibration offsets.
+        accelX = accelData.accelX - offsets.accelX;
+        accelY = accelData.accelY - offsets.accelY;
+        accelZ = accelData.accelZ - offsets.accelZ;
+        gyroX  = gyroData.gyroX - offsets.gyroX;
+        gyroY  = gyroData.gyroY - offsets.gyroY;
+        gyroZ  = gyroData.gyroZ - offsets.gyroZ;
 
-    // Retrieve the computed quaternion and Euler angles.
-    filter.getQuaternion(&qw, &qx, &qy, &qz);
-    roll = filter.getRoll();
-    pitch = filter.getPitch();
-    yaw = filter.getYaw();
+        // Apply sensor orientation adjustments.
+        applyOrientation();
 
-    // Update flight state based on the sensor data.
-    updateFlightState();
+        // Update low-pass filters.
+        applyLowPassFilters();
 
-    xSemaphoreGive(imuMutex);
+        // Now update your orientation filter with the smoothed values:
+    #if FILTER_TYPE == FILTER_TYPE_MADGWICK
+
+        #if IMU_TYPE == IMU_TYPE_MPU9250
+        filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, 
+                    filteredAccelX, filteredAccelY, filteredAccelZ, 
+                    filteredMagX, filteredMagY, filteredMagZ, 
+                    dt );
+        #else 
+        filter.updateIMU(filteredGyroX, filteredGyroY, filteredGyroZ, 
+                    filteredAccelX, filteredAccelY, filteredAccelZ,  
+                    dt);
+        #endif
+
+    #elif FILTER_TYPE == FILTER_TYPE_KALMAN
+        // Update the EKF filter.
+        filter.update(filteredGyroX, filteredGyroY, filteredGyroZ, 
+                    filteredAccelX, filteredAccelY, filteredAccelZ, 
+                    filteredMagX, filteredMagY, filteredMagZ);
+    #endif
+
+        // Retrieve the computed quaternion and Euler angles.
+        filter.getQuaternion(&qw, &qx, &qy, &qz);
+        roll = filter.getRoll();
+        pitch = filter.getPitch();
+        yaw = filter.getYaw();
+
+        // Update flight state based on the sensor data.
+        updateFlightState();
+    }
 }
  
  /**
@@ -368,7 +377,8 @@ void ArduFliteIMU::update(float dt)
 *
 * @return true if calibration is successful, false otherwise.
 */
-bool ArduFliteIMU::selfCalibrate() {
+bool ArduFliteIMU::selfCalibrate() 
+{
     LOG_INF("=== Self Calibration Start ===");
     LOG_INF("Please keep IMU still & level in final orientation...");
 
@@ -381,76 +391,77 @@ bool ArduFliteIMU::selfCalibrate() {
     double sumBaro = 0;
 
     // Protect the sensor update with a mutex.
-    xSemaphoreTake(imuMutex, portMAX_DELAY);
- 
-    while (millis() - start < CALIB_MS) {
-        // Read raw sensor data.
-        IMU.update();
-        IMU.getAccel(&accelData);
-        IMU.getGyro(&gyroData);
+    {
+        SemaphoreLock lock(imuMutex);
 
-        double ax = accelData.accelX;
-        double ay = accelData.accelY;
-        double az = accelData.accelZ;
-        double gx = gyroData.gyroX;
-        double gy = gyroData.gyroY;
-        double gz = gyroData.gyroZ;
+        while (millis() - start < CALIB_MS) 
+        {
+            // Read raw sensor data.
+            IMU.update();
+            IMU.getAccel(&accelData);
+            IMU.getGyro(&gyroData);
 
-#if BARO_TYPE == BARO_TYPE_BMP280
-        double baro = bmp280.readPressure() / 100.0f; // convert Pa to hPa
-#else
-        double baro = 0.0f;
-#endif
+            double ax = accelData.accelX;
+            double ay = accelData.accelY;
+            double az = accelData.accelZ;
+            double gx = gyroData.gyroX;
+            double gy = gyroData.gyroY;
+            double gz = gyroData.gyroZ;
 
-        // Accumulate readings.
-        sumAx   += ax;
-        sumAy   += ay;
-        sumAz   += az;
-        sumGx   += gx;
-        sumGy   += gy;
-        sumGz   += gz;
+    #if BARO_TYPE == BARO_TYPE_BMP280
+            double baro = bmp280.readPressure() / 100.0f; // convert Pa to hPa
+    #else
+            double baro = 0.0f;
+    #endif
 
-        sumBaro += baro;
+            // Accumulate readings.
+            sumAx   += ax;
+            sumAy   += ay;
+            sumAz   += az;
+            sumGx   += gx;
+            sumGy   += gy;
+            sumGz   += gz;
 
-        samples++;
+            sumBaro += baro;
 
-        delay(5); // Small delay between samples.
+            samples++;
+
+            delay(5); // Small delay between samples.
+        }
+
+        double avgAx        = sumAx / samples;
+        double avgAy        = sumAy / samples;
+        double avgAz        = sumAz / samples;
+        double avgGx        = sumGx / samples;
+        double avgGy        = sumGy / samples;
+        double avgGz        = sumGz / samples;
+        double avgBaro      = sumBaro / samples;
+
+        LOG_INF("Raw average readings:");
+        LOG_INF("Accel: %.3f, %.3f, %.3f", avgAx, avgAy, avgAz);
+        LOG_INF("Gyro: %.3f, %.3f, %.3f", avgGx, avgGy, avgGz);
+        LOG_INF("Pressure: %.3f", avgBaro);
+
+        // Determine desired offsets.
+        ArduFliteIMUOffsets newOfs;
+
+        newOfs.accelX               = float(avgAx - 0.0);   // Desired X is 0.
+        newOfs.accelY               = float(avgAy - 0.0);   // Desired Y is 0.
+        newOfs.accelZ               = float(avgAz - 1.0);   // Desired Z is 1.
+        newOfs.gyroX                = float(avgGx);         // Desired gyro values are 0.
+        newOfs.gyroY                = float(avgGy);
+        newOfs.gyroZ                = float(avgGz);
+        newOfs.referencePressure    = (float)avgBaro;
+
+        LOG_INF("Computed new offsets:");
+        LOG_INF("Accel Offsets: %.3f, %.3f, %.3f", newOfs.accelX, newOfs.accelY, newOfs.accelZ);
+        LOG_INF("Gyro Offsets: %.3f, %.3f, %.3f", newOfs.gyroX, newOfs.gyroY, newOfs.gyroZ);
+        LOG_INF("Pressure reference: %.3f", newOfs.referencePressure);
+
+        // Store and save the calibration offsets.
+        setOffsets(newOfs);
+        saveOffsetsToEEPROM(newOfs);
     }
-
-    double avgAx        = sumAx / samples;
-    double avgAy        = sumAy / samples;
-    double avgAz        = sumAz / samples;
-    double avgGx        = sumGx / samples;
-    double avgGy        = sumGy / samples;
-    double avgGz        = sumGz / samples;
-    double avgBaro      = sumBaro / samples;
-
-    LOG_INF("Raw average readings:");
-    LOG_INF("Accel: %.3f, %.3f, %.3f", avgAx, avgAy, avgAz);
-    LOG_INF("Gyro: %.3f, %.3f, %.3f", avgGx, avgGy, avgGz);
-    LOG_INF("Pressure: %.3f", avgBaro);
-
-    // Determine desired offsets.
-    ArduFliteIMUOffsets newOfs;
-
-    newOfs.accelX               = float(avgAx - 0.0);   // Desired X is 0.
-    newOfs.accelY               = float(avgAy - 0.0);   // Desired Y is 0.
-    newOfs.accelZ               = float(avgAz - 1.0);   // Desired Z is 1.
-    newOfs.gyroX                = float(avgGx);         // Desired gyro values are 0.
-    newOfs.gyroY                = float(avgGy);
-    newOfs.gyroZ                = float(avgGz);
-    newOfs.referencePressure    = (float)avgBaro;
-
-    LOG_INF("Computed new offsets:");
-    LOG_INF("Accel Offsets: %.3f, %.3f, %.3f", newOfs.accelX, newOfs.accelY, newOfs.accelZ);
-    LOG_INF("Gyro Offsets: %.3f, %.3f, %.3f", newOfs.gyroX, newOfs.gyroY, newOfs.gyroZ);
-    LOG_INF("Pressure reference: %.3f", newOfs.referencePressure);
-
-    // Store and save the calibration offsets.
-    setOffsets(newOfs);
-    saveOffsetsToEEPROM(newOfs);
-
-    xSemaphoreGive(imuMutex);
 
     LOG_INF("=== Self Calibration Done ===");
 
@@ -476,7 +487,9 @@ bool ArduFliteIMU::applyCalibrations()
         LOG_INF("Gyro:  %.3f, %.3f, %.3f", offsets.gyroX, offsets.gyroY, offsets.gyroZ);
 
         return true;
-    } else {
+    } 
+    else 
+    {
         LOG_WARN("No valid offsets in EEPROM. Calling selfCalibrate()...");
         return selfCalibrate();
     }
@@ -681,11 +694,14 @@ FlightState ArduFliteIMU::getFlightState() const
 Vector3 ArduFliteIMU::getAcceleration() const 
 {
     Vector3 acc;
-    xSemaphoreTake(imuMutex, portMAX_DELAY);
-    acc.x = filteredAccelX;
-    acc.y = filteredAccelY;
-    acc.z = filteredAccelZ;
-    xSemaphoreGive(imuMutex);
+
+    {
+        SemaphoreLock lock(imuMutex);
+        acc.x = filteredAccelX;
+        acc.y = filteredAccelY;
+        acc.z = filteredAccelZ;
+    }
+
     return acc;
 }
  
@@ -699,11 +715,14 @@ Vector3 ArduFliteIMU::getAcceleration() const
 Vector3 ArduFliteIMU::getGyro() const 
 {
     Vector3 gyro;
-    xSemaphoreTake(imuMutex, portMAX_DELAY);
-    gyro.x = filteredGyroX;
-    gyro.y = filteredGyroY;
-    gyro.z = filteredGyroZ;
-    xSemaphoreGive(imuMutex);
+
+    {
+        SemaphoreLock lock(imuMutex);
+        gyro.x = filteredGyroX;
+        gyro.y = filteredGyroY;
+        gyro.z = filteredGyroZ;
+    }
+
     return gyro;
 }
  
@@ -717,11 +736,14 @@ Vector3 ArduFliteIMU::getGyro() const
 Vector3 ArduFliteIMU::getMag() const 
 {
     Vector3 mag;
-    xSemaphoreTake(imuMutex, portMAX_DELAY);
-    mag.x = magX;
-    mag.y = magY;
-    mag.z = magZ;
-    xSemaphoreGive(imuMutex);
+
+    {
+        SemaphoreLock lock(imuMutex);
+        mag.x = magX;
+        mag.y = magY;
+        mag.z = magZ;
+    }
+
     return mag;
 }
  
@@ -735,12 +757,15 @@ Vector3 ArduFliteIMU::getMag() const
 FliteQuaternion ArduFliteIMU::getQuaternion() const 
 {
     FliteQuaternion q;
-    xSemaphoreTake(imuMutex, portMAX_DELAY);
-    q.w = qw;
-    q.x = qx;
-    q.y = qy;
-    q.z = qz;
-    xSemaphoreGive(imuMutex);
+
+    {
+        SemaphoreLock lock(imuMutex);
+        q.w = qw;
+        q.x = qx;
+        q.y = qy;
+        q.z = qz;
+    }
+
     return q;
 }
  
@@ -754,11 +779,14 @@ FliteQuaternion ArduFliteIMU::getQuaternion() const
 EulerAngles ArduFliteIMU::getOrientation() const 
 {
     EulerAngles ang;
-    xSemaphoreTake(imuMutex, portMAX_DELAY);
-    ang.roll  = roll;
-    ang.pitch = pitch;
-    ang.yaw   = yaw;
-    xSemaphoreGive(imuMutex);
+
+    {
+        SemaphoreLock lock(imuMutex);
+        ang.roll  = roll;
+        ang.pitch = pitch;
+        ang.yaw   = yaw;
+    }
+
     return ang;
 }
 
@@ -772,9 +800,12 @@ EulerAngles ArduFliteIMU::getOrientation() const
 float ArduFliteIMU::getAltitude() const 
 { 
     float alt;
-    xSemaphoreTake(imuMutex, portMAX_DELAY);
-    alt = filteredAltitude;
-    xSemaphoreGive(imuMutex);
+
+    {
+        SemaphoreLock lock(imuMutex);
+        alt = filteredAltitude;
+    }
+
     return alt; 
 }
  

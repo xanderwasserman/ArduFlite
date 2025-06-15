@@ -8,6 +8,7 @@
  */
 
 #include "StatusLED.h"
+#include "include/ArduFlite.h"
 
 StatusLED::StatusLED(uint8_t pin, uint16_t numPixels, uint8_t brightness)
     : _strip(numPixels, pin, NEO_RGB + NEO_KHZ800),
@@ -23,10 +24,12 @@ StatusLED::StatusLED(uint8_t pin, uint16_t numPixels, uint8_t brightness)
 
 StatusLED::~StatusLED() 
 {
-    if (_taskHandle) {
+    if (_taskHandle) 
+    {
         vTaskDelete(_taskHandle);
     }
-    if (_mutex) {
+    if (_mutex) 
+    {
         vSemaphoreDelete(_mutex);
     }
 }
@@ -51,28 +54,28 @@ void StatusLED::begin()
 
 void StatusLED::setColor(uint8_t r, uint8_t g, uint8_t b) 
 {
-    if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
+    {
+        SemaphoreLock lock(_mutex);
         _usePattern = false;
         _r = r; _g = g; _b = b;
-        xSemaphoreGive(_mutex);
     }
 }
 
 void StatusLED::setPattern(const Pattern& p) 
 {
-    if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
+    {
+        SemaphoreLock lock(_mutex);
         _pattern = p;
         _usePattern = true;
-        xSemaphoreGive(_mutex);
     }
 }
 
 void StatusLED::disable() 
 {
-    if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
+    {
+        SemaphoreLock lock(_mutex);
         _usePattern = false;
         _r = _g = _b = 0;
-        xSemaphoreGive(_mutex);
     }
 }
 
@@ -83,20 +86,22 @@ void StatusLED::taskEntry(void* vp)
 
 void StatusLED::run() 
 {
-    while (true) {
+    while (true) 
+    {
         bool        localUsePattern;
         Pattern     localPattern;
         uint8_t     localR, localG, localB;
 
         // snapshot shared state under lock
-        if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
+        {
+            SemaphoreLock lock(_mutex);
             localUsePattern = _usePattern;
             localPattern    = _pattern;
             localR = _r; localG = _g; localB = _b;
-            xSemaphoreGive(_mutex);
         }
 
-        if (localUsePattern && (localPattern.on_ms + localPattern.off_ms > 0)) {
+        if (localUsePattern && (localPattern.on_ms + localPattern.off_ms > 0)) 
+        {
             // blink ON
             _strip.setPixelColor(0, _strip.Color(localPattern.r, localPattern.g, localPattern.b));
             _strip.show();
@@ -106,7 +111,8 @@ void StatusLED::run()
             _strip.show();
             vTaskDelay(pdMS_TO_TICKS(localPattern.off_ms));
         } 
-        else {
+        else 
+        {
             // solid
             _strip.setPixelColor(0, _strip.Color(localR, localG, localB));
             _strip.show();

@@ -15,6 +15,7 @@
 
 #include "src/telemetry/crsf/ArdufliteCRSFTelemetry.h"
 #include "src/controller/ArduFliteController.h"
+#include "include/ArduFlite.h"
 
 /// @brief Constructor.
 /// @param[in] ser     Reference to a HardwareSerial port for CRSF downlink.
@@ -68,10 +69,11 @@ void ArdufliteCRSFTelemetry::publish(const TelemetryData& telem,
                                      const ConfigData&    cfg)
 {
     if (!_lock) return;
-    if (xSemaphoreTake(_lock, /*ticks=*/10) == pdTRUE) {
+
+    {
+        SemaphoreLock lock(_lock);
         _pendingData   = telem;
         _pendingConfig = cfg;
-        xSemaphoreGive(_lock);
     }
 }
 
@@ -89,13 +91,17 @@ void ArdufliteCRSFTelemetry::telemetryTask(void* pv)
 ///   - Runs at _intervalMs configured in constructor.
 void ArdufliteCRSFTelemetry::run()
 {
-    while (true) {
+    while (true) 
+    {
         TelemetryData td;
         ConfigData    cd;
-        if (_lock && xSemaphoreTake(_lock, pdMS_TO_TICKS(5)) == pdTRUE) {
-            td = _pendingData;
-            cd = _pendingConfig;
-            xSemaphoreGive(_lock);
+        if (_lock) 
+        {
+            {
+                SemaphoreLock lock(_lock);
+                _pendingData   = telem;
+                _pendingConfig = cfg;
+            }
         }
 
         // Send one batch of frames:

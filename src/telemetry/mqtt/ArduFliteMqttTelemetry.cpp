@@ -8,6 +8,7 @@
  */
 #include "src/telemetry/mqtt/ArduFliteMqttTelemetry.h"
 #include "src/utils/Logging.h"
+#include "include/ArduFlite.h"
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -68,11 +69,13 @@ void ArduFliteMqttTelemetry::publish(const TelemetryData& telemData, const Confi
 {
     // Store new data to a local buffer (pendingData),
     // so the telemetryTask can publish it in the background
-    if (telemetryMutex && xSemaphoreTake(telemetryMutex, 10) == pdTRUE) 
+    if (telemetryMutex) 
     {
-        pendingData         = telemData; 
-        pendingConfigData   = configData; 
-        xSemaphoreGive(telemetryMutex);
+        {
+            SemaphoreLock lock(telemetryMutex);
+            pendingData         = telemData; 
+            pendingConfigData   = configData;  
+        }
     }
 }
 
@@ -192,11 +195,10 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters)
         TelemetryData   localTelemCopy;
         ConfigData      localConfigCopy;
         // Copy data under mutex
-        if (xSemaphoreTake(self->telemetryMutex, pdMS_TO_TICKS(50)) == pdTRUE) 
         {
+            SemaphoreLock lock(self->telemetryMutex);
             localTelemCopy = self->pendingData;
-            localConfigCopy = self->pendingConfigData;
-            xSemaphoreGive(self->telemetryMutex);
+            localConfigCopy = self->pendingConfigData; 
         }
 
         // Publish it

@@ -9,6 +9,7 @@
 #include "src/mission_planner/MissionPlanner.h"
 #include "include/MissionConfiguration.h" 
 #include "src/utils/Logging.h"
+#include "include/ArduFlite.h"
 
 MissionPlanner::MissionPlanner(ArduFliteController &controller)
     : _ctrl(controller)
@@ -51,19 +52,18 @@ void MissionPlanner::begin()
 
 void MissionPlanner::loadMission(const Step *steps, size_t count) 
 {
-    if (xSemaphoreTake(_mutex, portMAX_DELAY)) 
     {
+        SemaphoreLock lock(_mutex);
         _steps.clear();
         _steps.insert(_steps.end(), steps, steps + count);
         _running = false;
-        xSemaphoreGive(_mutex);
     }
 }
 
 void MissionPlanner::start() 
 {
-    if (xSemaphoreTake(_mutex, portMAX_DELAY)) 
     {
+        SemaphoreLock lock(_mutex);
         if (!_steps.empty() && !_running) 
         {
             _running      = true;
@@ -83,27 +83,26 @@ void MissionPlanner::start()
             // log it
             LOG_INF("MissionPlanner: step %u → roll=%.1f°, pitch=%.1f°, yaw=%.1f°", (unsigned)_currentIndex, first.rollDeg, first.pitchDeg, first.yawDeg);
         }
-        xSemaphoreGive(_mutex);
     }
 }
 
 void MissionPlanner::stop() 
 {
-    if (xSemaphoreTake(_mutex, portMAX_DELAY)) 
     {
+        SemaphoreLock lock(_mutex);
         _running = false;
-        xSemaphoreGive(_mutex);
     }
 }
 
 bool MissionPlanner::isRunning() 
 {
     bool r = false;
-    if (xSemaphoreTake(_mutex, portMAX_DELAY)) 
+
     {
+        SemaphoreLock lock(_mutex);
         r = _running;
-        xSemaphoreGive(_mutex);
     }
+
     return r;
 }
 
@@ -116,9 +115,8 @@ void MissionPlanner::run()
 {
     while (true) 
     {
-        // Take the mutex once
-        if (xSemaphoreTake(_mutex, portMAX_DELAY)) 
         {
+            SemaphoreLock lock(_mutex);
             if (_running && !_steps.empty()) 
             {
                 uint32_t now = millis();
@@ -152,8 +150,8 @@ void MissionPlanner::run()
                     }
                 }
             }
-            xSemaphoreGive(_mutex);
         }
+
         // throttle to 100 Hz
         vTaskDelay(pdMS_TO_TICKS(10));
     }

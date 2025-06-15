@@ -24,9 +24,6 @@
 #include "src/utils/Logging.h"
 
 #include <Arduino.h>
-
-#define OUTER_LOOP_DT 10
-#define INNER_LOOP_DT 2
  
 /**
  * @brief Constructor for ArduFliteController.
@@ -52,19 +49,22 @@ ArduFliteController::ArduFliteController(ArduFliteIMU* imu, ArduFliteAttitudeCon
 {
     // Create the mutex for protecting shared state.
     ctrlMutex = xSemaphoreCreateMutex();
-    if (ctrlMutex == NULL) {
+    if (ctrlMutex == NULL) 
+    {
         LOG_ERR("Failed to create ArduFliteController mutex!");
     }
 
     // Create the mutex for protecting innerLoop stats.
     innerStatsMutex = xSemaphoreCreateMutex();
-    if (innerStatsMutex == NULL) {
+    if (innerStatsMutex == NULL) 
+    {
         LOG_ERR("Failed to create innerLoop Stats mutex!");
     }
 
     // Create the mutex for protecting outerLoop stats.
     outerStatsMutex = xSemaphoreCreateMutex();
-    if (outerStatsMutex == NULL) {
+    if (outerStatsMutex == NULL) 
+    {
         LOG_ERR("Failed to create outerLoop Stats mutex!");
     }
 }
@@ -80,9 +80,10 @@ ArduFliteController::ArduFliteController(ArduFliteIMU* imu, ArduFliteAttitudeCon
  */
 void ArduFliteController::setMode(ArduFliteMode newMode) 
 {
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    mode = newMode;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        mode = newMode;
+    }
 }
  
 /**
@@ -94,9 +95,10 @@ ArduFliteMode ArduFliteController::getMode() const
 {
     ArduFliteMode m;
 
-    xSemaphoreTake((SemaphoreHandle_t)ctrlMutex, portMAX_DELAY);
-    m = mode;
-    xSemaphoreGive((SemaphoreHandle_t)ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        m = mode;
+    }
 
     return m;
 }
@@ -111,9 +113,10 @@ ArduFliteMode ArduFliteController::getMode() const
  */
 void ArduFliteController::setAttitudeSetpoint(EulerAngles setpointDeg) 
 {
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    pilotAttitudeSetpoint   = setpointDeg;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        pilotAttitudeSetpoint   = setpointDeg;
+    }
 
     // Forward the request to the attitude controller.
     attitudeCtrl->setAttitudeControlSetpoint(setpointDeg);
@@ -131,10 +134,11 @@ void ArduFliteController::setAttitudeSetpoint_roll(float rollSetpointDeg)
 {
     EulerAngles localCopy;
 
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    pilotAttitudeSetpoint.roll  = rollSetpointDeg;
-    localCopy                   = pilotAttitudeSetpoint;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        pilotAttitudeSetpoint.roll  = rollSetpointDeg;
+        localCopy                   = pilotAttitudeSetpoint;
+    }
 
     // Forward the request to the attitude controller.
     attitudeCtrl->setAttitudeControlSetpoint(localCopy);
@@ -152,10 +156,11 @@ void ArduFliteController::setAttitudeSetpoint_pitch(float pitchSetpointDeg)
 {
     EulerAngles localCopy;
 
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    pilotAttitudeSetpoint.pitch = pitchSetpointDeg;
-    localCopy                   = pilotAttitudeSetpoint;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        pilotAttitudeSetpoint.pitch = pitchSetpointDeg;
+        localCopy                   = pilotAttitudeSetpoint;
+    }
 
     // Forward the request to the attitude controller.
     attitudeCtrl->setAttitudeControlSetpoint(localCopy);
@@ -173,10 +178,11 @@ void ArduFliteController::setAttitudeSetpoint_yaw(float yawSetpointDeg)
 {
     EulerAngles localCopy;
 
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    pilotAttitudeSetpoint.yaw   = yawSetpointDeg;
-    localCopy                   = pilotAttitudeSetpoint;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        pilotAttitudeSetpoint.yaw   = yawSetpointDeg;
+        localCopy                   = pilotAttitudeSetpoint;
+    }
 
     // Forward the request to the attitude controller.
     attitudeCtrl->setAttitudeControlSetpoint(localCopy);
@@ -192,9 +198,10 @@ void ArduFliteController::setAttitudeSetpoint_yaw(float yawSetpointDeg)
  */
 void ArduFliteController::setRateSetpoint(EulerAngles rateSetpoint) 
 {
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    pilotRateSetpoint  = rateSetpoint;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        pilotRateSetpoint  = rateSetpoint;
+    }
 }
 
 /**
@@ -206,9 +213,10 @@ void ArduFliteController::setRateSetpoint(EulerAngles rateSetpoint)
  */
 void ArduFliteController::setRateSetpoint_roll(float rollRateSetpoint)
 {
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    pilotRateSetpoint.roll  = rollRateSetpoint;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        pilotRateSetpoint.roll  = rollRateSetpoint;
+    }
 }
 
 /**
@@ -220,9 +228,10 @@ void ArduFliteController::setRateSetpoint_roll(float rollRateSetpoint)
  */
 void ArduFliteController::setRateSetpoint_pitch(float pitchRateSetpoint)
 {
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    pilotRateSetpoint.pitch  = pitchRateSetpoint;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        pilotRateSetpoint.pitch  = pitchRateSetpoint;
+    }
 }
 
 /**
@@ -234,9 +243,10 @@ void ArduFliteController::setRateSetpoint_pitch(float pitchRateSetpoint)
  */
 void ArduFliteController::setRateSetpoint_yaw(float yawRateSetpoint)
 {
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    pilotRateSetpoint.yaw  = yawRateSetpoint;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        pilotRateSetpoint.yaw  = yawRateSetpoint;
+    }
 }
  
 /**
@@ -290,29 +300,33 @@ void ArduFliteController::resumeTasks()
 
 void ArduFliteController::arm() 
 {
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-      // Reset any integrators or last‐commands here if you like:
-      rateCtrl->resetIntegrator();
-      attitudeCtrl->resetIntegrator();
-      armed = true;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        // Reset any integrators or last‐commands here if you like:
+        rateCtrl->resetIntegrator();
+        attitudeCtrl->resetIntegrator();
+        armed = true;
+    }
 }
 
 void ArduFliteController::disarm() 
 {
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-      armed = false;
-      // Optionally send neutral servos immediately:
-      servoMgr->writeCommands(0,0,0);
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        armed = false;
+        // Optionally send neutral servos immediately:
+        servoMgr->writeCommands(0,0,0);
+    }
 }
 
 bool ArduFliteController::isArmed() const 
 {
     bool a;
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-      a = armed;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        a = armed;
+    }
+
     return a;
 }
 
@@ -332,11 +346,11 @@ void ArduFliteController::OuterLoopTask(void* parameters)
 {
     ArduFliteController* controller = static_cast<ArduFliteController*>(parameters);
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(OUTER_LOOP_DT); // 10 ms period (100Hz)
+    const TickType_t xFrequency = pdMS_TO_TICKS(outerLoopMs); // 10 ms period (100Hz)
     static unsigned long lastMicros = micros();
 
     // Desired period in microseconds for the outer loop (10 ms = 10,000 µs)
-    const unsigned long desiredPeriodOuter = OUTER_LOOP_DT*1000UL;
+    const unsigned long desiredPeriodOuter = outerLoopMs *1000UL;
 
     EulerAngles rateCommand     {0.0f};
     EulerAngles rateSetpoint    {0.0f};
@@ -349,9 +363,10 @@ void ArduFliteController::OuterLoopTask(void* parameters)
         lastMicros = currentMicros;
 
         // Update outer loop statistics.
-        xSemaphoreTake(controller->outerStatsMutex, portMAX_DELAY);
-        updateLoopStats(controller->outerLoopStats, dtMicro, desiredPeriodOuter);
-        xSemaphoreGive(controller->outerStatsMutex);
+        {
+            SemaphoreLock lock(controller->outerStatsMutex);
+            updateLoopStats(controller->outerLoopStats, dtMicro, desiredPeriodOuter);
+        }
 
         float dt = dtMicro / 1000000.0f;
         const float maxDt = 0.02f;  // 20 ms max dt
@@ -360,10 +375,11 @@ void ArduFliteController::OuterLoopTask(void* parameters)
         if (dt > maxDt) dt = maxDt;
 
         // Protect reading of the mode and pilot setpoints.
-        xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
-        currentMode = controller->mode;
-        rateSetpoint = controller->pilotRateSetpoint;
-        xSemaphoreGive(controller->ctrlMutex);
+        {
+            SemaphoreLock lock(controller->ctrlMutex);
+            currentMode = controller->mode;
+            rateSetpoint = controller->pilotRateSetpoint;
+        }
 
         if (currentMode == ATTITUDE_MODE) 
         {
@@ -371,9 +387,10 @@ void ArduFliteController::OuterLoopTask(void* parameters)
             FliteQuaternion currentQ = controller->imu->getQuaternion();
             controller->attitudeCtrl->update(currentQ, dt, rateCommand);
 
-            xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
-            controller->lastAttitudeCmd  = rateCommand;
-            xSemaphoreGive(controller->ctrlMutex);
+            {
+                SemaphoreLock lock(controller->ctrlMutex);
+                controller->lastAttitudeCmd  = rateCommand;
+            }
 
             // Pass the desired angular rates to the rate controller.
             controller->rateCtrl->setRateControlSetpoint(rateCommand);
@@ -381,11 +398,12 @@ void ArduFliteController::OuterLoopTask(void* parameters)
         else if (currentMode == RATE_MODE)
         {
             // In Stabilized mode, use pilot-provided rate setpoints.
-            rateCommand  = rateSetpoint;
+            rateCommand  = rateSetpoint; 
 
-            xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
-            controller->lastAttitudeCmd = rateCommand;
-            xSemaphoreGive(controller->ctrlMutex); 
+            {
+                SemaphoreLock lock(controller->ctrlMutex);
+                controller->lastAttitudeCmd = rateCommand;
+            }
 
             // Pass the desired angular rates to the rate controller.
             controller->rateCtrl->setRateControlSetpoint(rateCommand);
@@ -409,11 +427,11 @@ void ArduFliteController::InnerLoopTask(void* parameters)
 {
     ArduFliteController* controller = static_cast<ArduFliteController*>(parameters);
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(INNER_LOOP_DT); // 2 ms period (500Hz)
+    const TickType_t xFrequency = pdMS_TO_TICKS(innerLoopMs); // 2 ms period (500Hz)
     static unsigned long lastMicros = micros();
 
     // Desired period in microseconds for the outer loop (10 ms = 10,000 µs)
-    const unsigned long desiredPeriodInner = INNER_LOOP_DT*1000UL;
+    const unsigned long desiredPeriodInner = innerLoopMs *1000UL;
 
     EulerAngles actuatorCmd {0.0f};
     
@@ -424,9 +442,10 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         lastMicros = currentMicros;
 
         // Update inner loop statistics.
-        xSemaphoreTake(controller->innerStatsMutex, portMAX_DELAY);
-        updateLoopStats(controller->innerLoopStats, dtMicro, desiredPeriodInner);
-        xSemaphoreGive(controller->innerStatsMutex);
+        {
+            SemaphoreLock lock(controller->innerStatsMutex);
+            updateLoopStats(controller->innerLoopStats, dtMicro, desiredPeriodInner);
+        }
 
         float dt = dtMicro / 1000000.0f;
         const float maxDt = 0.02f;  // 20 ms max dt
@@ -440,10 +459,12 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         // Fetch current mode + pilot setpoints:
         ArduFliteMode mode;
         EulerAngles  pilot = {0,0,0};
-        xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
-          mode  = controller->mode;
-          pilot = controller->pilotRateSetpoint;
-        xSemaphoreGive(controller->ctrlMutex);
+
+        {
+            SemaphoreLock lock(controller->ctrlMutex);
+            mode  = controller->mode;
+            pilot = controller->pilotRateSetpoint;
+        }
 
         if (mode == MANUAL_MODE) 
         {
@@ -467,9 +488,10 @@ void ArduFliteController::InnerLoopTask(void* parameters)
             controller->servoMgr->writeCommands(0,0,0);
         }
 
-        xSemaphoreTake(controller->ctrlMutex, portMAX_DELAY);
-        controller->lastRateCmd  = actuatorCmd;
-        xSemaphoreGive(controller->ctrlMutex);
+        {
+            SemaphoreLock lock(controller->ctrlMutex);
+            controller->lastRateCmd  = actuatorCmd;
+        }
 
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
@@ -479,9 +501,10 @@ EulerAngles ArduFliteController::getAttitudeSetpoint() const
 {
     EulerAngles value;
 
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value  = pilotAttitudeSetpoint;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        value  = pilotAttitudeSetpoint;
+    }
 
     return value;
 }
@@ -490,9 +513,10 @@ EulerAngles ArduFliteController::getRateSetpoint() const
 {
     EulerAngles value;
 
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value  = pilotRateSetpoint;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        value  = pilotRateSetpoint;
+    }
 
     return value;
 }
@@ -501,9 +525,10 @@ EulerAngles ArduFliteController::getRateCmd() const
 {
     EulerAngles value;
 
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value = lastRateCmd;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        value = lastRateCmd;
+    }
     
     return value;
 }
@@ -512,9 +537,10 @@ EulerAngles ArduFliteController::getAttitudeCmd() const
 {
     EulerAngles value;
 
-    xSemaphoreTake(ctrlMutex, portMAX_DELAY);
-    value = lastAttitudeCmd;
-    xSemaphoreGive(ctrlMutex);
+    {
+        SemaphoreLock lock(ctrlMutex);
+        value = lastAttitudeCmd;
+    }
 
     return value;
 }
@@ -551,18 +577,26 @@ void ArduFliteController::updateLoopStats(LoopStats &stats, unsigned long dtMicr
     stats.sampleCount++;  
 }
 
-LoopStats ArduFliteController::getOuterLoopStats() {
+LoopStats ArduFliteController::getOuterLoopStats() 
+{
     LoopStats statsCopy;
-    xSemaphoreTake(outerStatsMutex, portMAX_DELAY);
-    statsCopy = outerLoopStats;
-    xSemaphoreGive(outerStatsMutex);
+
+    {
+        SemaphoreLock lock(outerStatsMutex);
+        statsCopy = outerLoopStats;
+    }
+
     return statsCopy;
 }
 
-LoopStats ArduFliteController::getInnerLoopStats() {
+LoopStats ArduFliteController::getInnerLoopStats() 
+{
     LoopStats statsCopy;
-    xSemaphoreTake(innerStatsMutex, portMAX_DELAY);
-    statsCopy = innerLoopStats;
-    xSemaphoreGive(innerStatsMutex);
+
+    {
+        SemaphoreLock lock(innerStatsMutex);
+        statsCopy = innerLoopStats;
+    }
+
     return statsCopy;
 }

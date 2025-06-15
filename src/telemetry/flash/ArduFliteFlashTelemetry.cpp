@@ -8,6 +8,7 @@
 
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
 #include "src/utils/Logging.h"
+#include "include/ArduFlite.h"
 
 #include <FS.h>
 #include <LittleFS.h>
@@ -20,32 +21,42 @@ ArduFliteFlashTelemetry::ArduFliteFlashTelemetry(float frequencyHz)
     _mutex(nullptr),
     _lastFlushMs(0),
     _isLogging(false)
-{ }
+{ 
 
-ArduFliteFlashTelemetry::~ArduFliteFlashTelemetry() {
-    if (_mutex) {
-        xSemaphoreTake(_mutex, portMAX_DELAY);
-        if (_isLogging) {
-            _logFile.flush();
-            _logFile.close();
+}
+
+ArduFliteFlashTelemetry::~ArduFliteFlashTelemetry() 
+{
+    if (_mutex) 
+    {
+        {
+            SemaphoreLock lock(_mutex);
+            if (_isLogging) 
+            {
+                _logFile.flush();
+                _logFile.close();
+            }
         }
-        xSemaphoreGive(_mutex);
         vSemaphoreDelete(_mutex);
     }
 }
 
-void ArduFliteFlashTelemetry::begin() {
-    if (!LittleFS.begin()) {
+void ArduFliteFlashTelemetry::begin() 
+{
+    if (!LittleFS.begin()) 
+    {
         LOG_ERR("LittleFS mount failed; formatting...");
         LittleFS.format();
-        if (!LittleFS.begin()) {
+        if (!LittleFS.begin()) 
+        {
             LOG_ERR("LittleFS format failed!");
             return;
         }
     }
 
     _mutex = xSemaphoreCreateMutex();
-    if (!_mutex) {
+    if (!_mutex) 
+    {
         LOG_ERR("Failed to create telemetry mutex");
         return;
     }
@@ -70,22 +81,26 @@ void ArduFliteFlashTelemetry::begin() {
 void ArduFliteFlashTelemetry::publish(const TelemetryData& telemData, const ConfigData& configData)
 {
     if (!_mutex) return;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+
+    {
+        SemaphoreLock lock(_mutex);
         _pendingData = telemData;
-        xSemaphoreGive(_mutex);
     }
 }
 
-int ArduFliteFlashTelemetry::findNextFlightLogIndex() {
+int ArduFliteFlashTelemetry::findNextFlightLogIndex() 
+{
     int maxIdx = -1;
     File root = LittleFS.open("/");
     File file = root.openNextFile();
-    while (file) {
+    while (file) 
+    {
         String name = file.name();
         const char* p = name.c_str();
         if (p[0] == '/') p++;  // skip leading slash
         int idx;
-        if (sscanf(p, "log_%03d.csv", &idx) == 1) {
+        if (sscanf(p, "log_%03d.csv", &idx) == 1) 
+        {
             maxIdx = max(maxIdx, idx);
         }
         file = root.openNextFile();
@@ -94,17 +109,22 @@ int ArduFliteFlashTelemetry::findNextFlightLogIndex() {
     return maxIdx + 1;
 }
 
-void ArduFliteFlashTelemetry::startLogging() {
+void ArduFliteFlashTelemetry::startLogging() 
+{
     if (!_mutex) return;
-    if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
-        if (!_isLogging) {
+
+    {
+        SemaphoreLock lock(_mutex);
+        if (!_isLogging) 
+        {
             int idx = findNextFlightLogIndex();
             char fn[32];
             snprintf(fn, sizeof(fn), "/log_%03d.csv", idx);
             _currentFilename = fn;
 
             _logFile = LittleFS.open(_currentFilename, FILE_WRITE);
-            if (_logFile) {
+            if (_logFile) 
+            {
                 // Write CSV header + newline
                 char header[MAX_ROW_BUFFER];
                 formatCSVHeader(header, sizeof(header));
@@ -113,61 +133,76 @@ void ArduFliteFlashTelemetry::startLogging() {
                 _lastFlushMs = millis();
                 _isLogging = true;
                 LOG_INF("Logging started: %s", fn);
-            } else {
+            } 
+            else 
+            {
                 LOG_ERR("Failed to open %s", fn);
             }
         }
-        xSemaphoreGive(_mutex);
     }
 }
 
-void ArduFliteFlashTelemetry::stopLogging() {
+void ArduFliteFlashTelemetry::stopLogging() 
+{
     if (!_mutex) return;
-    if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
-        if (_isLogging) {
+
+    {
+        SemaphoreLock lock(_mutex);
+        if (_isLogging) 
+        {
             _logFile.flush();
             _logFile.close();
             _isLogging = false;
             LOG_INF("Logging stopped: %s", _currentFilename.c_str());
         }
-        xSemaphoreGive(_mutex);
     }
 }
 
-void ArduFliteFlashTelemetry::listLogs() {
+void ArduFliteFlashTelemetry::listLogs() 
+{
     if (!_mutex) return;
-    if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
+
+    {
+        SemaphoreLock lock(_mutex);
         LOG("Available logs:");
         File root = LittleFS.open("/");
         File file = root.openNextFile();
-        while (file) {
+        while (file) 
+        {
             String name = file.name();
             if (name.startsWith("/")) name = name.substring(1);
-            if (name.startsWith("log_") && name.endsWith(".csv")) {
+            if (name.startsWith("log_") && name.endsWith(".csv")) 
+            {
                 LOG("%s", name);
             }
             file = root.openNextFile();
         }
         root.close();
-        xSemaphoreGive(_mutex);
     }
 }
 
-void ArduFliteFlashTelemetry::dumpLog(int index) {
+void ArduFliteFlashTelemetry::dumpLog(int index) 
+{
     if (!_mutex) return;
-    if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
+
+    {
+        SemaphoreLock lock(_mutex);
         char fn[32];
         snprintf(fn, sizeof(fn), "/log_%03d.csv", index);
 
         File f = LittleFS.open(fn, FILE_READ);
-        if (!f) {
+        if (!f) 
+        {
             LOG_ERR("Failed to open %s", fn);
-        } else {
+        } 
+        else 
+        {
             // BEGIN marker + blank line
             LOG_N("\n--- BEGIN %s ---\n\n", fn);
 
             // Read and print line by line
-            while (f.available()) {
+            while (f.available()) 
+            {
                 String line = f.readStringUntil('\n');
                 LOG("%s", line.c_str());  // ensures each CSV row is on its own line
             }
@@ -176,52 +211,67 @@ void ArduFliteFlashTelemetry::dumpLog(int index) {
             LOG_N("\n--- END %s ---\n", fn);
             f.close();
         }
-        xSemaphoreGive(_mutex);
     }
 }
 
-void ArduFliteFlashTelemetry::deleteLog(int index) {
+void ArduFliteFlashTelemetry::deleteLog(int index) 
+{
     if (!_mutex) return;
-    if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
+
+    {
+        SemaphoreLock lock(_mutex);
         char fn[32];
         snprintf(fn, sizeof(fn), "/log_%03d.csv", index);
-        if (LittleFS.remove(fn)) {
+        if (LittleFS.remove(fn)) 
+        {
             LOG_INF("Deleted %s", fn);
-        } else {
+        } 
+        else 
+        {
             LOG_ERR("Failed to delete %s", fn);
         }
-        xSemaphoreGive(_mutex);
     }
 }
 
-void ArduFliteFlashTelemetry::telemetryTask(void* pvParameters) {
+void ArduFliteFlashTelemetry::telemetryTask(void* pvParameters) 
+{
     auto* self = static_cast<ArduFliteFlashTelemetry*>(pvParameters);
     char rowBuf[MAX_ROW_BUFFER];
 
-    for (;;) {
+    for (;;) 
+    {
         unsigned long ts = millis();
         TelemetryData copy;
 
         // 1) Copy pending data under mutex
-        if (self->_mutex && xSemaphoreTake(self->_mutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-            copy = self->_pendingData;
-            xSemaphoreGive(self->_mutex);
+         if (self->_mutex) 
+        {
+            {
+                SemaphoreLock lock(self->_mutex);
+                copy = self->_pendingData;
+            }
         }
 
         // 2) Format CSV row outside mutex
         size_t len = formatCSVRow(rowBuf, sizeof(rowBuf), ts, copy);
 
         // 3) Write & periodic flush under mutex
-        if (self->_mutex && xSemaphoreTake(self->_mutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-            if (self->_isLogging && self->_logFile) {
-                self->_logFile.write((const uint8_t*)rowBuf, len);
-                if (ts - self->_lastFlushMs >= FLUSH_INTERVAL_MS) {
-                    self->_logFile.flush();
-                    self->_lastFlushMs = ts;
+        if (self->_mutex) 
+        {
+           {
+                SemaphoreLock lock(self->_mutex);
+                if (self->_isLogging && self->_logFile) 
+                {
+                    self->_logFile.write((const uint8_t*)rowBuf, len);
+                    if (ts - self->_lastFlushMs >= FLUSH_INTERVAL_MS) 
+                    {
+                        self->_logFile.flush();
+                        self->_lastFlushMs = ts;
+                    }
                 }
-            }
-            xSemaphoreGive(self->_mutex);
+            } 
         }
+        
 
         // Maintain the desired telemetry rate
         unsigned long elapsed = millis() - ts;
@@ -230,7 +280,8 @@ void ArduFliteFlashTelemetry::telemetryTask(void* pvParameters) {
     }
 }
 
-void ArduFliteFlashTelemetry::formatCSVHeader(char* buf, size_t bufSize) {
+void ArduFliteFlashTelemetry::formatCSVHeader(char* buf, size_t bufSize) 
+{
     const char* hdr =
         "timestamp,"
         "accel_x,accel_y,accel_z,"
@@ -251,7 +302,8 @@ size_t ArduFliteFlashTelemetry::formatCSVRow(
     char* buf, size_t bufSize,
     unsigned long ts,
     const TelemetryData& d
-) {
+) 
+{
     // We have exactly 29 fields (1 timestamp + 26 floats + 2 ints)
     return snprintf(buf, bufSize,
         "%lu,"                             //  1 timestamp

@@ -189,8 +189,8 @@ void arduflite_init()
         crsfRx.configureChannel(ch, CRSFConfig::CRSF_CHANNEL_CONFIGS[ch]);
     }
 
-    crsfReceiver.setFailsafeCallback(CRSFCallbacks::onFailsafe);
-    crsfReceiver.setFailsafeTimeout(500);
+    crsfRx.setFailsafeCallback(CRSFCallbacks::onFailsafe);
+    crsfRx.setFailsafeTimeout(500);
 
     LOG_INF("ArduFlite Controller initialised.");
 }

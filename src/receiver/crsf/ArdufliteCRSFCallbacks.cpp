@@ -15,19 +15,21 @@ namespace CRSFCallbacks
     // Called by the receiver when failsafe timeout fires
     void onFailsafe() 
     {
-        EulerAngles sp{};
-
-        sp.roll  = 10.0f;
-        sp.pitch = -5.0f;
-        sp.yaw   = 20.0f;
-
-        // send one attitude-setpoint command
+        // 1) Force ATTITUDE mode so our setpoints are interpreted as angles
         SystemCommand cmd{};
-        cmd.type            = CMD_SET_CONFIG_ATTITUDE;
-        cmd.attitudeConfig  = sp;
+        cmd.type = CMD_SET_MODE;
+        cmd.mode = ATTITUDE_MODE;
         CommandSystem::instance().pushCommand(cmd);
 
-        //? Could also: controller.disarm();  etc.
+        // 2) Push a nominal attitude setpoint:  10° bank +  -5° pitch
+        EulerAngles fsAttitude;
+        fsAttitude.roll  = 10.0f;   // tilt right 10°
+        fsAttitude.pitch = -5.0f;   // nose down 5°
+        fsAttitude.yaw   = 0.0f;    // hold current heading
+        SystemCommand attCmd{};
+        attCmd.type           = CMD_SET_CONFIG_ATTITUDE;
+        attCmd.attitudeConfig = fsAttitude;
+        CommandSystem::instance().pushCommand(attCmd);
     }
 
     void onRoll(uint8_t ch, float v) 
@@ -96,5 +98,5 @@ namespace CRSFCallbacks
         cmd.x_value = newState;
         CommandSystem::instance().pushCommand(cmd);
     }
-    
+
 } // namespace CRSFCallbacks

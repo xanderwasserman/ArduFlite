@@ -108,9 +108,6 @@ void ArdufliteCRSFReceiver::run()
                 {
                     LOG_WARN("Entering RC failsafe");
                     _inFailsafe = true;
-                }
-                if (_failsafeCb) 
-                {
                     _failsafeCb();
                 }
             }

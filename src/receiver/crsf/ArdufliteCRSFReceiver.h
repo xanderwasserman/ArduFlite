@@ -15,16 +15,36 @@
 #include <Arduino.h>
 
 /**
- * @brief Types of channel mappings.
+ * @brief All the “inbound” CRSF frame types we care about.
  */
-enum class ChannelType : uint8_t {
-    Raw,        ///< 0…2047
-    DualThrow,  ///< -1…+1
-    SingleThrow,///< 0…+1
-    Boolean,    ///< 0 or 1
-    TriState,   ///< -1, 0, +1
-    Custom      ///< user-provided converter()
-};
+static constexpr uint8_t CRSF_FRAMETYPE_RC_CHANNELS_PACKED   = 0x16;
+static constexpr uint8_t CRSF_FRAMETYPE_LINK_STATISTICS      = 0x14;
+static constexpr uint8_t CRSF_FRAMETYPE_DEVICE_PING          = 0x28;
+static constexpr uint8_t CRSF_FRAMETYPE_DEVICE_INFO          = 0x29;
+static constexpr uint8_t CRSF_FRAMETYPE_SUBSCRIBE_TELEMETRY  = 0xEE;
+
+/**
+ * @brief Payload for Link Statistics (10 bytes).
+ * @see   CRSF spec Rev07
+ */
+typedef struct __attribute__((packed)) {
+    uint8_t uplink_RSSI_1;        ///< RSSI of antenna 1 (dBm + 64)
+    uint8_t uplink_RSSI_2;        ///< RSSI of antenna 2 (dBm + 64)
+    uint8_t uplink_Link_quality;  ///< 0–255 link quality %
+    int8_t  uplink_SNR;           ///< uplink SNR (dB)
+    uint8_t active_antenna;       ///< 0 or 1
+    uint8_t rf_Mode;              ///< RF data rate index
+    uint8_t uplink_TX_Power;      ///< TX power index (0–7)
+    uint8_t downlink_RSSI;        ///< downlink RSSI (dBm + 64)
+    uint8_t downlink_Link_quality;///< downlink link quality %
+    int8_t  downlink_SNR;         ///< downlink SNR (dB)
+} crsfLinkStatistics_t;
+
+/**
+ * @brief Callback signature for updated Link Statistics.
+ * @param stats  freshly‐parsed link metrics
+ */
+using LinkStatsCallback = void(*)(const crsfLinkStatistics_t& stats);
 
 /**
  * @brief Signature for a custom raw→float converter.
@@ -39,6 +59,18 @@ using ChannelConverter = float(*)(uint16_t rawValue);
  * @param value      mapped value
  */
 using ChannelCallback  = void (*)(uint8_t channelIdx, float value);
+
+/**
+ * @brief Types of channel mappings.
+ */
+enum class ChannelType : uint8_t {
+    Raw,        ///< 0…2047
+    DualThrow,  ///< -1…+1
+    SingleThrow,///< 0…+1
+    Boolean,    ///< 0 or 1
+    TriState,   ///< -1, 0, +1
+    Custom      ///< user-provided converter()
+};
 
 /**
  * @brief Configuration for one CRSF channel.
@@ -83,16 +115,22 @@ public:
      */
     void configureChannel(uint8_t idx, const ChannelConfig& cfg);
 
+    /**
+     * @brief Get the latest Link‐Statistics (thread‐safe).
+     * @param out  will be filled with the last‐received stats
+     * @return     true if we have ever received one
+     */
+    bool getLinkStats(crsfLinkStatistics_t& out) const;
+
 private:
     HardwareSerial&    _serial;
     int                _rxPin;
     float              _intervalMs;
-    TaskHandle_t       _taskHandle = nullptr;
-    SemaphoreHandle_t  _lock;
+    TaskHandle_t       _taskHandle  = nullptr;
+    SemaphoreHandle_t  _lock        = nullptr;
 
     // framing buffer
     static constexpr uint8_t  DestFC     = 0xC8;
-    static constexpr uint8_t  TypeRC     = 0x16;
     static constexpr size_t   MaxFrame   = 64;
     uint8_t  _buf[MaxFrame];
     size_t   _bufLen      = 0;
@@ -102,6 +140,10 @@ private:
 
     // Remember last raw values so we only callback on change
     uint16_t      _lastRaw[16];
+
+    // link‐stats storage
+    crsfLinkStatistics_t _latestLinkStats{};
+    bool                 _haveLinkStats = false;
 
     // FreeRTOS entrypoint
     static void taskLoop(void* pv);

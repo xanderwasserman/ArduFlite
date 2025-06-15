@@ -12,6 +12,8 @@
 #include "src/receiver/crsf/ArdufliteCRSFReceiver.h"
 #include "src/utils/Logging.h"
 
+#include <cstring>
+
 ArdufliteCRSFReceiver::ArdufliteCRSFReceiver(HardwareSerial& ser, int rxPin, float freqHz)
   : _serial(ser)
   , _rxPin(rxPin)
@@ -19,21 +21,13 @@ ArdufliteCRSFReceiver::ArdufliteCRSFReceiver(HardwareSerial& ser, int rxPin, flo
 {
     _lock = xSemaphoreCreateMutex();
     // initialize lastRaw to invalid so first reading always fires
-    for (uint8_t i = 0; i < 16; ++i) {
-        _lastRaw[i] = 0xFFFF;
-    }
+    for (auto &v : _lastRaw) v = 0xFFFF;  // force first‐time callbacks
 }
 
 ArdufliteCRSFReceiver::~ArdufliteCRSFReceiver() 
 {
-    if (_taskHandle) 
-    {
-        vTaskDelete(_taskHandle);
-    }
-    if (_lock) 
-    {
-        vSemaphoreDelete(_lock);
-    }
+    if (_taskHandle) vTaskDelete(_taskHandle);
+    if (_lock)       vSemaphoreDelete(_lock);
 }
 
 void ArdufliteCRSFReceiver::begin() 
@@ -59,15 +53,28 @@ void ArdufliteCRSFReceiver::begin()
 void ArdufliteCRSFReceiver::configureChannel(uint8_t idx, const ChannelConfig& cfg) 
 {
     LOG_INF("Configured channel: %u", idx);
+    if (idx >= 16) return;
     xSemaphoreTake(_lock, portMAX_DELAY);
-    if (idx < 16) _chCfg[idx] = cfg;
+      _chCfg[idx] = cfg;
     xSemaphoreGive(_lock);
+}
+
+bool ArdufliteCRSFReceiver::getLinkStats(crsfLinkStatistics_t& out) const
+{
+    bool ok = false;
+    xSemaphoreTake(_lock, portMAX_DELAY);
+      if (_haveLinkStats) 
+      {
+        out = _latestLinkStats;
+        ok = true;
+      }
+    xSemaphoreGive(_lock);
+    return ok;
 }
 
 void ArdufliteCRSFReceiver::taskLoop(void* pv) 
 {
-    auto* self = static_cast<ArdufliteCRSFReceiver*>(pv);
-    self->run();
+    static_cast<ArdufliteCRSFReceiver*>(pv)->run();
 }
 
 void ArdufliteCRSFReceiver::run() 
@@ -127,10 +134,36 @@ void ArdufliteCRSFReceiver::parseByte(uint8_t b)
 
 void ArdufliteCRSFReceiver::dispatchFrame(const uint8_t* frame, size_t len) 
 {
-    if (frame[2] != TypeRC) return;
-    xSemaphoreTake(_lock, portMAX_DELAY);
-    handleRC(frame+3, len-4);
-    xSemaphoreGive(_lock);
+    uint8_t type = frame[2];
+    if (type == CRSF_FRAMETYPE_RC_CHANNELS_PACKED) 
+    {
+        xSemaphoreTake(_lock, portMAX_DELAY);
+          handleRC(frame + 3, len - 4);
+        xSemaphoreGive(_lock);
+
+    } 
+    else if (type == CRSF_FRAMETYPE_LINK_STATISTICS) 
+    {
+        crsfLinkStatistics_t stats;
+        std::memcpy(&stats, frame + 3, sizeof(stats));
+
+        xSemaphoreTake(_lock, portMAX_DELAY);
+          _latestLinkStats = stats;
+          _haveLinkStats   = true;
+        xSemaphoreGive(_lock);
+    } 
+    else if (type == CRSF_FRAMETYPE_DEVICE_PING) 
+    {
+        // you could reply or log ping timestamps here…
+    } 
+    else if (type == CRSF_FRAMETYPE_DEVICE_INFO) 
+    {
+        // parse device-info payload if you like
+    } 
+    else if (type == CRSF_FRAMETYPE_SUBSCRIBE_TELEMETRY) 
+    {
+        // the TX telling you which telemetry it wants
+    }
 }
 
 void ArdufliteCRSFReceiver::handleRC(const uint8_t* payload, size_t) 
@@ -149,7 +182,8 @@ void ArdufliteCRSFReceiver::handleRC(const uint8_t* payload, size_t)
     }
 }
 
-void ArdufliteCRSFReceiver::decodeChannels(const uint8_t* p, uint16_t out[16]) {
+void ArdufliteCRSFReceiver::decodeChannels(const uint8_t* p, uint16_t out[16]) 
+{
     for (uint8_t i = 0; i < 16; ++i) 
     {
         uint32_t bit = i*11;

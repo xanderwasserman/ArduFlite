@@ -12,10 +12,7 @@
 #define CONTROL_MIXER_CONFIG_H
 
 // ——— Feature flags ———
-#define ENABLE_CONTROL_MAPPING    ///< disable to bypass all mapping & just forward raw
 #define ENABLE_MIXING              ///< SAFE-style mixing in ATTITUDE_MODE
-//#define ENABLE_SINGLE_AXIS_TUNING ///< only update one axis (for PID tuning)
-//#define TUNED_AXIS_CH CH_ROLL     ///< pick CH_ROLL, CH_PITCH or CH_YAW
 
 // ——— Attitude limits (degrees) ———
 constexpr float MAX_ATT_ROLL  =  45.0f;  ///< ± roll angle in ATTITUDE_MODE

@@ -31,21 +31,26 @@ static constexpr uint8_t CH_YAW   = 3;
  */
 class ControlMixer {
 public:
-    /**
-     * @brief Remember which controller to drive.
-     * @param ctrl your global ArduFliteController instance
-     */
+    /// Must be called once before any mixing.
     static void init(ArduFliteController& ctrl);
 
-    /**
-     * @brief Feed a new raw channel value.
-     * @param ch channel index (CH_ROLL, CH_PITCH, CH_YAW)
-     * @param v  normalized input (–1…+1)
-     *
-     * Updates an internal RawInputs, computes a full 3-axis setpoint
-     * according to current mode, then pushes the right command(s).
-     */
+    /// Called on each channel update
     static void handleChannelInput(uint8_t ch, float v);
+
+    /// mix raw RC [-1..1] into an attitude setpoint (degrees) with optional mixing
+    static EulerAngles mixAttitude(const EulerAngles &raw);
+
+    /// mix raw RC [-1..1] into a rate setpoint (deg/s)
+    static EulerAngles mixRate(const EulerAngles &raw);
+
+    /// direct passthrough, raw → servo commands
+    static EulerAngles mixManual(const EulerAngles &raw);
+
+    /// general dispatcher: chooses Attitude/Rate/Manual based on mode
+    static EulerAngles mix(const EulerAngles &raw, ArduFliteMode mode);
+
+    /// actually send that setpoint into the controller/command bus
+    static void sendSetpoint(const EulerAngles &sp);
 
 private:
     static EulerAngles            s_raw;  ///< latest raw sticks

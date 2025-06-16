@@ -58,10 +58,10 @@ namespace AttitudeControllerConfig
 namespace RateControllerConfig
 {
     constexpr PIDConfig DEFAULT_ROLL_PID  = makePID_TC(0.08f,   1.40f,   0.30f,     1.00f,   0.80f,   0.10f);
-    constexpr PIDConfig DEFAULT_PITCH_PID = makePID_TC(0.05f,   4.00f,   0.70f,     1.00f,   0.80f,   0.10f);
-    constexpr PIDConfig DEFAULT_YAW_PID   = makePID_TC(0.04f,   3.00f,   0.50f,     1.00f,   0.80f,   0.10f);
+    constexpr PIDConfig DEFAULT_PITCH_PID = makePID_TC(0.05f,   5.00f,   0.70f,     1.00f,   0.80f,   0.10f);
+    constexpr PIDConfig DEFAULT_YAW_PID   = makePID_TC(0.04f,   3.00f,   0.30f,     1.00f,   0.80f,   0.10f);
 
-    constexpr float outLpAlpha = 0.01f;  // separate low-pass for actuator output
+    constexpr float outLpAlpha = 0.005f;  // separate low-pass for actuator output
 }
 
 #endif // CONTROLLER_CONFIG_H

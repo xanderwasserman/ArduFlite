@@ -131,7 +131,7 @@ void ArduFliteController::setAttitudeSetpoint(EulerAngles setpointDeg)
  * @param axis The axis to set the setpoint for (0=roll, 1=pitch, 2=yaw)
  * @param value Roll attitude setpoint in degrees.
  */
-void setAttitudeSetpointAxis(uint8_t axis, float value) 
+void ArduFliteController::setAttitudeSetpointAxis(uint8_t axis, float value) 
 {
     EulerAngles localCopy;
 
@@ -222,7 +222,7 @@ void ArduFliteController::startTasks()
         LOG_ERR("OuterLoopTask creation failed!");
     }
 
-    if (xTaskCreate(InnerLoopTask, "InnerLoop", 4096, this, 3, &innerTaskHandle) !- pdPASS)
+    if (xTaskCreate(InnerLoopTask, "InnerLoop", 4096, this, 3, &innerTaskHandle) != pdPASS)
     {
         LOG_ERR("InnerLoopTask creation failed!");
     }

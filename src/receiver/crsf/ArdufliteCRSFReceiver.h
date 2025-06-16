@@ -128,6 +128,12 @@ public:
      */
     void setFailsafeCallback(void (*cb)());
 
+    /**
+     * @brief Set the threshold after which the failsafe callback is invoked.
+     * @param timeout  The timeout in milliseconds.
+     */
+    void setFailsafeTimeout(uint32_t timeout);
+
 private:
     HardwareSerial&    _serial;
     int                _rxPin;

@@ -99,8 +99,8 @@ void ArdufliteCRSFTelemetry::run()
         {
             {
                 SemaphoreLock lock(_lock);
-                _pendingData   = telem;
-                _pendingConfig = cfg;
+                td = _pendingData;
+                cd = _pendingConfig;
             }
         }
 

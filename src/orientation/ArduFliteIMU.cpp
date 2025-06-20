@@ -374,7 +374,7 @@ void ArduFliteIMU::update(float dt)
 *
 * @return true if calibration is successful, false otherwise.
 */
-bool ArdufliteIMU::baroCalibrate()
+bool ArduFliteIMU::baroCalibrate()
 {
     LOG_INF("Starting Barometer calibration...");
 

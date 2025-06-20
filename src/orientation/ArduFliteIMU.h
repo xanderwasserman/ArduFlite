@@ -115,7 +115,6 @@ struct ArduFliteIMUOffsets {
     float magX;
     float magY;
     float magZ;
-    float referencePressure = 1013.25f; //reference sea-level pressure
 };
  
 /**
@@ -180,6 +179,17 @@ public:
     * @return true if calibration is successful, false otherwise.
     */
     bool calibrate();
+
+    /**
+    * @brief Performs calibration of the barometer, with the current pressure as the 
+    * ground-level reference.
+    *
+    * Collects raw sensor data over a fixed calibration period, computes average pressure,
+    * and then saves this. This method assumes the IMU remains stationary during calibration.
+    *
+    * @return true if calibration is successful, false otherwise.
+    */
+    bool baroCalibrate()
  
     /**
     * @brief Performs self-calibration of the IMU.
@@ -257,42 +267,45 @@ private:
 #endif
  
 #if FILTER_TYPE == FILTER_TYPE_MADGWICK
-    Adafruit_Madgwick filter;
+    Adafruit_Madgwick   filter;
 #elif FILTER_TYPE == FILTER_TYPE_KALMAN
     Adafruit_NXPSensorFusion filter;
 #endif
  
     ArduFliteIMUOffsets offsets;
-    uint32_t timestamp;
-    calData calib = {0};
+    uint32_t            timestamp;
+
+    // Calibrations
+    float referencePressure = 1013.25f; //reference sea-level pressure
+    calData calib           = {0};
 
     // Raw sensor readings
-    float accelX = 0.0f;
-    float accelY = 0.0f;
-    float accelZ = 0.0f;
-    float gyroX = 0.0f;
-    float gyroY = 0.0f;
-    float gyroZ = 0.0f;
-    float magX = 0.0f;
-    float magY = 0.0f;
-    float magZ = 0.0f;
-    float qw = 0.0f;
-    float qx = 0.0f;
-    float qy = 0.0f;
-    float qz = 0.0f;
-    float altitude = 0.0f;
+    float accelX            = 0.0f;
+    float accelY            = 0.0f;
+    float accelZ            = 0.0f;
+    float gyroX             = 0.0f;
+    float gyroY             = 0.0f;
+    float gyroZ             = 0.0f;
+    float magX              = 0.0f;
+    float magY              = 0.0f;
+    float magZ              = 0.0f;
+    float qw                = 0.0f;
+    float qx                = 0.0f;
+    float qy                = 0.0f;
+    float qz                = 0.0f;
+    float altitude          = 0.0f;
 
-    float accelAlpha = IMUConfig::ACCEL_ALPHA;
-    float gyroAlpha  = IMUConfig::GYRO_ALPHA;
-    float magAlpha  = IMUConfig::MAG_ALPHA;
-    float altiAlpha  = IMUConfig::ALTI_ALPHA;
-    bool lpInitialized = false;
+    float accelAlpha        = IMUConfig::ACCEL_ALPHA;
+    float gyroAlpha         = IMUConfig::GYRO_ALPHA;
+    float magAlpha          = IMUConfig::MAG_ALPHA;
+    float altiAlpha         = IMUConfig::ALTI_ALPHA;
+    bool lpInitialized      = false;
 
-    float filteredAccelX, filteredAccelY, filteredAccelZ = 0.0f;
-    float filteredGyroX, filteredGyroY, filteredGyroZ = 0.0f;
-    float filteredMagX, filteredMagY, filteredMagZ = 0.0f;
-    float filteredAltitude = 0.0f;
-    float pitch = 0.0f, roll = 0.0f, yaw = 0.0f;
+    float filteredAccelX, filteredAccelY, filteredAccelZ    = 0.0f;
+    float filteredGyroX, filteredGyroY, filteredGyroZ       = 0.0f;
+    float filteredMagX, filteredMagY, filteredMagZ          = 0.0f;
+    float filteredAltitude                                  = 0.0f;
+    float pitch, roll, yaw                                  = 0.0f;
 
     // Data structures to hold raw sensor readings.
     AccelData accelData;    //< Structure to store accelerometer data.
@@ -302,9 +315,9 @@ private:
     SemaphoreHandle_t imuMutex;
 
     // Flight state
-    FlightState flightState = PREFLIGHT;
+    FlightState flightState             = PREFLIGHT;
     unsigned long flightStableStartTime = 0;
-    unsigned long motionStartTime = 0;
+    unsigned long motionStartTime       = 0;
 
 #if BARO_TYPE == BARO_TYPE_BMP280
     Adafruit_BMP280 bmp280;

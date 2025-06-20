@@ -38,7 +38,6 @@ ArduFliteIMU::ArduFliteIMU()
         0.0f,  // magX
         0.0f,  // magY
         0.0f,  // magZ
-        1013.25f // referencePressure (hPa)
     };
 
     // Create the mutex for protecting sensor data.
@@ -93,15 +92,13 @@ bool ArduFliteIMU::begin()
     if (!bmp280.begin(0x76)) 
     {
         LOG_ERR("Failed to initialize BMP280 barometer!");
+        return false;
     } 
-    else 
-    {
-        // Immediately set our ground‑level reference pressure:
-        float p = bmp280.readPressure() / 100.0f;  // Pa → hPa
-        offsets.referencePressure = p;
-        LOG_INF("BMP280 reference pressure set to %f hPa.", p);
-        LOG_INF("BMP280 barometer initialized.");
-    }
+
+    // Immediately set our ground‑level reference pressure:
+    if (!baroCalibrate())   return false;
+    LOG_INF("BMP280 barometer initialized.");
+    
 #endif
 
     // Initialize and warm up the orientation filter.
@@ -300,7 +297,7 @@ void ArduFliteIMU::update(float dt)
 
         // For BMP280, update barometer reading.
     #if BARO_TYPE == BARO_TYPE_BMP280
-        altitude = bmp280.readAltitude(offsets.referencePressure); 
+        altitude = bmp280.readAltitude(referencePressure); 
     #endif
 
         // Remove calibration offsets.
@@ -369,6 +366,63 @@ void ArduFliteIMU::update(float dt)
  }
  
 /**
+* @brief Performs calibration of the barometer, with the current pressure as the 
+* ground-level reference.
+*
+* Collects raw sensor data over a fixed calibration period, computes average pressure,
+* and then saves this. This method assumes the IMU remains stationary during calibration.
+*
+* @return true if calibration is successful, false otherwise.
+*/
+bool ArdufliteIMU::baroCalibrate()
+{
+    LOG_INF("Starting Barometer calibration...");
+
+    const unsigned long CALIB_MS = 1000;
+    unsigned long start = millis();
+    unsigned int samples = 0;
+
+    double sumBaro = 0;
+
+    // Protect the sensor update with a mutex.
+    {
+        SemaphoreLock lock(imuMutex);
+
+        while (millis() - start < CALIB_MS) 
+        {
+            // Read raw sensor data.
+    #if BARO_TYPE == BARO_TYPE_BMP280
+            double baro = bmp280.readPressure();
+    #else
+            double baro = 0.0f;
+    #endif
+
+            // Accumulate readings.
+            sumBaro += baro;
+            samples++;
+
+            delay(5); // Small delay between samples.
+        }
+
+        if (samples == 0) 
+        {
+            LOG_ERR("Baro calibration got no samples!");
+            return false;
+        }
+
+        double avgBaro      = sumBaro / samples;
+
+        referencePressure    = (float)avgBaro;
+
+        LOG_INF("Pressure reference: %.3f hPa", referencePressure);
+    }
+
+    LOG_INF("Barometer calibration done.");
+
+    return true;
+}
+
+/**
 * @brief Performs self-calibration of the IMU.
 *
 * Collects raw sensor data over a fixed calibration period, computes average offsets,
@@ -388,7 +442,6 @@ bool ArduFliteIMU::selfCalibrate()
 
     double sumAx = 0, sumAy = 0, sumAz = 0;
     double sumGx = 0, sumGy = 0, sumGz = 0;
-    double sumBaro = 0;
 
     // Protect the sensor update with a mutex.
     {
@@ -408,12 +461,6 @@ bool ArduFliteIMU::selfCalibrate()
             double gy = gyroData.gyroY;
             double gz = gyroData.gyroZ;
 
-    #if BARO_TYPE == BARO_TYPE_BMP280
-            double baro = bmp280.readPressure() / 100.0f; // convert Pa to hPa
-    #else
-            double baro = 0.0f;
-    #endif
-
             // Accumulate readings.
             sumAx   += ax;
             sumAy   += ay;
@@ -421,8 +468,6 @@ bool ArduFliteIMU::selfCalibrate()
             sumGx   += gx;
             sumGy   += gy;
             sumGz   += gz;
-
-            sumBaro += baro;
 
             samples++;
 
@@ -435,12 +480,10 @@ bool ArduFliteIMU::selfCalibrate()
         double avgGx        = sumGx / samples;
         double avgGy        = sumGy / samples;
         double avgGz        = sumGz / samples;
-        double avgBaro      = sumBaro / samples;
 
         LOG_INF("Raw average readings:");
         LOG_INF("Accel: %.3f, %.3f, %.3f", avgAx, avgAy, avgAz);
         LOG_INF("Gyro: %.3f, %.3f, %.3f", avgGx, avgGy, avgGz);
-        LOG_INF("Pressure: %.3f", avgBaro);
 
         // Determine desired offsets.
         ArduFliteIMUOffsets newOfs;
@@ -451,12 +494,10 @@ bool ArduFliteIMU::selfCalibrate()
         newOfs.gyroX                = float(avgGx);         // Desired gyro values are 0.
         newOfs.gyroY                = float(avgGy);
         newOfs.gyroZ                = float(avgGz);
-        newOfs.referencePressure    = (float)avgBaro;
 
         LOG_INF("Computed new offsets:");
         LOG_INF("Accel Offsets: %.3f, %.3f, %.3f", newOfs.accelX, newOfs.accelY, newOfs.accelZ);
         LOG_INF("Gyro Offsets: %.3f, %.3f, %.3f", newOfs.gyroX, newOfs.gyroY, newOfs.gyroZ);
-        LOG_INF("Pressure reference: %.3f", newOfs.referencePressure);
 
         // Store and save the calibration offsets.
         setOffsets(newOfs);

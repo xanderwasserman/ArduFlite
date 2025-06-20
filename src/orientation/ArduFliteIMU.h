@@ -189,7 +189,7 @@ public:
     *
     * @return true if calibration is successful, false otherwise.
     */
-    bool baroCalibrate()
+    bool baroCalibrate();
  
     /**
     * @brief Performs self-calibration of the IMU.

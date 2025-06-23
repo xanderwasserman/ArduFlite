@@ -276,7 +276,7 @@ private:
     uint32_t            timestamp;
 
     // Calibrations
-    float referencePressure = 101325.0f; // reference sea-level pressure as a backup
+    float referencePressure = 1013.25f; // reference sea-level pressure as a backup
     calData calib           = {0};
 
     // Raw sensor readings

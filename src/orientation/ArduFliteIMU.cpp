@@ -392,7 +392,7 @@ bool ArduFliteIMU::baroCalibrate()
         {
             // Read raw sensor data.
     #if BARO_TYPE == BARO_TYPE_BMP280
-            double baro = bmp280.readPressure();
+            double baro = bmp280.readPressure()/100.0; //convert from Pa to hPa
     #else
             double baro = 0.0f;
     #endif

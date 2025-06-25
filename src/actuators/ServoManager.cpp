@@ -56,7 +56,7 @@ ServoManager::ServoManager(WingDesign design,
 ServoManager::ServoManager(WingDesign design,
                            ServoConfig surfaceLeftCfg,
                            ServoConfig surfaceRightCfg,
-                           ServoConfig throttleCfg,)
+                           ServoConfig throttleCfg)
     : wingDesign(design), leftAilConfig(surfaceLeftCfg), rightAilConfig(surfaceRightCfg),
     throttleConfig(throttleCfg)
 {

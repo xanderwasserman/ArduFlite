@@ -77,7 +77,7 @@ void ServoManager::writeThrottle(float throttleCmd)
     int rawThrottleDeflect = mapFloatToInt(throttleCmd, 0.0f, 1.0f, 0, throttleConfig.deflection);
     float desiredThrottle  = throttleConfig.neutral + (throttleConfig.invert ? -rawThrottleDeflect : rawThrottleDeflect);
 
-    throttleServo.write()
+    throttleServo.write(desiredThrottle);
 }
 
 void ServoManager::writeCommands(float rollCmd, float pitchCmd, float yawCmd) 

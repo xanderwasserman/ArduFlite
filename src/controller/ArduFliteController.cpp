@@ -460,7 +460,7 @@ void ArduFliteController::InnerLoopTask(void* parameters)
             controller->servoMgr->writeCommands(actuatorCmd.roll,
                                     actuatorCmd.pitch,
                                     actuatorCmd.yaw);
-            controller->servoMgr->writeThrottle(pilotThrottleSetpoint);
+            controller->servoMgr->writeThrottle(controller->pilotThrottleSetpoint);
         } 
         else 
         {

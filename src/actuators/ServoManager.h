@@ -53,8 +53,8 @@ public:
      */
     ServoManager(WingDesign design,
                  ServoConfig surfaceLeftConfig,
-                 ServoConfig throttleConfig
-                 ServoConfig surfaceRightConfig);
+                 ServoConfig surfaceRightConfig,
+                 ServoConfig throttleConfig);
 
     /**
      * @brief Write control commands to the servos.

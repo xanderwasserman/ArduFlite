@@ -213,7 +213,7 @@ void ArduFliteController::setRateSetpoint_yaw(float yawRateSetpoint)
  *
  * @param throttleSetpoint Throttle setpoint in percentage/100 (0.0 - 1.0).
  */
-void setThrottleSetpoint(float throttleSetpoint)
+void ArduFliteController::setThrottleSetpoint(float throttleSetpoint)
 {
     {
         SemaphoreLock lock(ctrlMutex);

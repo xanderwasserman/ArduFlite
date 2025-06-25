@@ -219,7 +219,7 @@ private:
     ArduFliteMode mode;                                     //< Current operating mode.
     EulerAngles pilotRateSetpoint       {0.0f};             //< Pilot rate setpoint (deg/s) for RATE_MODE.
     EulerAngles pilotAttitudeSetpoint   {0.0f};             //< Pilot attitude setpoint for ATTITUDE_MODE.
-    float       pilotThrottleSetpoint   {0.0f};             //< Pilot throttle setpoint for all modes.
+    float       pilotThrottleSetpoint   = 0.0f;             //< Pilot throttle setpoint for all modes.
 
     // Shared command variables
     EulerAngles lastAttitudeCmd         {0.0f};

@@ -23,6 +23,7 @@ namespace CRSFCallbacks {
   void onModeSwitch(uint8_t ch, float v);
   void onActivateMission(uint8_t ch, float v);
   void onArm(uint8_t ch, float v);
+  void onThrottle(uint8_t ch, float v);
 }
 
 #endif //ARDUFLITE_CSRF_CALLBACKS_H

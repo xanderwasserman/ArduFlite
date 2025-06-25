@@ -236,6 +236,22 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
             break;
         }
 
+        case CMD_RECEIVER_SETPOINT_THROTTLE:
+        {
+            // cmd.value is a flaot
+            LOG_INF("Processing CMD_RECEIVER_SETPOINT_THROTTLE: yaw=%.3f", cmd.value);
+
+            if (controller != nullptr)
+            {
+                controller->setThrottleSetpoint(cmd.value);
+            }
+            else
+            {
+                LOG_ERR("CMD_RECEIVER_SETPOINT_THROTTLE: Controller pointer not provided.");
+            }
+            break;
+        }
+
         default:
         {
             LOG_WARN("Received unknown or unhandled command type: %d", cmd.type);

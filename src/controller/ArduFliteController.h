@@ -118,7 +118,7 @@ public:
      *
      * In RATE_MODE, the pilot directly provides angular rate setpoints.
      *
-     * @param setpoint EulerAngles rate setpoint in degrees/s.
+     * @param rateSetpoint EulerAngles rate setpoint in degrees/s.
      */
     void setRateSetpoint(EulerAngles rateSetpoint);
 
@@ -136,7 +136,7 @@ public:
      *
      * In RATE_MODE, the pilot directly provides angular rate setpoints.
      *
-     * @param rollRateSetpoint Pitch rate setpoint in degrees/s.
+     * @param pitchRateSetpoint Pitch rate setpoint in degrees/s.
      */
     void setRateSetpoint_pitch(float pitchRateSetpoint);
 
@@ -145,9 +145,16 @@ public:
      *
      * In RATE_MODE, the pilot directly provides angular rate setpoints.
      *
-     * @param rollRateSetpoint Yaw rate setpoint in degrees/s.
+     * @param yawRateSetpoint Yaw rate setpoint in degrees/s.
      */
     void setRateSetpoint_yaw(float yawRateSetpoint);
+
+    /**
+     * @brief Sets the pilot-provided throttle setpoint.
+     *
+     * @param throttleSetpoint Throttle setpoint in percentage/100 (0.0 - 1.0).
+     */
+    void setThrottleSetpoint(float throttleSetpoint);
 
     /**
      * @brief Sets the operating mode.
@@ -212,6 +219,7 @@ private:
     ArduFliteMode mode;                                     //< Current operating mode.
     EulerAngles pilotRateSetpoint       {0.0f};             //< Pilot rate setpoint (deg/s) for RATE_MODE.
     EulerAngles pilotAttitudeSetpoint   {0.0f};             //< Pilot attitude setpoint for ATTITUDE_MODE.
+    float       pilotThrottleSetpoint   {0.0f};             //< Pilot throttle setpoint for all modes.
 
     // Shared command variables
     EulerAngles lastAttitudeCmd         {0.0f};

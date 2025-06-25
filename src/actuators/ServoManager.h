@@ -43,6 +43,7 @@ public:
                  ServoConfig yawConfig,
                  ServoConfig leftAilConfig,
                  ServoConfig rightAilConfig, // if not dual, this can be ignored.
+                 ServoConfig throttleConfig, 
                  bool dualAilerons = true);
 
     /**
@@ -52,6 +53,7 @@ public:
      */
     ServoManager(WingDesign design,
                  ServoConfig surfaceLeftConfig,
+                 ServoConfig throttleConfig
                  ServoConfig surfaceRightConfig);
 
     /**
@@ -70,6 +72,13 @@ public:
      * All command inputs are expected in the range [-1, +1].
      */
     void writeCommands(float rollCmd, float pitchCmd, float yawCmd);
+
+    /**
+     * @brief Write throttle commands to the ESC.
+     *
+     * Command input is expected in the range [0, 1.0].
+     */
+    void writeThrottle(float throttleCmd);
 
     /**
      * @brief Runs a self-test routine by wiggling control surfaces.
@@ -110,6 +119,7 @@ private:
     ServoConfig yawConfig;
     ServoConfig leftAilConfig;   // In conventional, this is the aileron (or single aileron).
     ServoConfig rightAilConfig;  // Only used if dualAilerons is true.
+    ServoConfig throttleConfig;
     bool dualAilerons;         // True if using two separate aileron servos.
 
     // For delta wing or V-tail designs, we use these two surfaces.
@@ -119,9 +129,10 @@ private:
     
     // Servo objects.
     // For conventional design:
-    Servo pitchServo, yawServo;   // Elevator and rudder.
-    Servo singleAilServo;         // Used if dualAilerons is false.
-    Servo leftAilServo, rightAilServo; // Used if dualAilerons is true.
+    Servo pitchServo, yawServo;         // Elevator and rudder.
+    Servo singleAilServo;               // Used if dualAilerons is false.
+    Servo leftAilServo, rightAilServo;  // Used if dualAilerons is true.
+    Servo throttleServo;                // Throttle ESC.
 
     // slew‑rate limiter state (last output angles in degrees)
     float lastPitchAngleDeg  = 0.0f;

@@ -59,11 +59,13 @@ namespace PwmOutputConfig
     constexpr int RIGHT_AIL_PIN         = 16;
     constexpr int PITCH_PIN             = 4;
     constexpr int YAW_PIN               = 12;
+    constexpr int THROTTLE_PIN          = 9;//TODO: make sure this is correct!
 #elif BOARD_TYPE == BOARD_TYPE_WEMOS
     constexpr int LEFT_AIL_PIN          = 2;
     constexpr int RIGHT_AIL_PIN         = 1;
     constexpr int PITCH_PIN             = 0;
     constexpr int YAW_PIN               = 4;
+    constexpr int THROTTLE_PIN          = 9;//TODO: make sure this is correct!
 #endif
 
 } // namespace PwmOutputConfig

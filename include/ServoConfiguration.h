@@ -21,13 +21,15 @@ namespace ServoSetupConfig
 #if BOARD_TYPE == BOARD_TYPE_FIREBEETLE
     constexpr ServoConfig PITCH_CONFIG      = { PwmOutputConfig::PITCH_PIN,      500, 2500, 90, 80, false };
     constexpr ServoConfig YAW_CONFIG        = { PwmOutputConfig::YAW_PIN,        500, 2500, 90, 80, false };
-    constexpr ServoConfig LEFT_AIL_CONFIG   = { PwmOutputConfig::LEFT_AIL_PIN,   500, 2500, 90, 80, true };
+    constexpr ServoConfig LEFT_AIL_CONFIG   = { PwmOutputConfig::LEFT_AIL_PIN,   500, 2500, 90, 80, true  };
     constexpr ServoConfig RIGHT_AIL_CONFIG  = { PwmOutputConfig::RIGHT_AIL_PIN,  500, 2500, 90, 80, false };
+    constexpr ServoConfig THROTTLE_CONFIG   = { PwmOutputConfig::THROTTLE_PIN,   500, 2500, 0,  80, false };//TODO: make sure this is correct!
 #elif BOARD_TYPE == BOARD_TYPE_WEMOS
-    constexpr ServoConfig PITCH_CONFIG      = { PwmOutputConfig::PITCH_PIN,      500, 2500, 90, 80, true };
+    constexpr ServoConfig PITCH_CONFIG      = { PwmOutputConfig::PITCH_PIN,      500, 2500, 90, 80, true  };
     constexpr ServoConfig YAW_CONFIG        = { PwmOutputConfig::YAW_PIN,        500, 2500, 90, 80, false };
-    constexpr ServoConfig LEFT_AIL_CONFIG   = { PwmOutputConfig::LEFT_AIL_PIN,   500, 2500, 90, 80, true };
+    constexpr ServoConfig LEFT_AIL_CONFIG   = { PwmOutputConfig::LEFT_AIL_PIN,   500, 2500, 90, 80, true  };
     constexpr ServoConfig RIGHT_AIL_CONFIG  = { PwmOutputConfig::RIGHT_AIL_PIN,  500, 2500, 90, 80, false };
+    constexpr ServoConfig THROTTLE_CONFIG   = { PwmOutputConfig::THROTTLE_PIN,   500, 2500, 0,  80, false };//TODO: make sure this is correct!
 #endif
 } // namespace ServoSetupConfig
 

@@ -207,6 +207,19 @@ void ArduFliteController::setRateSetpoint_yaw(float yawRateSetpoint)
         pilotRateSetpoint.yaw  = yawRateSetpoint;
     }
 }
+
+/**
+ * @brief Sets the pilot-provided throttle setpoint.
+ *
+ * @param throttleSetpoint Throttle setpoint in percentage/100 (0.0 - 1.0).
+ */
+void setThrottleSetpoint(float throttleSetpoint)
+{
+    {
+        SemaphoreLock lock(ctrlMutex);
+        pilotThrottleSetpoint  = throttleSetpoint;
+    }
+}
  
 /**
  * @brief Starts the overall control tasks.
@@ -447,11 +460,13 @@ void ArduFliteController::InnerLoopTask(void* parameters)
             controller->servoMgr->writeCommands(actuatorCmd.roll,
                                     actuatorCmd.pitch,
                                     actuatorCmd.yaw);
+            controller->servoMgr->writeThrottle(pilotThrottleSetpoint);
         } 
         else 
         {
             // hold neutral
             controller->servoMgr->writeCommands(0,0,0);
+            controller->servoMgr->writeThrottle(0);
         }
 
         {

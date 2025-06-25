@@ -35,7 +35,10 @@ namespace CRSFConfig
         },
 
         //ch 3 = throttle
-        {}, 
+        {
+            .type      = ChannelType::SingleThrow,
+            .callback  = CRSFCallbacks::onThrottle 
+        }, 
 
         // ch 4 = yaw: bipolar stick → 0…+1
         { 

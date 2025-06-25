@@ -23,14 +23,16 @@ ServoManager::ServoManager(WingDesign design,
                            ServoConfig yawCfg,
                            ServoConfig leftAilCfg,
                            ServoConfig rightAilCfg,
+                           ServoConfig throttleCfg,
                            bool dual)
     : wingDesign(design), pitchConfig(pitchCfg), yawConfig(yawCfg),
       leftAilConfig(leftAilCfg), rightAilConfig(rightAilCfg), dualAilerons(dual),
-      maxServoDegPerSec(ServoSetupConfig::MAX_SERVO_DEG_PER_SEC)
+      throttleConfig(throttleCfg), maxServoDegPerSec(ServoSetupConfig::MAX_SERVO_DEG_PER_SEC)
 {
     // Attach elevator and rudder servos.
     pitchServo.attach(pitchConfig.pin, pitchConfig.minPulse, pitchConfig.maxPulse);
     yawServo.attach(yawConfig.pin, yawConfig.minPulse, yawConfig.maxPulse);
+    throttleServo.attach(throttleConfig.pin, throttleConfig.minPulse, throttleConfig.maxPulse);
 
     if (!dualAilerons) {
         singleAilServo.attach(leftAilConfig.pin, leftAilConfig.minPulse, leftAilConfig.maxPulse);
@@ -53,18 +55,29 @@ ServoManager::ServoManager(WingDesign design,
 // Constructor for delta wing or V-tail designs.
 ServoManager::ServoManager(WingDesign design,
                            ServoConfig surfaceLeftCfg,
-                           ServoConfig surfaceRightCfg)
-    : wingDesign(design), leftAilConfig(surfaceLeftCfg), rightAilConfig(surfaceRightCfg)
+                           ServoConfig surfaceRightCfg,
+                           ServoConfig throttleCfg,)
+    : wingDesign(design), leftAilConfig(surfaceLeftCfg), rightAilConfig(surfaceRightCfg),
+    throttleConfig(throttleCfg)
 {
     // In these designs, we use the paired surfaces (e.g., elevons or ruddervators).
     dualAilerons = true;
     leftAilServo.attach(leftAilConfig.pin, leftAilConfig.minPulse, leftAilConfig.maxPulse);
     rightAilServo.attach(rightAilConfig.pin, rightAilConfig.minPulse, rightAilConfig.maxPulse);
+    throttleServo.attach(throttleConfig.pin, throttleConfig.minPulse, throttleConfig.maxPulse);
 
     lastUpdateMicros  = micros();
     // only initialize the aileron/elevon state:
     lastLeftAngleDeg  = leftAilConfig.neutral;
     lastRightAngleDeg = rightAilConfig.neutral;
+}
+
+void ServoManager::writeThrottle(float throttleCmd)
+{
+    int rawThrottleDeflect = mapFloatToInt(throttleCmd, 0.0f, 1.0f, 0, throttleConfig.deflection);
+    float desiredThrottle  = throttleConfig.neutral + (throttleConfig.invert ? -rawThrottleDeflect : rawThrottleDeflect);
+
+    throttleServo.write()
 }
 
 void ServoManager::writeCommands(float rollCmd, float pitchCmd, float yawCmd) 

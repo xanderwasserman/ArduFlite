@@ -44,6 +44,17 @@ namespace CRSFCallbacks
         ControlMixer::handleChannelInput(ch, v);
     }
 
+    void onThrottle(uint8_t ch, float v) 
+    {
+        LOG_DBG("onThrottle: %f", v);
+
+        SystemCommand cmd;
+        cmd.type = CMD_RECEIVER_SETPOINT_THROTTLE;
+        
+        cmd.value = v;
+        CommandSystem::instance().pushCommand(cmd);
+    }
+
     void onYaw(uint8_t ch, float v) 
     {
         LOG_DBG("onYaw: %f", v);

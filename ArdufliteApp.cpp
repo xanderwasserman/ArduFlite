@@ -92,7 +92,7 @@ ArduFliteAttitudeController attitudeController;
 ArduFliteRateController     rateController;
 
 // Instantiate the ServoManager for a conventional wing design with dual ailerons.
-ServoManager servoMgr(CONVENTIONAL, ServoSetupConfig::PITCH_CONFIG, ServoSetupConfig::YAW_CONFIG, ServoSetupConfig::LEFT_AIL_CONFIG, ServoSetupConfig::RIGHT_AIL_CONFIG, true);
+ServoManager servoMgr(CONVENTIONAL, ServoSetupConfig::PITCH_CONFIG, ServoSetupConfig::YAW_CONFIG, ServoSetupConfig::LEFT_AIL_CONFIG, ServoSetupConfig::RIGHT_AIL_CONFIG, ServoSetupConfig::THROTTLE_CONFIG, true);
 
 // Instantiate the Controllers
 ArduFliteController controller(&myIMU, &attitudeController, &rateController, &servoMgr);

@@ -33,13 +33,29 @@ ArdufliteCRSFTelemetry::ArdufliteCRSFTelemetry(HardwareSerial& ser,
   , _intervalMs(1000.0f / freqHz)
 {
     _lock = xSemaphoreCreateMutex();
+    if (!_lock) 
+    {
+        LOG_ERR("CRSF Telemetry: failed to create mutex");
+    } 
+    else 
+    {
+        LOG_DBG("CRSF Telemetry: mutex created");
+    }
 }
 
 /// @brief Destructor: stops the telemetry task and deletes the mutex.
 ArdufliteCRSFTelemetry::~ArdufliteCRSFTelemetry()
 {
-    if (_taskHandle) vTaskDelete(_taskHandle);
-    if (_lock)       vSemaphoreDelete(_lock);
+    if (_taskHandle) 
+    {
+        vTaskDelete(_taskHandle);
+        LOG_INF("CRSF Telemetry: task deleted");
+    }
+    if (_lock) 
+    {
+        vSemaphoreDelete(_lock);
+        LOG_INF("CRSF Telemetry: mutex deleted");
+    }
 }
 
 /// @brief Initializes the UART and starts the telemetry FreeRTOS task.
@@ -47,9 +63,12 @@ ArdufliteCRSFTelemetry::~ArdufliteCRSFTelemetry()
 /// @see   xTaskCreate()
 void ArdufliteCRSFTelemetry::begin()
 {
+    LOG_INF("CRSF Telemetry: starting on TX pin %d @ 420000 baud", _txPin);
     _serial.begin(420000, SERIAL_8N1, /*rxPin=*/-1, _txPin);
 
-    if (_taskHandle) {
+    if (_taskHandle) 
+    {
+        LOG_WARN("CRSF Telemetry: begin() called but task already running");
         return;  ///< already running
     }
 
@@ -61,8 +80,13 @@ void ArdufliteCRSFTelemetry::begin()
         tskIDLE_PRIORITY + 1,
         &_taskHandle
     );
-    if (res != pdPASS) {
-        LOG_ERR("Failed to start CRSF Telemetry task!");
+    if (res != pdPASS) 
+    {
+        LOG_ERR("CRSF Telemetry: failed to start task (pdPASS=%d)", pdPASS);
+    } 
+    else 
+    {
+        LOG_INF("CRSF Telemetry: task started (interval %.1f ms)", _intervalMs);
     }
 
     LOG_INF("Started CRSF Telemetry task.");
@@ -89,6 +113,7 @@ void ArdufliteCRSFTelemetry::publish(const TelemetryData& telem,
 void ArdufliteCRSFTelemetry::telemetryTask(void* pv)
 {
     auto* self = static_cast<ArdufliteCRSFTelemetry*>(pv);
+    LOG_INF("CRSF Telemetry: task entry");
     self->run();
 }
 
@@ -98,6 +123,7 @@ void ArdufliteCRSFTelemetry::telemetryTask(void* pv)
 ///   - Runs at _intervalMs configured in constructor.
 void ArdufliteCRSFTelemetry::run()
 {
+    LOG_DBG("CRSF Telemetry: run() loop begin");
     while (true) 
     {
         TelemetryData td;
@@ -146,12 +172,12 @@ uint8_t ArdufliteCRSFTelemetry::crc8(const uint8_t* data, uint8_t len)
 /// @param[in] payload  Pointer to the payload bytes.
 /// @param[in] len      Number of payload bytes.
 /// @note  Prepends AddrTX and length, appends CRC8(type|payload).
-void ArdufliteCRSFTelemetry::sendFrame(uint8_t type,
-                                       const uint8_t* payload,
-                                       uint8_t len)
+void ArdufliteCRSFTelemetry::sendFrame(uint8_t type, const uint8_t* payload, uint8_t len)
 {
     // Length = type (1) + payload (len) + CRC (1)
     uint8_t flen = len + 2;
+    LOG_DBG("CRSF Telemetry: frame 0x%02X, payload %u bytes, flen %u", type, len, flen);
+
     _serial.write(AddrTX);
     _serial.write(flen);
     _serial.write(type);
@@ -182,6 +208,7 @@ void ArdufliteCRSFTelemetry::sendAttitude(const TelemetryData& t)
     buf[4] = uint8_t(y & 0xFF);
     buf[5] = uint8_t((y >> 8) & 0xFF);
 
+    LOG_DBG("CRSF Telemetry: Attitude P=%d R=%d Y=%d", p, r, y);
     sendFrame(T_ATT, buf, sizeof(buf));
 }
 
@@ -193,12 +220,11 @@ void ArdufliteCRSFTelemetry::sendFlightMode(const TelemetryData& t)
     static const char* modes[] = {
         "ATTI", "RATE", "UNKN", nullptr
     };
-    uint8_t idx = (t.flight_mode < FLIGHT_MODE_LENGTH)
-                  ? uint8_t(t.flight_mode)
-                  : UNKNOWN_MODE;
+    uint8_t idx = (t.flight_mode < FLIGHT_MODE_LENGTH) ? uint8_t(t.flight_mode) : UNKNOWN_MODE;
     const char* txt = (modes[idx]) ? modes[idx] : "UNKN";
-    sendFrame(T_MODE, reinterpret_cast<const uint8_t*>(txt),
-              uint8_t(strlen(txt) + 1));
+
+    LOG_DBG("CRSF Telemetry: FlightMode \"%s\"", txt);
+    sendFrame(T_MODE, reinterpret_cast<const uint8_t*>(txt), uint8_t(strlen(txt) + 1));
 }
 
 /// @brief Sends battery status (voltage/current/capacity/%).
@@ -221,6 +247,7 @@ void ArdufliteCRSFTelemetry::sendBattery(const TelemetryData& t)
     buf[6] = uint8_t((cap >> 16) & 0xFF);
     buf[7] =    t.battery_remaining;
 
+    LOG_DBG("CRSF Telemetry: Battery V=%u mV I=%u mA C=%u%%", v, i, t.battery_remaining);
     sendFrame(T_BATTERY, buf, sizeof(buf));
 }
 
@@ -240,7 +267,6 @@ void ArdufliteCRSFTelemetry::sendGps(const TelemetryData& t)
 
     buf[ 8] = uint8_t(gs & 0xFF);
     buf[ 9] = uint8_t(gs >> 8);
-// same pattern at buf[10..11] for heading, and buf[12..13] for altitude
 
     buf[10] = uint8_t(hd & 0xFF);    
     buf[11] = uint8_t(hd >> 8);
@@ -250,6 +276,7 @@ void ArdufliteCRSFTelemetry::sendGps(const TelemetryData& t)
 
     buf[14] = t.gps_sats;
 
+    LOG_DBG("CRSF Telemetry: GPS lat=%ld lon=%ld gs=%u hd=%u al=%u sats=%u", lat, lon, gs, hd, al, t.gps_sats);
     sendFrame(T_GPS, buf, sizeof(buf));
 }
 
@@ -260,6 +287,7 @@ void ArdufliteCRSFTelemetry::sendVario(const TelemetryData& t)
     int16_t vs = int16_t(t.climb_rate * 100.0f);
     uint8_t buf[2] = { uint8_t(vs & 0xFF), uint8_t(vs >> 8) };
 
+    LOG_DBG("CRSF Telemetry: Vario %d cm/s", vs);
     sendFrame(T_VARIO, buf, sizeof(buf));
 }
 
@@ -279,6 +307,7 @@ void ArdufliteCRSFTelemetry::sendLinkStats(const TelemetryData& t)
         .downlink_Link_quality = t.dl_quality,
         .downlink_SNR          = int8_t(t.dl_snr)
     };
-    sendFrame(T_LINK, reinterpret_cast<const uint8_t*>(&s),
-              sizeof(s));
+
+    LOG_DBG("CRSF Telemetry: Link RSSI1=%d RSSI2=%d Q=%u SNR=%d ANT=%u", s.uplink_RSSI_1, s.uplink_RSSI_2, s.uplink_Link_quality, s.uplink_SNR, s.active_antenna);
+    sendFrame(T_LINK, reinterpret_cast<const uint8_t*>(&s), sizeof(s));
 }

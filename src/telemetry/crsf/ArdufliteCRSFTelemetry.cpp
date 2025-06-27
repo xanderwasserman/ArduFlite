@@ -173,12 +173,12 @@ void ArdufliteCRSFTelemetry::sendAttitude(const TelemetryData& t)
 void ArdufliteCRSFTelemetry::sendFlightMode(const TelemetryData& t)
 {
     static const char* modes[] = {
-        "ATTITUDE", "RATE", "UNKNOWN", nullptr
+        "ATTI", "RATE", "UNKN", nullptr
     };
     uint8_t idx = (t.flight_mode < FLIGHT_MODE_LENGTH)
                   ? uint8_t(t.flight_mode)
                   : UNKNOWN_MODE;
-    const char* txt = (modes[idx]) ? modes[idx] : "UNKNOWN";
+    const char* txt = (modes[idx]) ? modes[idx] : "UNKN";
     sendFrame(T_MODE, reinterpret_cast<const uint8_t*>(txt),
               uint8_t(strlen(txt) + 1));
 }

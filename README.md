@@ -18,7 +18,7 @@ ArduFlite is a highly modular and real-time flight control framework designed fo
 ### 2. CRSF Receiver & Failsafe
 
 - **CRSFReceiver**  
-  - Byte-wise parsing of FrSky-style cross-fire/ELRS packets over UART @ 420 kbps.  
+  - Byte-wise parsing of cross-fire/ELRS packets over UART @ 420 kbps.  
   - Configurable per-channel mapping & callbacks via `CRSFConfiguration.h`.  
 - **Failsafe Callback**  
   - When link is lost, user-supplied function runs: e.g. switch into ATTITUDE_MODE, bank & descend for a safe circular landing.  

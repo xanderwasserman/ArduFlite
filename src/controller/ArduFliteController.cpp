@@ -309,6 +309,25 @@ bool ArduFliteController::isArmed() const
     return a;
 }
 
+void ArduFliteController::cutThrottle(bool value)
+{
+    {
+        SemaphoreLock lock(ctrlMutex);
+        throttleCut = value;
+    }
+}
+
+bool ArduFliteController::isThrottleCut() const
+{
+    bool c;
+    {
+        SemaphoreLock lock(ctrlMutex);
+        c = throttleCut;
+    }
+
+    return c;
+}
+
  
 /**
  * @brief Outer loop task.
@@ -457,10 +476,19 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         }
 
         // Only actually drive servos if we’re armed:
-        if (controller->armed) 
+        if (isArmed()) 
         {
             controller->servoMgr->writeCommands(actuatorCmd.roll, actuatorCmd.pitch, actuatorCmd.yaw);
-            controller->servoMgr->writeThrottle(localThrottle);
+
+            // Only drive ESC's if the throttle cut is disabled as well
+            if (!isThrottleCut())
+            {
+                controller->servoMgr->writeThrottle(localThrottle);
+            }
+            else
+            {
+                controller->servoMgr->writeThrottle(0);
+            }
         } 
         else 
         {
@@ -468,6 +496,8 @@ void ArduFliteController::InnerLoopTask(void* parameters)
             controller->servoMgr->writeCommands(0,0,0);
             controller->servoMgr->writeThrottle(0);
         }
+
+        
 
         {
             SemaphoreLock lock(controller->ctrlMutex);

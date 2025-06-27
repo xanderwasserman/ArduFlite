@@ -15,13 +15,19 @@ namespace CRSFCallbacks
     // Called by the receiver when failsafe timeout fires
     void onFailsafe() 
     {
-        // 1) Force ATTITUDE mode so our setpoints are interpreted as angles
+        // 1) Enable Throttle-Cut
+        SystemCommand cmd{};
+        cmd.type = CMD_SET_THROTTLE_CUT;
+        cmd.value = true;
+        CommandSystem::instance().pushCommand(cmd);
+
+        // 2) Force ATTITUDE mode so our setpoints are interpreted as angles
         SystemCommand cmd{};
         cmd.type = CMD_SET_MODE;
         cmd.mode = ATTITUDE_MODE;
         CommandSystem::instance().pushCommand(cmd);
 
-        // 2) Push a nominal attitude setpoint:  10° bank +  -5° pitch
+        // 3) Push a nominal attitude setpoint:  10° bank +  -5° pitch
         EulerAngles fsAttitude;
         fsAttitude.roll  = 10.0f;   // tilt right 10°
         fsAttitude.pitch = -5.0f;   // nose down 5°
@@ -109,5 +115,18 @@ namespace CRSFCallbacks
         cmd.x_value = newState;
         CommandSystem::instance().pushCommand(cmd);
     }
+
+    void onThrottleCut(uint8_t ch, float v) 
+    {
+        SystemCommand cmd;
+        cmd.type = CMD_SET_THROTTLE_CUT;
+        bool newState  = (v > 0.5f);  // v is 0.0 or 1.0, but guard anyway
+
+        LOG_INF("Controller THROTTLE CUT: %s.", newState?"YES":"NO");
+        cmd.x_value = newState;
+        CommandSystem::instance().pushCommand(cmd);
+    }
+
+
 
 } // namespace CRSFCallbacks

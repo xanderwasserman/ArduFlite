@@ -190,6 +190,29 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
             break;
         }
 
+        case CMD_SET_THROTTLE_CUT:
+        {
+            // cmd.x_value is a bool
+            LOG_INF("Processing CMD_SET_THROTTLE_CUT: state=%s", cmd.x_value?"YES":"NO");
+            if (controller != nullptr)
+            {
+                if (cmd.x_value)
+                {
+                    controller->cutThrottle(true);
+                }
+                else
+                {
+                    controller->cutThrottle(false);
+                }
+                
+            }
+            else
+            {
+                LOG_ERR("CMD_SET_THROTTLE_CUT: Controller pointer not provided.");
+            }
+            break;
+        }
+
         case CMD_RECEIVER_SETPOINT_ROLL:
         {
             // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }

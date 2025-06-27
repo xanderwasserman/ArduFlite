@@ -66,6 +66,12 @@ namespace CRSFConfig
             .callback   = CRSFCallbacks::onModeSwitch 
         },
 
+        // ch 8 = THROTTLE_CUT switch: boolean (off/on)
+        { 
+            .type     = ChannelType::Boolean,
+            .callback   = CRSFCallbacks::onThrottleCut 
+        },
+
         /*
         // ch 4 = flight-mode switch: tri-state (–1,0,+1)
         { .type      = ChannelType::TriState,
@@ -78,7 +84,7 @@ namespace CRSFConfig
         */
 
         // ch 9–15 = leave as Raw (0…2047) with no callback:
-        {},{},{},{},{},{},{},{},{}
+        {},{},{},{},{},{},{},{}
     };
 }
 

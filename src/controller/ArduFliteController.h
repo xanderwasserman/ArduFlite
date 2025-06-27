@@ -193,10 +193,23 @@ public:
      */
     void disarm();
 
+
     /**
      * @brief Returns true if we’re currently armed.
      */
     bool isArmed() const;
+
+    /**
+     * @brief Disarm the controller: disable servo outputs immediately.
+     *
+     * @param value Whether the throttle should be cut or not (true -> cut, false -> enabled).
+     */
+    void cutThrottle(bool value);
+
+    /**
+     * @brief Returns true if the throttle cut is enabled.
+     */
+    bool isThrottleCut() const;
 
     EulerAngles getAttitudeSetpoint() const;
     EulerAngles getRateSetpoint() const;
@@ -235,7 +248,8 @@ private:
     SemaphoreHandle_t outerStatsMutex;
     SemaphoreHandle_t innerStatsMutex;
 
-    bool armed = false;                                     //< true once we’ve called arm()
+    bool armed          = false;                            //< true once we’ve called arm()
+    bool throttleCut    = true;                             //< Throttle is cut by default
 
     static constexpr TickType_t outerLoopMs = 10;
     static constexpr TickType_t innerLoopMs = 2;

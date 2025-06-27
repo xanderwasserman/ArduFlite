@@ -15,6 +15,7 @@
 
 #include "src/telemetry/crsf/ArdufliteCRSFTelemetry.h"
 #include "src/controller/ArduFliteController.h"
+#include "src/utils/Logging.h"
 #include "include/ArduFlite.h"
 
 #include <math.h> 
@@ -61,8 +62,10 @@ void ArdufliteCRSFTelemetry::begin()
         &_taskHandle
     );
     if (res != pdPASS) {
-        // TODO: log or handle error
+        LOG_ERR("Failed to start CRSF Telemetry task!");
     }
+
+    LOG_INF("Started CRSF Telemetry task.");
 }
 
 /// @brief Publishes new telemetry & config snapshots.
@@ -164,12 +167,12 @@ void ArdufliteCRSFTelemetry::sendFrame(uint8_t type,
 void ArdufliteCRSFTelemetry::sendAttitude(const TelemetryData& t)
 {
     // Convert from degrees → radians, then scale
-    constexpr float DEG_TO_RAD = M_PI / 180.0f;
+    constexpr float DEG2RAD = M_PI / 180.0f;
     constexpr float SCALE     = 10000.0f;
     
-    int16_t p = int16_t((t.orientation.pitch * DEG_TO_RAD) * SCALE);
-    int16_t r = int16_t((t.orientation.roll  * DEG_TO_RAD) * SCALE);
-    int16_t y = int16_t((t.orientation.yaw   * DEG_TO_RAD) * SCALE);
+    int16_t p = int16_t((t.orientation.pitch * DEG2RAD) * SCALE);
+    int16_t r = int16_t((t.orientation.roll  * DEG2RAD) * SCALE);
+    int16_t y = int16_t((t.orientation.yaw   * DEG2RAD) * SCALE);
 
     uint8_t buf[6];
     buf[0] = uint8_t(p & 0xFF);

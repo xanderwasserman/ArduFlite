@@ -17,6 +17,9 @@
 #include "src/controller/ArduFliteController.h"
 #include "include/ArduFlite.h"
 
+#include <math.h> 
+#include <cstring> 
+
 /// @brief Constructor.
 /// @param[in] ser     Reference to a HardwareSerial port for CRSF downlink.
 /// @param[in] txPin   GPIO pin to use as UART TX line.
@@ -44,6 +47,7 @@ ArdufliteCRSFTelemetry::~ArdufliteCRSFTelemetry()
 void ArdufliteCRSFTelemetry::begin()
 {
     _serial.begin(420000, SERIAL_8N1, /*rxPin=*/-1, _txPin);
+
     if (_taskHandle) {
         return;  ///< already running
     }
@@ -143,7 +147,8 @@ void ArdufliteCRSFTelemetry::sendFrame(uint8_t type,
                                        const uint8_t* payload,
                                        uint8_t len)
 {
-    uint8_t flen = len + 2;  // type + payload + CRC
+    // Length = type (1) + payload (len) + CRC (1)
+    uint8_t flen = len + 2;
     _serial.write(AddrTX);
     _serial.write(flen);
     _serial.write(type);
@@ -155,18 +160,28 @@ void ArdufliteCRSFTelemetry::sendFrame(uint8_t type,
 }
 
 /// @brief Sends the 6-byte attitude frame (pitch, roll, yaw).
-/// @param[in] t  Latest telemetry (angles in radians).
+/// @param[in] t  Latest telemetry (angles converted to radians).
 void ArdufliteCRSFTelemetry::sendAttitude(const TelemetryData& t)
 {
-    int16_t p = int16_t(t.orientation.pitch * 10000.0f);
-    int16_t r = int16_t(t.orientation.roll  * 10000.0f);
-    int16_t y = int16_t(t.orientation.yaw   * 10000.0f);
+    // Convert from degrees → radians, then scale
+    constexpr float DEG_TO_RAD = M_PI / 180.0f;
+    constexpr float SCALE     = 10000.0f;
+    
+    int16_t p = int16_t((t.orientation.pitch * DEG_TO_RAD) * SCALE);
+    int16_t r = int16_t((t.orientation.roll  * DEG_TO_RAD) * SCALE);
+    int16_t y = int16_t((t.orientation.yaw   * DEG_TO_RAD) * SCALE);
+
     uint8_t buf[6];
-    memcpy(buf + 0, &p, 2);
-    memcpy(buf + 2, &r, 2);
-    memcpy(buf + 4, &y, 2);
+    buf[0] = uint8_t(p & 0xFF);
+    buf[1] = uint8_t((p >> 8) & 0xFF);
+    buf[2] = uint8_t(r & 0xFF);
+    buf[3] = uint8_t((r >> 8) & 0xFF);
+    buf[4] = uint8_t(y & 0xFF);
+    buf[5] = uint8_t((y >> 8) & 0xFF);
+
     sendFrame(T_ATT, buf, sizeof(buf));
 }
+
 
 /// @brief Sends the null-terminated flight mode string.
 /// @param[in] t  Latest telemetry (mode index).
@@ -192,14 +207,16 @@ void ArdufliteCRSFTelemetry::sendBattery(const TelemetryData& t)
     uint16_t i   = uint16_t(t.battery_current * 1000.0f);
     uint32_t cap = t.battery_consumed;
 
-    buf[0] = uint8_t(v >> 8);
-    buf[1] = uint8_t(v & 0xFF);
-    buf[2] = uint8_t(i >> 8);
-    buf[3] = uint8_t(i & 0xFF);
-    buf[4] = uint8_t((cap >> 16) & 0xFF);
+    buf[0] = uint8_t(v & 0xFF);       // LSB
+    buf[1] = uint8_t(v >> 8);         // MSB
+    // same for current
+    buf[2] = uint8_t(i & 0xFF);
+    buf[3] = uint8_t(i >> 8);
+    // capacity is 24-bit LSB first:
+    buf[4] = uint8_t( cap        & 0xFF);
     buf[5] = uint8_t((cap >>  8) & 0xFF);
-    buf[6] = uint8_t( cap        & 0xFF);
-    buf[7] = t.battery_remaining;
+    buf[6] = uint8_t((cap >> 16) & 0xFF);
+    buf[7] =    t.battery_remaining;
 
     sendFrame(T_BATTERY, buf, sizeof(buf));
 }
@@ -217,9 +234,17 @@ void ArdufliteCRSFTelemetry::sendGps(const TelemetryData& t)
 
     memcpy(buf + 0, &lat, 4);
     memcpy(buf + 4, &lon, 4);
-    buf[ 8] = uint8_t(gs >> 8);    buf[ 9] = uint8_t(gs & 0xFF);
-    buf[10] = uint8_t(hd >> 8);    buf[11] = uint8_t(hd & 0xFF);
-    buf[12] = uint8_t(al >> 8);    buf[13] = uint8_t(al & 0xFF);
+
+    buf[ 8] = uint8_t(gs & 0xFF);
+    buf[ 9] = uint8_t(gs >> 8);
+// same pattern at buf[10..11] for heading, and buf[12..13] for altitude
+
+    buf[10] = uint8_t(hd & 0xFF);    
+    buf[11] = uint8_t(hd >> 8);
+
+    buf[12] = uint8_t(al & 0xFF);   
+    buf[13] = uint8_t(al >> 8); 
+
     buf[14] = t.gps_sats;
 
     sendFrame(T_GPS, buf, sizeof(buf));
@@ -230,7 +255,8 @@ void ArdufliteCRSFTelemetry::sendGps(const TelemetryData& t)
 void ArdufliteCRSFTelemetry::sendVario(const TelemetryData& t)
 {
     int16_t vs = int16_t(t.climb_rate * 100.0f);
-    uint8_t buf[2] = { uint8_t(vs >> 8), uint8_t(vs & 0xFF) };
+    uint8_t buf[2] = { uint8_t(vs & 0xFF), uint8_t(vs >> 8) };
+
     sendFrame(T_VARIO, buf, sizeof(buf));
 }
 

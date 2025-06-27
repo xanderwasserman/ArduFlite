@@ -124,30 +124,44 @@ void ArdufliteCRSFTelemetry::telemetryTask(void* pv)
 void ArdufliteCRSFTelemetry::run()
 {
     LOG_DBG("CRSF Telemetry: run() loop begin");
+
+    // Keep track of when we last sent the slow (1 Hz) frames:
+    uint32_t lastSlowTime = millis();
+
     while (true) 
     {
+        uint32_t now = millis();
+
+        // 1) grab a snapshot
         TelemetryData td;
         ConfigData    cd;
         if (_lock) 
         {
-            {
-                SemaphoreLock lock(_lock);
-                td = _pendingData;
-                cd = _pendingConfig;
-            }
+            SemaphoreLock lock(_lock);
+            td = _pendingData;
+            cd = _pendingConfig;
         }
 
-        // Send one batch of frames:
+        // 2) send “fast” (vital) frames every loop
         sendLinkStats(td);
-        sendBattery  (td);
-        sendGps      (td);
         sendVario    (td);
         sendAttitude (td);
-        sendFlightMode(td);
 
+        // 3) send “slow” frames at ~1 Hz
+        if (now - lastSlowTime >= 1000) 
+        {
+            LOG_DBG("CRSF Telemetry: sending 1 Hz frames");
+            sendBattery   (td);
+            sendGps       (td);
+            sendFlightMode(td);
+            lastSlowTime = now;
+        }
+
+        // 4) wait until next burst
         vTaskDelay(pdMS_TO_TICKS(_intervalMs));
     }
 }
+
 
 /// @brief Computes the standard CRC-8 for CRSF (poly 0xD5).
 /// @param[in] data  Byte array to checksum (type byte + payload).

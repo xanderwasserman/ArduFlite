@@ -32,11 +32,11 @@ public:
      * @brief Construct a new CRSF telemetry publisher.
      * @param[in] serialPort  UART port used for CRSF downlink (e.g. Serial2).
      * @param[in] txPin       GPIO pin for CRSF TX line.
-     * @param[in] freqHz      Overall send frequency in Hz (default 25 Hz).
+     * @param[in] freqHz      Overall send frequency in Hz (default 1 Hz).
      */
     ArdufliteCRSFTelemetry(HardwareSerial& serialPort,
                            int            txPin,
-                           float          freqHz = 25.0f);
+                           float          freqHz = 1.0f);
 
     /**
      * @brief Destroy the CRSF telemetry object.

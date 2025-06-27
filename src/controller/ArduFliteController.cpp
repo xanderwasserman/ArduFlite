@@ -458,12 +458,16 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         ArduFliteMode   localMode;
         EulerAngles     localRateSetpoint   = {0,0,0};
         float           localThrottle       = 0.0f;
+        bool            localArmed          = false;
+        bool            localThrottleCut    = true;
 
         {
             SemaphoreLock lock(controller->ctrlMutex);
             localMode           = controller->mode;
             localRateSetpoint   = controller->pilotRateSetpoint;
             localThrottle       = controller->pilotThrottleSetpoint;
+            localArmed          = controller->armed;
+            localThrottleCut    = controller->throttleCut;
         }
 
         if (localMode == MANUAL_MODE) 
@@ -476,12 +480,12 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         }
 
         // Only actually drive servos if we’re armed:
-        if (isArmed()) 
+        if (localArmed) 
         {
             controller->servoMgr->writeCommands(actuatorCmd.roll, actuatorCmd.pitch, actuatorCmd.yaw);
 
             // Only drive ESC's if the throttle cut is disabled as well
-            if (!isThrottleCut())
+            if (!localThrottleCut)
             {
                 controller->servoMgr->writeThrottle(localThrottle);
             }
@@ -494,6 +498,8 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         {
             // hold neutral
             controller->servoMgr->writeCommands(0,0,0);
+
+            // hold throttle off
             controller->servoMgr->writeThrottle(0);
         }
 

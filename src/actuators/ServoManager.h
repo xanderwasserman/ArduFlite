@@ -95,6 +95,11 @@ public:
      */
     void setMaxServoRate(float degPerSec) { maxServoDegPerSec = degPerSec; }
 
+    /** 
+     * @brief Set maximum throttle slew rate in full-range per second.
+     */
+    void setMaxThrottleRate(float rate) { maxThrottlePerSec = rate; }
+
     // Setter methods to adjust inversion flags at runtime.
     void setPitchInversion(bool invert);
     void setYawInversion(bool invert);
@@ -117,10 +122,10 @@ private:
     // For conventional wing designs.
     ServoConfig pitchConfig;
     ServoConfig yawConfig;
-    ServoConfig leftAilConfig;   // In conventional, this is the aileron (or single aileron).
-    ServoConfig rightAilConfig;  // Only used if dualAilerons is true.
+    ServoConfig leftAilConfig;      // In conventional, this is the aileron (or single aileron).
+    ServoConfig rightAilConfig;     // Only used if dualAilerons is true.
     ServoConfig throttleConfig;
-    bool dualAilerons;         // True if using two separate aileron servos.
+    bool        dualAilerons;       // True if using two separate aileron servos.
 
     // For delta wing or V-tail designs, we use these two surfaces.
     // (For conventional designs these are the aileron servos.)
@@ -140,10 +145,13 @@ private:
     float lastLeftAngleDeg   = 0.0f;
     float lastRightAngleDeg  = 0.0f;
     float lastSingleAilDeg   = 0.0f;
+    float lastThrottleCmd    = 0.0f;
 
     // limiter configuration
-    float maxServoDegPerSec  = 300.0f;    // default cap: 300°/s
-    unsigned long lastUpdateMicros = 0;   // timestamp of last writeCommands()
+    float maxServoDegPerSec         = 300.0f;   // default cap: 300°/s
+    float maxThrottlePerSec         = 1.0f;     // full range per second
+    unsigned long lastUpdateMicros  = 0;        // timestamp of last writeCommands()
+    unsigned long lastThrottleTime  = 0; // timestamp of last writeThrottle()
 };
 
 #endif // SERVO_MANAGER_H

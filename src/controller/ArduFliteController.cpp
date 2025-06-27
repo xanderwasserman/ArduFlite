@@ -436,18 +436,20 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         Vector3 gyro = controller->imu->getGyro();
         
         // Fetch current mode + pilot setpoints:
-        ArduFliteMode mode;
-        EulerAngles  pilot = {0,0,0};
+        ArduFliteMode   localMode;
+        EulerAngles     localRateSetpoint   = {0,0,0};
+        float           localThrottle       = 0.0f;
 
         {
             SemaphoreLock lock(controller->ctrlMutex);
-            mode  = controller->mode;
-            pilot = controller->pilotRateSetpoint;
+            localMode           = controller->mode;
+            localRateSetpoint   = controller->pilotRateSetpoint;
+            localThrottle       = controller->pilotThrottleSetpoint;
         }
 
-        if (mode == MANUAL_MODE) 
+        if (localMode == MANUAL_MODE) 
         {
-            actuatorCmd = pilot;
+            actuatorCmd = localRateSetpoint;
         } 
         else 
         {
@@ -457,10 +459,8 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         // Only actually drive servos if we’re armed:
         if (controller->armed) 
         {
-            controller->servoMgr->writeCommands(actuatorCmd.roll,
-                                    actuatorCmd.pitch,
-                                    actuatorCmd.yaw);
-            controller->servoMgr->writeThrottle(controller->pilotThrottleSetpoint);
+            controller->servoMgr->writeCommands(actuatorCmd.roll, actuatorCmd.pitch, actuatorCmd.yaw);
+            controller->servoMgr->writeThrottle(localThrottle);
         } 
         else 
         {

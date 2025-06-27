@@ -55,11 +55,9 @@
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
 #include "src/telemetry/crsf/ArdufliteCRSFTelemetry.h"
 
-#include "src/receiver/pwm/ArduFlitePwmReceiver.h"
 #include "src/receiver/crsf/ArdufliteCRSFReceiver.h"
 
 #include "src/tests/AttitudeTests.h"
-#include "src/tests/ReceiverTests.h"
 
 #include <Arduino.h>
 
@@ -96,9 +94,6 @@ ServoManager servoMgr(CONVENTIONAL, ServoSetupConfig::PITCH_CONFIG, ServoSetupCo
 
 // Instantiate the Controllers
 ArduFliteController controller(&myIMU, &attitudeController, &rateController, &servoMgr);
-
-// Instantiate the Receiver
-ArduFlitePwmReceiver pilotReceiver(ReceiverSetupConfig::RECEIVER_CHANNELS, ReceiverSetupConfig::NR_RECEIVER_CHANNELS);
 
 // Instantiate the CLI
 ArduFliteCLI myCLI(&controller, &myIMU, &flashTelemetry);
@@ -155,9 +150,6 @@ void arduflite_init()
 
     // Start the overall control tasks.
     controller.startTasks();
-
-    // Start the PWM signal receiver.
-    pilotReceiver.begin();
 
     // Start the CLI task.
     myCLI.startTask();

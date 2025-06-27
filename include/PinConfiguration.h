@@ -65,7 +65,7 @@ namespace PwmOutputConfig
     constexpr int RIGHT_AIL_PIN         = 1;
     constexpr int PITCH_PIN             = 0;
     constexpr int YAW_PIN               = 4;
-    constexpr int THROTTLE_PIN          = 9;//TODO: make sure this is correct!
+    constexpr int THROTTLE_PIN          = 10;
 #endif
 
 } // namespace PwmOutputConfig
@@ -87,8 +87,8 @@ namespace CRSFPinConfig
     constexpr int PIN_CRSF_RX          = 6; //TODO
     constexpr int PIN_CRSF_TX          = 8; //TODO
 #elif BOARD_TYPE == BOARD_TYPE_WEMOS
-    constexpr int PIN_CRSF_RX          = 6; //TODO
-    constexpr int PIN_CRSF_TX          = 8; //TODO
+    constexpr int PIN_CRSF_RX          = 6; 
+    constexpr int PIN_CRSF_TX          = 8; 
 #endif
     
 

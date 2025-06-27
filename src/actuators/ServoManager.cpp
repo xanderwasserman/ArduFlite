@@ -27,7 +27,8 @@ ServoManager::ServoManager(WingDesign design,
                            bool dual)
     : wingDesign(design), pitchConfig(pitchCfg), yawConfig(yawCfg),
       leftAilConfig(leftAilCfg), rightAilConfig(rightAilCfg), dualAilerons(dual),
-      throttleConfig(throttleCfg), maxServoDegPerSec(ServoSetupConfig::MAX_SERVO_DEG_PER_SEC)
+      throttleConfig(throttleCfg), maxServoDegPerSec(ServoSetupConfig::MAX_SERVO_DEG_PER_SEC),
+      maxThrottlePerSec(ServoSetupConfig::MAX_THROTTLE_PER_SEC)
 {
     // Attach elevator and rudder servos.
     pitchServo.attach(pitchConfig.pin, pitchConfig.minPulse, pitchConfig.maxPulse);
@@ -40,6 +41,9 @@ ServoManager::ServoManager(WingDesign design,
         leftAilServo.attach(leftAilConfig.pin, leftAilConfig.minPulse, leftAilConfig.maxPulse);
         rightAilServo.attach(rightAilConfig.pin, rightAilConfig.minPulse, rightAilConfig.maxPulse);
     }
+
+    lastThrottleTime = micros();
+    lastThrottleCmd = 0.0f;
 
     lastUpdateMicros   = micros();
     lastPitchAngleDeg  = pitchConfig.neutral;
@@ -66,6 +70,9 @@ ServoManager::ServoManager(WingDesign design,
     rightAilServo.attach(rightAilConfig.pin, rightAilConfig.minPulse, rightAilConfig.maxPulse);
     throttleServo.attach(throttleConfig.pin, throttleConfig.minPulse, throttleConfig.maxPulse);
 
+    lastThrottleTime = micros();
+    lastThrottleCmd = 0.0f;
+
     lastUpdateMicros  = micros();
     // only initialize the aileron/elevon state:
     lastLeftAngleDeg  = leftAilConfig.neutral;
@@ -74,10 +81,23 @@ ServoManager::ServoManager(WingDesign design,
 
 void ServoManager::writeThrottle(float throttleCmd)
 {
-    int rawThrottleDeflect = mapFloatToInt(throttleCmd, 0.0f, 1.0f, 0, throttleConfig.deflection);
-    float desiredThrottle  = throttleConfig.neutral + (throttleConfig.invert ? -rawThrottleDeflect : rawThrottleDeflect);
+    // clamp input [0…1]
+    throttleCmd = constrain(throttleCmd, 0.0f, 1.0f);
+    if (throttleCmd < 0.05f) throttleCmd = 0.0f;
 
-    throttleServo.write(desiredThrottle);
+    // compute elapsed time
+    unsigned long now = micros();
+    float dt = (now - lastThrottleTime) * 1e-6f;
+    lastThrottleTime = now;
+
+    // limit how fast we can change throttle
+    float maxDelta = maxThrottlePerSec * dt;
+    throttleCmd = constrain(throttleCmd, lastThrottleCmd - maxDelta, lastThrottleCmd + maxDelta);
+    lastThrottleCmd = throttleCmd;
+
+    // map into ESC pulse [minPulse…maxPulse]
+    int pulse = throttleConfig.minPulse + (int)(throttleCmd * float(throttleConfig.maxPulse - throttleConfig.minPulse));
+    throttleServo.writeMicroseconds(pulse);
 }
 
 void ServoManager::writeCommands(float rollCmd, float pitchCmd, float yawCmd) 

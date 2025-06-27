@@ -16,16 +16,16 @@ namespace CRSFCallbacks
     void onFailsafe() 
     {
         // 1) Enable Throttle-Cut
-        SystemCommand cmd{};
-        cmd.type = CMD_SET_THROTTLE_CUT;
-        cmd.value = true;
-        CommandSystem::instance().pushCommand(cmd);
+        SystemCommand throttleCmd{};
+        throttleCmd.type = CMD_SET_THROTTLE_CUT;
+        throttleCmd.value = true;
+        CommandSystem::instance().pushCommand(throttleCmd);
 
         // 2) Force ATTITUDE mode so our setpoints are interpreted as angles
-        SystemCommand cmd{};
-        cmd.type = CMD_SET_MODE;
-        cmd.mode = ATTITUDE_MODE;
-        CommandSystem::instance().pushCommand(cmd);
+        SystemCommand modeCmd{};
+        modeCmd.type = CMD_SET_MODE;
+        modeCmd.mode = ATTITUDE_MODE;
+        CommandSystem::instance().pushCommand(modeCmd);
 
         // 3) Push a nominal attitude setpoint:  10° bank +  -5° pitch
         EulerAngles fsAttitude;

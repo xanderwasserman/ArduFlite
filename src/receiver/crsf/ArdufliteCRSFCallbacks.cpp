@@ -18,7 +18,7 @@ namespace CRSFCallbacks
         // 1) Enable Throttle-Cut
         SystemCommand throttleCmd{};
         throttleCmd.type = CMD_SET_THROTTLE_CUT;
-        throttleCmd.value = true;
+        throttleCmd.x_value = true;
         CommandSystem::instance().pushCommand(throttleCmd);
 
         // 2) Force ATTITUDE mode so our setpoints are interpreted as angles

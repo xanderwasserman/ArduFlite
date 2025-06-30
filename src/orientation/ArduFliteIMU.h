@@ -248,6 +248,14 @@ public:
     float getAltitude() const;
 
     /**
+     * @brief Returns the last-computed vertical speed (m/s).
+     *
+     * @return Climb rate in meters per second.
+     *        Positive = climbing, negative = descending.
+     */
+    float getClimbRate() const;
+
+    /**
     * @brief Suspends the IMU update task.
     */
     void pauseTask();
@@ -305,6 +313,8 @@ private:
     float filteredGyroX, filteredGyroY, filteredGyroZ       = 0.0f;
     float filteredMagX, filteredMagY, filteredMagZ          = 0.0f;
     float filteredAltitude                                  = 0.0f;
+    float lastFilteredAltitude                              = 0.0f;  ///< For vario calculation
+    float climbRate                                         = 0.0f;  ///< Last computed vertical speed (m/s)
     float pitch, roll, yaw                                  = 0.0f;
 
     // Data structures to hold raw sensor readings.

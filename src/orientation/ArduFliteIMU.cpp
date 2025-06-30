@@ -266,6 +266,10 @@ void ArduFliteIMU::initFilter()
 
 #endif
     }
+
+    lastFilteredAltitude = filteredAltitude;
+    climbRate            = 0.0f;
+
     LOG_INF("Filter warm-up complete.");
 }
  
@@ -313,6 +317,11 @@ void ArduFliteIMU::update(float dt)
 
         // Update low-pass filters.
         applyLowPassFilters();
+
+        // Compute climb rate (m/s) -----
+        // dt is in seconds
+        climbRate = (filteredAltitude - lastFilteredAltitude) / dt;
+        lastFilteredAltitude = filteredAltitude;
 
         // Now update your orientation filter with the smoothed values:
     #if FILTER_TYPE == FILTER_TYPE_MADGWICK
@@ -850,4 +859,23 @@ float ArduFliteIMU::getAltitude() const
     return alt; 
 }
  
+/**
+* @brief Retrieves the current estimated climb rate in meters per second.
+*
+* Uses the mutex to safely get the current estimated climb rate.
+*
+* @return Climb rate in m/s.
+*/
+float ArduFliteIMU::getClimbRate() const 
+{
+    float rate;
+
+    {
+        SemaphoreLock lock(imuMutex);
+        rate = climbRate;
+    }
+    
+    return rate;
+}
+
  

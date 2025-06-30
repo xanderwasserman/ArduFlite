@@ -93,7 +93,7 @@ struct TelemetryData
         gps_sats            = 0;    //TODO
 
         // vario
-        climb_rate          = 0.0f; //TODO
+        climb_rate          = myIMU.getClimbRate();
 
         // Update link statistics
         crsfLinkStatistics_t stats{};

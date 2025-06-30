@@ -208,6 +208,7 @@ void ArduFliteMqttTelemetry::telemetryTask(void* pvParameters)
             self->mqttClient.publish("arduflite/imu/flight/state", String(localTelemCopy.flight_state, 3).c_str());
             self->mqttClient.publish("arduflite/imu/flight/mode", String(localTelemCopy.flight_mode, 3).c_str());
             self->mqttClient.publish("arduflite/imu/barometer/altitude", String(localTelemCopy.altitude, 3).c_str());
+            self->mqttClient.publish("arduflite/imu/barometer/climb_rate", String(localTelemCopy.climb_rate, 3).c_str());
 
             self->mqttClient.publish("arduflite/imu/accel/x", String(localTelemCopy.accel.x, 3).c_str());
             self->mqttClient.publish("arduflite/imu/accel/y", String(localTelemCopy.accel.y, 3).c_str());

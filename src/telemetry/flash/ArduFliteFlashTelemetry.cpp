@@ -292,7 +292,7 @@ void ArduFliteFlashTelemetry::formatCSVHeader(char* buf, size_t bufSize)
         "rate_sp_roll,rate_sp_pitch,rate_sp_yaw,"
         "att_cmd_roll,att_cmd_pitch,att_cmd_yaw,"
         "rate_cmd_roll,rate_cmd_pitch,rate_cmd_yaw,"
-        "altitude,flight_state,flight_mode\n";
+        "altitude,climb_rate,flight_state,flight_mode\n";
     // bufSize is at least MAX_ROW_BUFFER (600), plenty for this header
     strncpy(buf, hdr, bufSize - 1);
     buf[bufSize - 1] = '\0';
@@ -316,8 +316,9 @@ size_t ArduFliteFlashTelemetry::formatCSVRow(
         "%.3f,%.3f,%.3f,"                  // 21-23 attitudeCmd
         "%.3f,%.3f,%.3f,"                  // 24-26 rateCmd
         "%.2f,"                            // 27 altitude
-        "%d,"                              // 28 flight_state
-        "%d\n",                            // 29 flight_mode
+        "%.2f,"                            // 28 climb_rate
+        "%d,"                              // 29 flight_state
+        "%d\n",                            // 30 flight_mode
         ts,
         // accel
         d.accel.x, d.accel.y, d.accel.z,
@@ -337,6 +338,7 @@ size_t ArduFliteFlashTelemetry::formatCSVRow(
         d.rateCmd.roll, d.rateCmd.pitch, d.rateCmd.yaw,
         // altitude + ints
         d.altitude,
+        d.climb_rate,
         d.flight_state,
         d.flight_mode
     );

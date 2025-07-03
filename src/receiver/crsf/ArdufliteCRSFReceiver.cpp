@@ -53,7 +53,7 @@ void ArdufliteCRSFReceiver::begin()
 
 void ArdufliteCRSFReceiver::configureChannel(uint8_t idx, const ChannelConfig& cfg) 
 {
-    LOG_INF("Configured channel: %u", idx);
+    LOG_DBG("Configured channel: %u", idx);
     if (idx >= 16) return;
 
     {

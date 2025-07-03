@@ -54,14 +54,14 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
     {
         case CMD_RESET:
         {
-            LOG_INF("Processing RESET command...");
+            LOG_DBG("Processing RESET command...");
             ESP.restart();
             break;
         }
 
         case CMD_CALIBRATE:
         {
-            LOG_INF("Processing CALIBRATE command...");
+            LOG_DBG("Processing CALIBRATE command...");
             if (imu != nullptr) 
             {
                 imu->selfCalibrate();
@@ -75,7 +75,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
 
         case CMD_SET_MODE:
         {
-            LOG_INF("Processing CMD_SET_MODE: mode = %d", cmd.mode);
+            LOG_DBG("Processing CMD_SET_MODE: mode = %d", cmd.mode);
             if (controller != nullptr)
             {
                 controller->setMode(cmd.mode);
@@ -91,7 +91,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
         {
             // cmd.pidLoop is a ControlLoopType (e.g. ATTITUDE_ROLL_LOOP, RATE_YAW_LOOP, etc.)
             // cmd.pidConfig is a full PIDConfig struct
-            LOG_INF("Processing CMD_SET_CONFIG_PID: loop = %d, kp=%.3f, ki=%.3f, kd=%.3f, outLimit=%.3f, maxI=%.3f, alpha=%.3f",
+            LOG_DBG("Processing CMD_SET_CONFIG_PID: loop = %d, kp=%.3f, ki=%.3f, kd=%.3f, outLimit=%.3f, maxI=%.3f, alpha=%.3f",
                     cmd.pidLoop,
                     cmd.pidConfig.kp,
                     cmd.pidConfig.ki,
@@ -113,10 +113,8 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
 
         case CMD_SET_CONFIG_ATTITUDE:
         {
-            
-            
             // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
-            // LOG_INF("Processing CMD_SET_CONFIG_ATTITUDE: roll=%.3f, pitch=%.3f, yaw=%.3f", cmd.attitudeConfig.roll, cmd.attitudeConfig.pitch, cmd.attitudeConfig.yaw);
+            LOG_DBG("Processing CMD_SET_CONFIG_ATTITUDE: roll=%.3f, pitch=%.3f, yaw=%.3f", cmd.attitudeConfig.roll, cmd.attitudeConfig.pitch, cmd.attitudeConfig.yaw);
 
             if (controller != nullptr)
             {
@@ -139,7 +137,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
         case CMD_SET_CONFIG_RATE_ALPHA:
         {
             // cmd.value is a single float
-            LOG_INF("Processing CMD_SET_CONFIG_RATE_ALPHA: alpha=%.3f", cmd.value);
+            LOG_DBG("Processing CMD_SET_CONFIG_RATE_ALPHA: alpha=%.3f", cmd.value);
             if (controller != nullptr)
             {
                 LOG_ERR("Setting of Rate controller Alpha is not supported yet! Please implement me :-)"); //TODO
@@ -154,7 +152,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
         case CMD_SET_MISSION:
         {
             // cmd.x_value is a bool
-            LOG_INF("Processing CMD_SET_MISSION: state=%s", cmd.x_value?"START":"STOP");
+            LOG_DBG("Processing CMD_SET_MISSION: state=%s", cmd.x_value?"START":"STOP");
             
             if (cmd.x_value && !mission.isRunning())
             {
@@ -170,7 +168,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
         case CMD_SET_ARM:
         {
             // cmd.x_value is a bool
-            LOG_INF("Processing CMD_SET_ARM: state=%s", cmd.x_value?"YES":"NO");
+            LOG_DBG("Processing CMD_SET_ARM: state=%s", cmd.x_value?"YES":"NO");
             if (controller != nullptr)
             {
                 if (cmd.x_value)
@@ -193,7 +191,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
         case CMD_SET_THROTTLE_CUT:
         {
             // cmd.x_value is a bool
-            LOG_INF("Processing CMD_SET_THROTTLE_CUT: state=%s", cmd.x_value?"YES":"NO");
+            LOG_DBG("Processing CMD_SET_THROTTLE_CUT: state=%s", cmd.x_value?"YES":"NO");
             if (controller != nullptr)
             {
                 if (cmd.x_value)
@@ -216,7 +214,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
         case CMD_RECEIVER_SETPOINT_ROLL:
         {
             // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
-            LOG_INF("Processing CMD_RECEIVER_SETPOINT_ROLL: roll=%.3f", cmd.attitudeConfig.roll);
+            LOG_DBG("Processing CMD_RECEIVER_SETPOINT_ROLL: roll=%.3f", cmd.attitudeConfig.roll);
 
             if (controller != nullptr)
             {
@@ -231,7 +229,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
         case CMD_RECEIVER_SETPOINT_PITCH:
         {
             // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
-            LOG_INF("Processing CMD_RECEIVER_SETPOINT_PITCH: pitch=%.3f", cmd.attitudeConfig.pitch);
+            LOG_DBG("Processing CMD_RECEIVER_SETPOINT_PITCH: pitch=%.3f", cmd.attitudeConfig.pitch);
 
             if (controller != nullptr)
             {
@@ -246,7 +244,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
         case CMD_RECEIVER_SETPOINT_YAW:
         {
             // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
-            LOG_INF("Processing CMD_RECEIVER_SETPOINT_YAW: yaw=%.3f", cmd.attitudeConfig.yaw);
+            LOG_DBG("Processing CMD_RECEIVER_SETPOINT_YAW: yaw=%.3f", cmd.attitudeConfig.yaw);
 
             if (controller != nullptr)
             {
@@ -262,7 +260,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
         case CMD_RECEIVER_SETPOINT_THROTTLE:
         {
             // cmd.value is a flaot
-            LOG_INF("Processing CMD_RECEIVER_SETPOINT_THROTTLE: yaw=%.3f", cmd.value);
+            LOG_DBG("Processing CMD_RECEIVER_SETPOINT_THROTTLE: throttle=%.3f", cmd.value);
 
             if (controller != nullptr)
             {

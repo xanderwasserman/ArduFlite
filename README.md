@@ -84,7 +84,7 @@ ArduFlite employs a cascade control structure:
 
 - Arduino IDE or PlatformIO
 - ESP32 core for Arduino (includes FreeRTOS)
-- Libraries: FastIMU, ESP32Servo, Adafruit_Madgwick (or alternative sensor fusion library), PubSubClient (for MQTT), WiFiManager, etc.
+- Libraries: FastIMU, ESP32Servo, Adafruit_Madgwick (or alternative sensor fusion library), PubSubClient (for MQTT), WiFiManager, Adafruit_BMP280.
 
 ### Setup Instructions
 
@@ -149,3 +149,4 @@ This project is licensed under the MIT License – see the LICENSE file for deta
 - [FireBeetle 2 ESP32-E](https://wiki.dfrobot.com/FireBeetle_Board_ESP32_E_SKU_DFR0654#target_3)
 - [Adafruit_AHRS](https://github.com/adafruit/Adafruit_AHRS/tree/master)
 - [FastIMU](https://github.com/LiquidCGS/FastIMU/tree/main)
+

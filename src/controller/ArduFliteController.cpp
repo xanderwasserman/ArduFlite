@@ -351,8 +351,10 @@ void ArduFliteController::OuterLoopTask(void* parameters)
     const unsigned long desiredPeriodOuter = outerLoopMs *1000UL;
 
     EulerAngles rateCommand     {0.0f};
+    
+    // Shadow copies - persist across iterations for fallback on mutex timeout
     EulerAngles rateSetpoint    {0.0f};
-    ArduFliteMode currentMode;
+    ArduFliteMode currentMode   = ATTITUDE_MODE;
      
     while(1) 
     {
@@ -360,10 +362,13 @@ void ArduFliteController::OuterLoopTask(void* parameters)
         unsigned long dtMicro = currentMicros - lastMicros;
         lastMicros = currentMicros;
 
-        // Update outer loop statistics.
+        // Update outer loop statistics (separate mutex, low contention)
         {
             SemaphoreLock lock(controller->outerStatsMutex);
-            updateLoopStats(controller->outerLoopStats, dtMicro, desiredPeriodOuter);
+            if (lock.acquired()) {
+                updateLoopStats(controller->outerLoopStats, dtMicro, desiredPeriodOuter);
+            }
+            // Stats update is non-critical, skip on timeout
         }
 
         float dt = dtMicro / 1000000.0f;
@@ -373,10 +378,14 @@ void ArduFliteController::OuterLoopTask(void* parameters)
         if (dt > maxDt) dt = maxDt;
 
         // Protect reading of the mode and pilot setpoints.
+        // On timeout, use shadow copies from previous iteration (fail soft)
         {
             SemaphoreLock lock(controller->ctrlMutex);
-            currentMode = controller->mode;
-            rateSetpoint = controller->pilotRateSetpoint;
+            if (lock.acquired()) {
+                currentMode = controller->mode;
+                rateSetpoint = controller->pilotRateSetpoint;
+            }
+            // If timeout, shadow copies retain values from previous iteration
         }
 
         if (currentMode == ATTITUDE_MODE) 
@@ -385,9 +394,12 @@ void ArduFliteController::OuterLoopTask(void* parameters)
             FliteQuaternion currentQ = controller->imu->getQuaternion();
             controller->attitudeCtrl->update(currentQ, dt, rateCommand);
 
+            // Write back for telemetry (non-critical if missed)
             {
                 SemaphoreLock lock(controller->ctrlMutex);
-                controller->lastAttitudeCmd  = rateCommand;
+                if (lock.acquired()) {
+                    controller->lastAttitudeCmd = rateCommand;
+                }
             }
 
             // Pass the desired angular rates to the rate controller.
@@ -398,9 +410,12 @@ void ArduFliteController::OuterLoopTask(void* parameters)
             // In Stabilized mode, use pilot-provided rate setpoints.
             rateCommand  = rateSetpoint; 
 
+            // Write back for telemetry (non-critical if missed)
             {
                 SemaphoreLock lock(controller->ctrlMutex);
-                controller->lastAttitudeCmd = rateCommand;
+                if (lock.acquired()) {
+                    controller->lastAttitudeCmd = rateCommand;
+                }
             }
 
             // Pass the desired angular rates to the rate controller.
@@ -428,10 +443,16 @@ void ArduFliteController::InnerLoopTask(void* parameters)
     const TickType_t xFrequency = pdMS_TO_TICKS(innerLoopMs); // 2 ms period (500Hz)
     static unsigned long lastMicros = micros();
 
-    // Desired period in microseconds for the outer loop (10 ms = 10,000 µs)
-    const unsigned long desiredPeriodInner = innerLoopMs *1000UL;
+    // Desired period in microseconds for the inner loop (2 ms = 2,000 µs)
+    const unsigned long desiredPeriodInner = innerLoopMs * 1000UL;
 
-    EulerAngles actuatorCmd {0.0f};
+    // Shadow copies - persist across iterations for fallback on mutex timeout
+    ArduFliteMode   localMode           = ATTITUDE_MODE;
+    EulerAngles     localRateSetpoint   = {0, 0, 0};
+    float           localThrottle       = 0.0f;
+    bool            localArmed          = false;
+    bool            localThrottleCut    = true;
+    EulerAngles     actuatorCmd         = {0.0f};
     
     for (;;) 
     {
@@ -439,10 +460,13 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         unsigned long dtMicro = currentMicros - lastMicros;
         lastMicros = currentMicros;
 
-        // Update inner loop statistics.
+        // Update inner loop statistics (separate mutex, low contention)
         {
             SemaphoreLock lock(controller->innerStatsMutex);
-            updateLoopStats(controller->innerLoopStats, dtMicro, desiredPeriodInner);
+            if (lock.acquired()) {
+                updateLoopStats(controller->innerLoopStats, dtMicro, desiredPeriodInner);
+            }
+            // Stats update is non-critical, skip on timeout
         }
 
         float dt = dtMicro / 1000000.0f;
@@ -451,23 +475,23 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         if (dt < 1e-3f) dt = 1e-3f;
         if (dt > maxDt) dt = maxDt;
         
-        // Retrieve measured angular rates from the IMU.
+        // Retrieve measured angular rates from the IMU (lock-free via double-buffer)
         Vector3 gyro = controller->imu->getGyro();
         
-        // Fetch current mode + pilot setpoints:
-        ArduFliteMode   localMode;
-        EulerAngles     localRateSetpoint   = {0,0,0};
-        float           localThrottle       = 0.0f;
-        bool            localArmed          = false;
-        bool            localThrottleCut    = true;
-
+        // ─────────────────────────────────────────────────────────────────
+        // Single consolidated mutex acquisition for controller state
+        // On timeout, use shadow copies from previous iteration (fail soft)
+        // ─────────────────────────────────────────────────────────────────
         {
             SemaphoreLock lock(controller->ctrlMutex);
-            localMode           = controller->mode;
-            localRateSetpoint   = controller->pilotRateSetpoint;
-            localThrottle       = controller->pilotThrottleSetpoint;
-            localArmed          = controller->armed;
-            localThrottleCut    = controller->throttleCut;
+            if (lock.acquired()) {
+                localMode           = controller->mode;
+                localRateSetpoint   = controller->pilotRateSetpoint;
+                localThrottle       = controller->pilotThrottleSetpoint;
+                localArmed          = controller->armed;
+                localThrottleCut    = controller->throttleCut;
+            }
+            // If timeout, shadow copies retain values from previous iteration
         }
 
         if (localMode == MANUAL_MODE) 
@@ -497,17 +521,19 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         else 
         {
             // hold neutral
-            controller->servoMgr->writeCommands(0,0,0);
+            controller->servoMgr->writeCommands(0, 0, 0);
 
             // hold throttle off
             controller->servoMgr->writeThrottle(0);
         }
 
-        
-
+        // Write back actuator command (for telemetry)
         {
             SemaphoreLock lock(controller->ctrlMutex);
-            controller->lastRateCmd  = actuatorCmd;
+            if (lock.acquired()) {
+                controller->lastRateCmd = actuatorCmd;
+            }
+            // Non-critical if missed - telemetry will show slightly stale data
         }
 
         vTaskDelayUntil(&xLastWakeTime, xFrequency);

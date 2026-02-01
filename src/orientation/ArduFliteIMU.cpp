@@ -353,6 +353,9 @@ void ArduFliteIMU::update(float dt)
         // Update flight state based on the sensor data.
         updateFlightState();
     }
+
+    // Publish to double-buffer for lock-free reads by control loops
+    publishSnapshot();
 }
  
  /**
@@ -723,11 +726,14 @@ void ArduFliteIMU::applyLowPassFilters()
 
 /**
  * @brief Retrieves the current flight state.
+ * 
+ * Lock-free read from the double-buffer snapshot.
+ * 
  * @return The flight state (PREFLIGHT, INFLIGHT, or LANDED).
  */
 FlightState ArduFliteIMU::getFlightState() const 
 {
-    return flightState;
+    return snapshotBuffers[snapshotReadIndex.load(std::memory_order_acquire)].flightState;
 }
  
 /*============================================================================
@@ -737,145 +743,145 @@ FlightState ArduFliteIMU::getFlightState() const
 /**
 * @brief Retrieves the filtered accelerometer data.
 *
-* Uses the mutex to ensure a consistent snapshot of the sensor values.
+* Lock-free read from the double-buffer snapshot.
 *
 * @return Vector3 containing the filtered accelerometer data.
 */
 Vector3 ArduFliteIMU::getAcceleration() const 
 {
-    Vector3 acc;
-
-    {
-        SemaphoreLock lock(imuMutex);
-        acc.x = filteredAccelX;
-        acc.y = filteredAccelY;
-        acc.z = filteredAccelZ;
-    }
-
-    return acc;
+    return snapshotBuffers[snapshotReadIndex.load(std::memory_order_acquire)].accel;
 }
  
 /**
 * @brief Retrieves the filtered gyroscope data.
 *
-* Uses the mutex to ensure thread-safe access.
+* Lock-free read from the double-buffer snapshot.
 *
 * @return Vector3 containing the filtered gyroscope data.
 */
 Vector3 ArduFliteIMU::getGyro() const 
 {
-    Vector3 gyro;
-
-    {
-        SemaphoreLock lock(imuMutex);
-        gyro.x = filteredGyroX;
-        gyro.y = filteredGyroY;
-        gyro.z = filteredGyroZ;
-    }
-
-    return gyro;
+    return snapshotBuffers[snapshotReadIndex.load(std::memory_order_acquire)].gyro;
 }
  
 /**
 * @brief Retrieves the magnetometer data.
 *
-* Uses the mutex to provide a consistent snapshot.
+* Lock-free read from the double-buffer snapshot.
 *
 * @return Vector3 containing the magnetometer data.
 */
 Vector3 ArduFliteIMU::getMag() const 
 {
-    Vector3 mag;
-
-    {
-        SemaphoreLock lock(imuMutex);
-        mag.x = magX;
-        mag.y = magY;
-        mag.z = magZ;
-    }
-
-    return mag;
+    return snapshotBuffers[snapshotReadIndex.load(std::memory_order_acquire)].mag;
 }
  
 /**
 * @brief Retrieves the current orientation as a quaternion.
 *
-* Uses the mutex to ensure that the quaternion is read atomically.
+* Lock-free read from the double-buffer snapshot.
 *
 * @return FliteQuaternion representing the current orientation.
 */
 FliteQuaternion ArduFliteIMU::getQuaternion() const 
 {
-    FliteQuaternion q;
-
-    {
-        SemaphoreLock lock(imuMutex);
-        q.w = qw;
-        q.x = qx;
-        q.y = qy;
-        q.z = qz;
-    }
-
-    return q;
+    return snapshotBuffers[snapshotReadIndex.load(std::memory_order_acquire)].quat;
 }
  
 /**
 * @brief Retrieves the current orientation as Euler angles.
 *
-* Uses the mutex to safely read roll, pitch, and yaw.
+* Lock-free read from the double-buffer snapshot.
 *
 * @return EulerAngles containing the roll, pitch, and yaw.
 */
 EulerAngles ArduFliteIMU::getOrientation() const 
 {
-    EulerAngles ang;
-
-    {
-        SemaphoreLock lock(imuMutex);
-        ang.roll  = roll;
-        ang.pitch = pitch;
-        ang.yaw   = yaw;
-    }
-
-    return ang;
+    return snapshotBuffers[snapshotReadIndex.load(std::memory_order_acquire)].orientation;
 }
 
 /**
 * @brief Retrieves the current estimated altitude in meters.
 *
-* Uses the mutex to safely get the current estimated altitude.
+* Lock-free read from the double-buffer snapshot.
 *
 * @return Altitude in meters.
 */
 float ArduFliteIMU::getAltitude() const 
 { 
-    float alt;
-
-    {
-        SemaphoreLock lock(imuMutex);
-        alt = filteredAltitude;
-    }
-
-    return alt; 
+    return snapshotBuffers[snapshotReadIndex.load(std::memory_order_acquire)].altitude;
 }
  
 /**
 * @brief Retrieves the current estimated climb rate in meters per second.
 *
-* Uses the mutex to safely get the current estimated climb rate.
+* Lock-free read from the double-buffer snapshot.
 *
 * @return Climb rate in m/s.
 */
 float ArduFliteIMU::getClimbRate() const 
 {
-    float rate;
-
-    {
-        SemaphoreLock lock(imuMutex);
-        rate = climbRate;
-    }
-    
-    return rate;
+    return snapshotBuffers[snapshotReadIndex.load(std::memory_order_acquire)].climbRate;
 }
 
- 
+// ─────────────────────────────────────────────────────────────────────────────
+// Double-buffer implementation for lock-free reads
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+* @brief Publishes current sensor data to the double-buffer.
+* 
+* Called at the end of update() after all sensor data is processed.
+* Writes to the inactive buffer, then atomically swaps the read index.
+*/
+void ArduFliteIMU::publishSnapshot()
+{
+    // Write to the buffer that readers are NOT currently using
+    int writeIndex = 1 - snapshotReadIndex.load(std::memory_order_relaxed);
+    
+    ImuSnapshot& snap = snapshotBuffers[writeIndex];
+    
+    // Fill the snapshot (we already hold imuMutex from update())
+    snap.accel.x = filteredAccelX;
+    snap.accel.y = filteredAccelY;
+    snap.accel.z = filteredAccelZ;
+    
+    snap.gyro.x = filteredGyroX;
+    snap.gyro.y = filteredGyroY;
+    snap.gyro.z = filteredGyroZ;
+    
+    snap.mag.x = magX;
+    snap.mag.y = magY;
+    snap.mag.z = magZ;
+    
+    snap.quat.w = qw;
+    snap.quat.x = qx;
+    snap.quat.y = qy;
+    snap.quat.z = qz;
+    
+    snap.orientation.roll = roll;
+    snap.orientation.pitch = pitch;
+    snap.orientation.yaw = yaw;
+    
+    snap.altitude = filteredAltitude;
+    snap.climbRate = climbRate;
+    snap.flightState = flightState;
+    snap.timestampUs = micros();
+    
+    // Atomic swap: readers will now see the new data
+    snapshotReadIndex.store(writeIndex, std::memory_order_release);
+}
+
+/**
+* @brief Gets a complete lock-free snapshot of all IMU data.
+* 
+* Returns a copy of the current snapshot buffer. This is the preferred
+* method for control loops as it provides consistent data without 
+* mutex contention.
+*
+* @return ImuSnapshot containing all sensor data
+*/
+ImuSnapshot ArduFliteIMU::getSnapshot() const
+{
+    return snapshotBuffers[snapshotReadIndex.load(std::memory_order_acquire)];
+}

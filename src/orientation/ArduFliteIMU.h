@@ -14,6 +14,7 @@
 #include <FastIMU.h>
 #include <EEPROM.h>
 #include <Adafruit_AHRS.h>
+#include <atomic>
 #include "src/orientation/FliteQuaternion.h"
 #include "include/PinConfiguration.h"
 #include "include/IMUConfiguration.h"
@@ -100,6 +101,24 @@ struct EulerAngles {
     float roll;
     float pitch;
     float yaw;
+};
+
+/**
+* @brief Lock-free snapshot of all IMU sensor data.
+* 
+* Used for double-buffering to eliminate mutex contention between
+* the IMU task (writer) and control loops (readers).
+*/
+struct ImuSnapshot {
+    Vector3         accel;          ///< Filtered accelerometer data (g)
+    Vector3         gyro;           ///< Filtered gyroscope data (deg/s)
+    Vector3         mag;            ///< Magnetometer data
+    FliteQuaternion quat;           ///< Orientation quaternion
+    EulerAngles     orientation;    ///< Euler angles (degrees)
+    float           altitude;       ///< Barometric altitude (m)
+    float           climbRate;      ///< Vertical speed (m/s)
+    FlightState     flightState;    ///< Current flight state
+    uint32_t        timestampUs;    ///< Timestamp when snapshot was captured
 };
 
 /**
@@ -228,12 +247,23 @@ public:
     */
     void update(float dt);
 
-    // Grouped getters:
+    // Grouped getters (lock-free, read from double-buffer):
     Vector3 getAcceleration() const;
     Vector3 getGyro() const;
     Vector3 getMag() const;
     FliteQuaternion getQuaternion() const;
     EulerAngles getOrientation() const;
+
+    /**
+    * @brief Gets a complete lock-free snapshot of all IMU data.
+    * 
+    * This is the preferred method for control loops as it provides
+    * consistent data without mutex contention. The snapshot may be
+    * up to one IMU cycle (5ms) old, but timing is deterministic.
+    *
+    * @return ImuSnapshot containing all sensor data
+    */
+    ImuSnapshot getSnapshot() const;
  
     /**
     * @brief Retrieves the current flight state.
@@ -279,6 +309,23 @@ private:
 #elif FILTER_TYPE == FILTER_TYPE_KALMAN
     Adafruit_NXPSensorFusion filter;
 #endif
+
+    // ─────────────────────────────────────────────────────────────
+    // Double-buffer for lock-free reads
+    // ─────────────────────────────────────────────────────────────
+    // The IMU task writes to buffers[writeIndex], then swaps the index.
+    // Control loops read from buffers[readIndex.load()] without any lock.
+    ImuSnapshot             snapshotBuffers[2];
+    std::atomic<int>        snapshotReadIndex{0};
+
+    /**
+    * @brief Publishes current sensor data to the double-buffer.
+    * 
+    * Called at the end of update() to make new data available to readers.
+    * Uses atomic index swap for lock-free synchronization.
+    */
+    void publishSnapshot();
+    // ─────────────────────────────────────────────────────────────
  
     ArduFliteIMUOffsets offsets;
     uint32_t            timestamp;

@@ -42,7 +42,7 @@ void ArdufliteCRSFReceiver::begin()
         "CRSFRecv",
         4096,
         this,
-        tskIDLE_PRIORITY+1,
+        tskIDLE_PRIORITY+2,  // Priority 2: above telemetry/CLI, below control loops
         &_taskHandle
     );
     if (res != pdPASS) 
@@ -97,6 +97,9 @@ void ArdufliteCRSFReceiver::taskLoop(void* pv)
 
 void ArdufliteCRSFReceiver::run() 
 {
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(_intervalMs);
+
     while (true) 
     {
         while (_serial.available()) 
@@ -119,7 +122,7 @@ void ArdufliteCRSFReceiver::run()
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(_intervalMs));
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
 

@@ -47,77 +47,84 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
     if (!commandQueue_) return;
     SystemCommand cmd;
 
-   // Process exactly one pending command (non-blocking)
-    if (xQueueReceive(commandQueue_, &cmd, 0) != pdTRUE) return;
+    // Process up to MAX_COMMANDS_PER_TICK pending commands (non-blocking)
+    // This prevents queue backup during rapid command sequences
+    static constexpr int MAX_COMMANDS_PER_TICK = 10;
+    int processed = 0;
     
-    switch (cmd.type) 
+    while (processed < MAX_COMMANDS_PER_TICK && 
+           xQueueReceive(commandQueue_, &cmd, 0) == pdTRUE) 
     {
-        case CMD_RESET:
+        processed++;
+        
+        switch (cmd.type) 
         {
-            LOG_DBG("Processing RESET command...");
-            ESP.restart();
-            break;
-        }
-
-        case CMD_CALIBRATE:
-        {
-            LOG_DBG("Processing CALIBRATE command...");
-            if (imu != nullptr) 
+            case CMD_RESET:
             {
-                imu->selfCalibrate();
-            } 
-            else 
-            {
-                LOG_ERR("IMU pointer not provided.");
+                LOG_DBG("Processing RESET command...");
+                ESP.restart();
+                break;
             }
-            break;
-        }
 
-        case CMD_SET_MODE:
-        {
-            LOG_DBG("Processing CMD_SET_MODE: mode = %d", cmd.mode);
-            if (controller != nullptr)
+            case CMD_CALIBRATE:
             {
-                controller->setMode(cmd.mode);
+                LOG_DBG("Processing CALIBRATE command...");
+                if (imu != nullptr) 
+                {
+                    imu->selfCalibrate();
+                } 
+                else 
+                {
+                    LOG_ERR("IMU pointer not provided.");
+                }
+                break;
             }
-            else
+
+            case CMD_SET_MODE:
             {
-                LOG_ERR("CMD_SET_MODE: Controller pointer not provided.");
+                LOG_DBG("Processing CMD_SET_MODE: mode = %d", cmd.mode);
+                if (controller != nullptr)
+                {
+                    controller->setMode(cmd.mode);
+                }
+                else
+                {
+                    LOG_ERR("CMD_SET_MODE: Controller pointer not provided.");
+                }
+                break;
             }
-            break;
-        }
 
-        case CMD_SET_CONFIG_PID:
-        {
-            // cmd.pidLoop is a ControlLoopType (e.g. ATTITUDE_ROLL_LOOP, RATE_YAW_LOOP, etc.)
-            // cmd.pidConfig is a full PIDConfig struct
-            LOG_DBG("Processing CMD_SET_CONFIG_PID: loop = %d, kp=%.3f, ki=%.3f, kd=%.3f, outLimit=%.3f, maxI=%.3f, alpha=%.3f",
-                    cmd.pidLoop,
-                    cmd.pidConfig.kp,
-                    cmd.pidConfig.ki,
-                    cmd.pidConfig.kd,
-                    cmd.pidConfig.outLimit,
-                    cmd.pidConfig.maxIntegral,
-                    cmd.pidConfig.derivativeAlpha);
-
-            if (controller != nullptr)
+            case CMD_SET_CONFIG_PID:
             {
-                LOG_ERR("Setting of PID values not supported yet! Please implement me :-)"); //TODO
+                // cmd.pidLoop is a ControlLoopType (e.g. ATTITUDE_ROLL_LOOP, RATE_YAW_LOOP, etc.)
+                // cmd.pidConfig is a full PIDConfig struct
+                LOG_DBG("Processing CMD_SET_CONFIG_PID: loop = %d, kp=%.3f, ki=%.3f, kd=%.3f, outLimit=%.3f, maxI=%.3f, alpha=%.3f",
+                        cmd.pidLoop,
+                        cmd.pidConfig.kp,
+                        cmd.pidConfig.ki,
+                        cmd.pidConfig.kd,
+                        cmd.pidConfig.outLimit,
+                        cmd.pidConfig.maxIntegral,
+                        cmd.pidConfig.derivativeAlpha);
+
+                if (controller != nullptr)
+                {
+                    LOG_ERR("Setting of PID values not supported yet! Please implement me :-)"); //TODO
+                }
+                else
+                {
+                    LOG_ERR("CMD_SET_CONFIG_PID: Controller pointer not provided.");
+                }
+                break;
             }
-            else
-            {
-                LOG_ERR("CMD_SET_CONFIG_PID: Controller pointer not provided.");
-            }
-            break;
-        }
 
-        case CMD_SET_CONFIG_ATTITUDE:
-        {
-            // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
-            LOG_DBG("Processing CMD_SET_CONFIG_ATTITUDE: roll=%.3f, pitch=%.3f, yaw=%.3f", cmd.attitudeConfig.roll, cmd.attitudeConfig.pitch, cmd.attitudeConfig.yaw);
-
-            if (controller != nullptr)
+            case CMD_SET_CONFIG_ATTITUDE:
             {
+                // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
+                LOG_DBG("Processing CMD_SET_CONFIG_ATTITUDE: roll=%.3f, pitch=%.3f, yaw=%.3f", cmd.attitudeConfig.roll, cmd.attitudeConfig.pitch, cmd.attitudeConfig.yaw);
+
+                if (controller != nullptr)
+                {
                 if (controller->getMode() == ATTITUDE_MODE)
                 {
                     controller->setAttitudeSetpoint(cmd.attitudeConfig);
@@ -278,5 +285,6 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
             LOG_WARN("Received unknown or unhandled command type: %d", cmd.type);
             break;
         }
-    }
+        } // end switch
+    } // end while
 }

@@ -82,9 +82,9 @@ ArduFlite employs a cascade control structure:
 
 ### Software Requirements
 
-- Arduino IDE or PlatformIO
+- Arduino CLI (or Arduino IDE / PlatformIO)
 - ESP32 core for Arduino (includes FreeRTOS)
-- Libraries: FastIMU, ESP32Servo, Adafruit_Madgwick (or alternative sensor fusion library), PubSubClient (for MQTT), WiFiManager, Adafruit_BMP280.
+- Libraries: FastIMU, ESP32Servo, Adafruit AHRS, Adafruit BMP280, PubSubClient (for MQTT), WiFiManager, ArduinoJson
 
 ### Setup Instructions
 
@@ -93,14 +93,43 @@ ArduFlite employs a cascade control structure:
     git clone https://github.com/xanderwasserman/ArduFlite.git
     cd ArduFlite
     ```
-2. Open the Project:
-    Open the project in your preferred IDE (e.g., Arduino IDE or PlatformIO).
 
-3. Configure Hardware & Parameters:
-    Update pin assignments, PID gains, CRSF config, etc. in the configuration header files (e.g., ControllerConfiguration.h, CLICommandsConfig.h) as needed.
+2. **Install Arduino CLI (if not already installed):**
+    ```bash
+    brew install arduino-cli
+    ```
 
-4. Upload the Code:
-    Compile and upload the firmware to your ESP32.
+3. **Install ESP32 Board Support Package:**
+    ```bash
+    arduino-cli core install esp32:esp32
+    ```
+
+4. **Install Required Libraries:**
+    ```bash
+    arduino-cli lib install "FastIMU"
+    arduino-cli lib install "ESP32Servo"
+    arduino-cli lib install "Adafruit AHRS"
+    arduino-cli lib install "Adafruit BMP280 Library"
+    arduino-cli lib install "PubSubClient"
+    arduino-cli lib install "WiFiManager"
+    arduino-cli lib install "ArduinoJson"
+    ```
+    
+    **Note:** Some libraries (FreeRTOS, WiFi, Wire, EEPROM, Preferences, FS, LittleFS) are built into the ESP32 core and don't require separate installation.
+
+5. **Verify Installation:**
+    ```bash
+    arduino-cli lib list
+    ```
+
+6. **Configure Hardware & Parameters:**
+    Update pin assignments, PID gains, CRSF config, etc. in the configuration header files (e.g., [ControllerConfiguration.h](include/ControllerConfiguration.h), [PinConfiguration.h](include/PinConfiguration.h)) as needed.
+
+7. **Compile and Upload:**
+    ```bash
+    ./build.sh lolin
+    ./upload.sh lolin
+    ```
 
 ### Usage
 Once the system is running:

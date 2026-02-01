@@ -45,4 +45,6 @@ fi
 
 echo "Detected port: $PORT"
 
-arduino-cli upload -p "$PORT" -b "$FQBN"
+BUILD_PATH="./build"
+
+arduino-cli upload -p "$PORT" -b "$FQBN" --input-dir "$BUILD_PATH"

@@ -250,7 +250,9 @@ private:
 
     bool armed          = false;                            //< true once we’ve called arm()
     bool throttleCut    = true;                             //< Throttle is cut by default
-
+    // IMU failure recovery state
+    ArduFliteMode savedModeBeforeImuFailure = ATTITUDE_MODE; //< Mode to restore when IMU recovers
+    bool imuFailureActive = false;                          //< True when in IMU failure MANUAL_MODE
     static constexpr TickType_t outerLoopMs = 10;
     static constexpr TickType_t innerLoopMs = 2;
 

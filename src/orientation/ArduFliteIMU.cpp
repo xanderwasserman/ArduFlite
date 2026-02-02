@@ -129,7 +129,10 @@ void ArduFliteIMU::startTask()
     // Create an IMU task that runs at the desired update frequency.
     // For example, if you want to update every 5 ms (~200Hz), use a period of 5ms.
     const TickType_t taskPeriod = pdMS_TO_TICKS(5); 
-    xTaskCreate(imuTask, "IMU Task", 4096, this, 4, &imuTaskHandle);
+    if (xTaskCreate(imuTask, "IMU Task", 4096, this, 4, &imuTaskHandle) != pdPASS)
+    {
+        LOG_ERR("Failed to create IMU Task!");
+    }
 }
 
 /**
@@ -328,6 +331,10 @@ void ArduFliteIMU::update(float dt)
 
         // Update low-pass filters.
         applyLowPassFilters();
+
+        // Validate sensor data for NaN, Inf, and range violations.
+        // This updates imuHealthy flag based on consecutive failures.
+        validateSensorData();
 
         // Compute climb rate (m/s) -----
         // dt is in seconds
@@ -833,6 +840,98 @@ float ArduFliteIMU::getAltitude() const
 float ArduFliteIMU::getClimbRate() const 
 {
     return snapshotBuffers[snapshotReadIndex.load(std::memory_order_acquire)].climbRate;
+}
+
+/**
+ * @brief Checks if the IMU is currently providing valid data.
+ * 
+ * Thread-safe read of the health status flag.
+ *
+ * @return true if IMU data is valid and trustworthy, false otherwise.
+ */
+bool ArduFliteIMU::isHealthy() const
+{
+    bool healthy;
+    {
+        SemaphoreLock lock(imuMutex);
+        healthy = imuHealthy;
+    }
+    return healthy;
+}
+
+/**
+ * @brief Validates sensor readings for NaN, infinity, and range violations.
+ * 
+ * Checks accelerometer and gyroscope readings against configured limits.
+ * Updates consecutiveFailures counter and imuHealthy flag based on results.
+ * 
+ * @return true if current readings are valid, false otherwise.
+ */
+bool ArduFliteIMU::validateSensorData()
+{
+    bool valid = true;
+    
+    // Check for NaN or infinity in accelerometer data
+    if (isnan(filteredAccelX) || isnan(filteredAccelY) || isnan(filteredAccelZ) ||
+        isinf(filteredAccelX) || isinf(filteredAccelY) || isinf(filteredAccelZ))
+    {
+        valid = false;
+        LOG_ERR("IMU: Accelerometer NaN/Inf detected!");
+    }
+    
+    // Check for NaN or infinity in gyroscope data
+    if (isnan(filteredGyroX) || isnan(filteredGyroY) || isnan(filteredGyroZ) ||
+        isinf(filteredGyroX) || isinf(filteredGyroY) || isinf(filteredGyroZ))
+    {
+        valid = false;
+        LOG_ERR("IMU: Gyroscope NaN/Inf detected!");
+    }
+    
+    // Check accelerometer range (values in g)
+    if (fabsf(filteredAccelX) > IMUConfig::MAX_ACCEL_G ||
+        fabsf(filteredAccelY) > IMUConfig::MAX_ACCEL_G ||
+        fabsf(filteredAccelZ) > IMUConfig::MAX_ACCEL_G)
+    {
+        valid = false;
+        LOG_ERR("IMU: Accelerometer out of range! X=%.2f Y=%.2f Z=%.2f", 
+                filteredAccelX, filteredAccelY, filteredAccelZ);
+    }
+    
+    // Check gyroscope range (values in deg/s)
+    if (fabsf(filteredGyroX) > IMUConfig::MAX_GYRO_DPS ||
+        fabsf(filteredGyroY) > IMUConfig::MAX_GYRO_DPS ||
+        fabsf(filteredGyroZ) > IMUConfig::MAX_GYRO_DPS)
+    {
+        valid = false;
+        LOG_ERR("IMU: Gyroscope out of range! X=%.2f Y=%.2f Z=%.2f", 
+                filteredGyroX, filteredGyroY, filteredGyroZ);
+    }
+    
+    // Update consecutive failure counter and health status
+    // Protected by mutex to ensure consistent reads from isHealthy()
+    {
+        SemaphoreLock lock(imuMutex);
+        if (valid)
+        {
+            consecutiveFailures = 0;
+            imuHealthy = true;
+        }
+        else
+        {
+            consecutiveFailures++;
+            if (consecutiveFailures >= IMUConfig::CONSECUTIVE_FAILURES_THRESHOLD)
+            {
+                if (imuHealthy)
+                {
+                    LOG_ERR("IMU: Marked UNHEALTHY after %u consecutive failures!", 
+                            consecutiveFailures);
+                }
+                imuHealthy = false;
+            }
+        }
+    }
+    
+    return valid;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

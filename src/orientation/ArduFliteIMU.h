@@ -286,6 +286,18 @@ public:
     float getClimbRate() const;
 
     /**
+     * @brief Checks if the IMU is currently providing valid data.
+     * 
+     * Returns false if any of the following conditions are met:
+     * - Sensor readings contain NaN or infinity values
+     * - Accelerometer or gyroscope readings exceed physical limits
+     * - Multiple consecutive invalid readings have occurred
+     *
+     * @return true if IMU data is valid and trustworthy, false otherwise.
+     */
+    bool isHealthy() const;
+
+    /**
     * @brief Suspends the IMU update task.
     */
     void pauseTask();
@@ -375,6 +387,22 @@ private:
     FlightState flightState             = PREFLIGHT;
     unsigned long flightStableStartTime = 0;
     unsigned long motionStartTime       = 0;
+
+    // ─────────────────────────────────────────────────────────────────
+    // Health monitoring state
+    // ─────────────────────────────────────────────────────────────────
+    bool    imuHealthy                  = true;  ///< Current health status
+    uint8_t consecutiveFailures         = 0;     ///< Count of consecutive invalid readings
+
+    /**
+     * @brief Validates sensor readings for NaN, infinity, and range violations.
+     * 
+     * Updates consecutiveFailures counter and imuHealthy flag based on validation results.
+     * 
+     * @return true if current readings are valid, false otherwise.
+     */
+    bool validateSensorData();
+    // ─────────────────────────────────────────────────────────────────
 
 #if BARO_TYPE == BARO_TYPE_BMP280
     Adafruit_BMP280 bmp280;

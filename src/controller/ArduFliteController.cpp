@@ -494,10 +494,7 @@ void ArduFliteController::InnerLoopTask(void* parameters)
 
         if (dt < 1e-3f) dt = 1e-3f;
         if (dt > maxDt) dt = maxDt;
-        
-        // Retrieve measured angular rates from the IMU (lock-free via double-buffer)
-        Vector3 gyro = controller->imu->getGyro();
-        
+
         // ─────────────────────────────────────────────────────────────────
         // Single consolidated mutex acquisition for controller state
         // On timeout, use shadow copies from previous iteration (fail soft)
@@ -512,6 +509,66 @@ void ArduFliteController::InnerLoopTask(void* parameters)
                 localThrottleCut    = controller->throttleCut;
             }
             // If timeout, shadow copies retain values from previous iteration
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        // IMU Health Check - switch to MANUAL_MODE on failure, auto-recover when healthy
+        // All member access protected by mutex to prevent race conditions
+        // NOTE: This runs AFTER state acquisition so localMode is current
+        // ─────────────────────────────────────────────────────────────────
+        {
+            bool imuHealthy = controller->imu->isHealthy();
+            bool shouldEnterFailure = false;
+            bool shouldExitFailure = false;
+            ArduFliteMode modeToRestore = MANUAL_MODE;
+            
+            // Read/write shared state under lock
+            {
+                SemaphoreLock lock(controller->ctrlMutex);
+                if (lock.acquired())
+                {
+                    if (!imuHealthy && !controller->imuFailureActive)
+                    {
+                        // IMU just failed - save current mode and mark failure active
+                        if (controller->mode != MANUAL_MODE)
+                        {
+                            controller->savedModeBeforeImuFailure = controller->mode;
+                        }
+                        controller->imuFailureActive = true;
+                        shouldEnterFailure = true;
+                    }
+                    else if (imuHealthy && controller->imuFailureActive)
+                    {
+                        // IMU recovered - get saved mode and clear failure flag
+                        modeToRestore = controller->savedModeBeforeImuFailure;
+                        controller->imuFailureActive = false;
+                        shouldExitFailure = true;
+                    }
+                }
+            }
+            
+            // Perform mode transitions outside the lock to avoid deadlock with setMode()
+            if (shouldEnterFailure)
+            {
+                LOG_ERR("IMU FAILURE - switching to MANUAL_MODE for pilot control!");
+                controller->setMode(MANUAL_MODE);
+                localMode = MANUAL_MODE;  // Update local copy to skip gyro read below
+            }
+            else if (shouldExitFailure)
+            {
+                LOG_INF("IMU RECOVERED - restoring previous mode (%d)", modeToRestore);
+                controller->setMode(modeToRestore);
+                localMode = modeToRestore;  // Update local copy
+            }
+        }
+        // ─────────────────────────────────────────────────────────────────
+        
+        // Retrieve measured angular rates from the IMU (lock-free via double-buffer)
+        // Skip IMU read in MANUAL_MODE to avoid blocking on failed I2C bus
+        Vector3 gyro = {0, 0, 0};
+        if (localMode != MANUAL_MODE)
+        {
+            gyro = controller->imu->getGyro();
         }
 
         if (localMode == MANUAL_MODE) 

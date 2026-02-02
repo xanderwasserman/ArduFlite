@@ -17,6 +17,7 @@
 
 namespace CRSFCallbacks {
   void onFailsafe();
+  void onFailsafeExit();
   void onRoll(uint8_t ch, float v);
   void onPitch(uint8_t ch, float v);
   void onYaw(uint8_t ch, float v);

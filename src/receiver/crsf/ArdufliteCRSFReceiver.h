@@ -129,6 +129,12 @@ public:
     void setFailsafeCallback(void (*cb)());
 
     /**
+     * @brief Register a callback to run when exiting RC failsafe (link restored).
+     * @param cb  function to call once when transitioning out of failsafe
+     */
+    void setFailsafeExitCallback(void (*cb)());
+
+    /**
      * @brief Set the threshold after which the failsafe callback is invoked.
      * @param timeout  The timeout in milliseconds.
      */
@@ -161,7 +167,8 @@ private:
     uint32_t    _failsafeTimeoutMs = 500;   ///< ms without RC until failsafe
     uint32_t    _lastRcMicros     = 0;     ///< micros() of last RC frame
     bool        _inFailsafe       = false; ///< are we currently in failsafe?
-    void      (*_failsafeCb)()     = nullptr; ///< user callback
+    void      (*_failsafeCb)()     = nullptr; ///< user callback on failsafe entry
+    void      (*_failsafeExitCb)() = nullptr; ///< user callback on failsafe exit
 
     // FreeRTOS entrypoint
     static void taskLoop(void* pv);

@@ -253,6 +253,7 @@ void arduflite_init()
     }
 
     crsfRx.setFailsafeCallback(CRSFCallbacks::onFailsafe);
+    crsfRx.setFailsafeExitCallback(CRSFCallbacks::onFailsafeExit);
     crsfRx.setFailsafeTimeout(500);
 
     if (watchdogRecovery) {

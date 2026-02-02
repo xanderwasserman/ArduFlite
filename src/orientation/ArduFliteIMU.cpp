@@ -18,6 +18,7 @@
 #include "src/utils/Logging.h"
 #include "include/ArduFlite.h"
 
+#include <esp_task_wdt.h>  // ESP32 hardware watchdog
 #include <math.h>
 
 /**
@@ -142,8 +143,10 @@ void ArduFliteIMU::pauseTask()
 {
     if (imuTaskHandle != NULL) 
     {
+        // Unsubscribe from watchdog BEFORE suspending to prevent false triggers
+        esp_task_wdt_delete(imuTaskHandle);
         vTaskSuspend(imuTaskHandle);
-        LOG_INF("IMU Task paused.");
+        LOG_INF("IMU Task paused (WDT unsubscribed).");
     }
 }
  
@@ -157,7 +160,9 @@ void ArduFliteIMU::resumeTask()
     if (imuTaskHandle != NULL) 
     {
         vTaskResume(imuTaskHandle);
-        LOG_INF("IMU Task resumed.");
+        // Re-subscribe to watchdog after resuming
+        esp_task_wdt_add(imuTaskHandle);
+        LOG_INF("IMU Task resumed (WDT re-subscribed).");
     }
 }
 
@@ -176,11 +181,17 @@ void ArduFliteIMU::imuTask(void* parameters)
     TickType_t xLastWakeTime = xTaskGetTickCount();
     unsigned long lastMicros = micros();
 
+    // Register this task with hardware watchdog (must be done from within the task)
+    esp_task_wdt_add(NULL);  // NULL = current task
+
     // Define the task period; here, 5ms corresponds to roughly 200Hz.
     const TickType_t xFrequency = pdMS_TO_TICKS(IMU_UPDATE_INTERVAL_MS);
 
     while (true) 
     {
+        // Reset hardware watchdog - proves this task is alive
+        esp_task_wdt_reset();
+
         unsigned long currentMicros = micros();
         unsigned long dtMicro = currentMicros - lastMicros;
         lastMicros = currentMicros;

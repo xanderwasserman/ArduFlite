@@ -24,6 +24,7 @@
 #include "src/utils/Logging.h"
 
 #include <Arduino.h>
+#include <esp_task_wdt.h>  // ESP32 hardware watchdog
  
 /**
  * @brief Constructor for ArduFliteController.
@@ -251,13 +252,16 @@ void ArduFliteController::startTasks()
  */
 void ArduFliteController::pauseTasks() 
 {
+    // Unsubscribe from watchdog BEFORE suspending to prevent false triggers
     if (outerTaskHandle != NULL) {
+        esp_task_wdt_delete(outerTaskHandle);
         vTaskSuspend(outerTaskHandle);
     }
     if (innerTaskHandle != NULL) {
+        esp_task_wdt_delete(innerTaskHandle);
         vTaskSuspend(innerTaskHandle);
     }
-    LOG_INF("Control tasks paused.");
+    LOG_INF("Control tasks paused (WDT unsubscribed).");
 }
 
 /**
@@ -270,11 +274,15 @@ void ArduFliteController::resumeTasks()
 {
     if (outerTaskHandle != NULL) {
         vTaskResume(outerTaskHandle);
+        // Re-subscribe to watchdog after resuming (use actual handle, not NULL)
+        esp_task_wdt_add(outerTaskHandle);
     }
     if (innerTaskHandle != NULL) {
         vTaskResume(innerTaskHandle);
+        // Re-subscribe to watchdog after resuming (use actual handle, not NULL)
+        esp_task_wdt_add(innerTaskHandle);
     }
-    LOG_INF("Control tasks resumed.");
+    LOG_INF("Control tasks resumed (WDT re-subscribed).");
 }
 
 void ArduFliteController::arm() 
@@ -347,6 +355,9 @@ void ArduFliteController::OuterLoopTask(void* parameters)
     const TickType_t xFrequency = pdMS_TO_TICKS(outerLoopMs); // 10 ms period (100Hz)
     static unsigned long lastMicros = micros();
 
+    // Register this task with hardware watchdog (must be done from within the task)
+    esp_task_wdt_add(NULL);  // NULL = current task
+
     // Desired period in microseconds for the outer loop (10 ms = 10,000 µs)
     const unsigned long desiredPeriodOuter = outerLoopMs *1000UL;
 
@@ -358,6 +369,9 @@ void ArduFliteController::OuterLoopTask(void* parameters)
      
     while(1) 
     {
+        // Reset hardware watchdog - proves this task is alive
+        esp_task_wdt_reset();
+
         unsigned long currentMicros = micros();
         unsigned long dtMicro = currentMicros - lastMicros;
         lastMicros = currentMicros;
@@ -443,6 +457,9 @@ void ArduFliteController::InnerLoopTask(void* parameters)
     const TickType_t xFrequency = pdMS_TO_TICKS(innerLoopMs); // 2 ms period (500Hz)
     static unsigned long lastMicros = micros();
 
+    // Register this task with hardware watchdog (must be done from within the task)
+    esp_task_wdt_add(NULL);  // NULL = current task
+
     // Desired period in microseconds for the inner loop (2 ms = 2,000 µs)
     const unsigned long desiredPeriodInner = innerLoopMs * 1000UL;
 
@@ -454,8 +471,11 @@ void ArduFliteController::InnerLoopTask(void* parameters)
     bool            localThrottleCut    = true;
     EulerAngles     actuatorCmd         = {0.0f};
     
-    for (;;) 
+    while(1)
     {
+        // Reset hardware watchdog - proves this task is alive
+        esp_task_wdt_reset();
+
         unsigned long currentMicros = micros();
         unsigned long dtMicro = currentMicros - lastMicros;
         lastMicros = currentMicros;

@@ -14,6 +14,7 @@
 #include "include/ArduFlite.h"
 
 #include <cstring>
+#include <esp_task_wdt.h>  // ESP32 hardware watchdog
 
 ArdufliteCRSFReceiver::ArdufliteCRSFReceiver(HardwareSerial& ser, int rxPin, float freqHz)
   : _serial(ser)
@@ -68,6 +69,12 @@ void ArdufliteCRSFReceiver::setFailsafeCallback(void (*cb)())
     _failsafeCb = cb;
 }
 
+void ArdufliteCRSFReceiver::setFailsafeExitCallback(void (*cb)()) 
+{
+    SemaphoreLock lock(_lock);
+    _failsafeExitCb = cb;
+}
+
 void ArdufliteCRSFReceiver::setFailsafeTimeout(uint32_t timeout)
 {
     SemaphoreLock lock(_lock);
@@ -97,11 +104,17 @@ void ArdufliteCRSFReceiver::taskLoop(void* pv)
 
 void ArdufliteCRSFReceiver::run() 
 {
+    // Register this task with hardware watchdog (must be done from within the task)
+    esp_task_wdt_add(NULL);  // NULL = current task
+
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(_intervalMs);
 
     while (true) 
     {
+        // Reset hardware watchdog - proves this task is alive
+        esp_task_wdt_reset();
+
         while (_serial.available()) 
         {
             parseByte((uint8_t)_serial.read());
@@ -110,15 +123,22 @@ void ArdufliteCRSFReceiver::run()
         // check for RC failsafe
         {
             uint32_t now = micros();
-            SemaphoreLock lock(_lock);
-            if (_lastRcMicros != 0 && (now - _lastRcMicros) > _failsafeTimeoutMs * 1000u)
+            void (*entryCb)() = nullptr;  // Store callback to invoke outside lock
             {
-                if (!_inFailsafe) 
+                SemaphoreLock lock(_lock);
+                if (_lastRcMicros != 0 && (now - _lastRcMicros) > _failsafeTimeoutMs * 1000u)
                 {
-                    LOG_WARN("Entering RC failsafe");
-                    _inFailsafe = true;
-                    _failsafeCb();
+                    if (!_inFailsafe) 
+                    {
+                        LOG_WARN("Entering RC failsafe");
+                        _inFailsafe = true;
+                        entryCb = _failsafeCb;  // Capture callback under lock
+                    }
                 }
+            }
+            // Invoke failsafe entry callback OUTSIDE lock to avoid blocking
+            if (entryCb) {
+                entryCb();
             }
         }
 
@@ -175,6 +195,7 @@ void ArdufliteCRSFReceiver::dispatchFrame(const uint8_t* frame, size_t len)
     if (type == CRSF_FRAMETYPE_RC_CHANNELS_PACKED) 
     {
         // got a real RC frame: reset failsafe timer
+        void (*exitCb)() = nullptr;  // Store callback to invoke outside lock
         {
             SemaphoreLock lock(_lock);
             _lastRcMicros = micros();
@@ -182,7 +203,12 @@ void ArdufliteCRSFReceiver::dispatchFrame(const uint8_t* frame, size_t len)
             {
                 LOG_INF("Exiting RC failsafe");
                 _inFailsafe = false;
+                exitCb = _failsafeExitCb;  // Capture callback under lock
             }
+        }
+        // Invoke failsafe exit callback OUTSIDE lock to avoid blocking
+        if (exitCb) {
+            exitCb();
         }
         
         {

@@ -27,6 +27,9 @@
 #include "include/CSRFConfiguration.h"
 #include "include/ControlMixerConfiguration.h"
 
+#include <esp_task_wdt.h>  // ESP32 hardware watchdog
+#include <esp_system.h>    // For esp_reset_reason()
+
 #include "src/actuators/ServoManager.h"
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/cli/ArduFliteCLI.h"
@@ -68,6 +71,19 @@ void onResetTripleTap(void);
 void resetSystemCommand(void);
 void pauseController(void);
 void resumeController(void);
+
+// ─────────────────────────────────────────────────────────────────
+// Watchdog Recovery Detection
+// ─────────────────────────────────────────────────────────────────
+// Returns true if the system reset due to a watchdog timeout.
+// In this case, we need fast recovery: skip servo tests and go
+// directly to MANUAL_MODE so the pilot has immediate control.
+static bool isWatchdogRecovery() {
+    esp_reset_reason_t reason = esp_reset_reason();
+    return (reason == ESP_RST_TASK_WDT ||
+            reason == ESP_RST_INT_WDT ||
+            reason == ESP_RST_WDT);
+}
 
 // Serial ports for CRSF
 HardwareSerial crsfSerial(1);
@@ -112,13 +128,41 @@ StatusLED statusLED(7, 1);
 
 void arduflite_init() 
 {
+    // ─────────────────────────────────────────────────────────────────
+    // Watchdog Recovery Detection
+    // ─────────────────────────────────────────────────────────────────
+    // Check FIRST before any other initialization. If this is a watchdog
+    // reset during flight, we need to recover as fast as possible.
+    const bool watchdogRecovery = isWatchdogRecovery();
+
 #if BOARD_TYPE == BOARD_TYPE_WEMOS
     statusLED.begin();
-    statusLED.setPattern(Patterns::Boot);
+    statusLED.setPattern(watchdogRecovery ? Patterns::Error : Patterns::Boot);
 #endif
 
     Serial.begin(115200);
     while (!Serial && millis() < 2000);  // wait max 2 seconds
+
+    if (watchdogRecovery) {
+        LOG_WARN("!!! WATCHDOG RECOVERY - Fast boot to MANUAL_MODE !!!");
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Initialize ESP32 Hardware Watchdog
+    // ─────────────────────────────────────────────────────────────────
+    // 1 second timeout, panic (reset) on timeout
+    // Critical tasks (control loops, CRSF receiver) must call esp_task_wdt_reset()
+    // within this period or the system will reset.
+    esp_task_wdt_config_t wdt_config = {
+        .timeout_ms = 1000,
+        .idle_core_mask = 0,  // Don't watch idle tasks
+        .trigger_panic = true
+    };
+    esp_task_wdt_init(&wdt_config);
+    if (!watchdogRecovery) {
+        LOG_INF("Hardware watchdog initialized (1s timeout).");
+    }
+    // ─────────────────────────────────────────────────────────────────
 
     pinMode(ButtonInputConfig::USER_BUTTON_PIN, INPUT_PULLUP);
 
@@ -135,18 +179,45 @@ void arduflite_init()
 #if BOARD_TYPE == BOARD_TYPE_WEMOS
         statusLED.setPattern(Patterns::Error); //fast yellow blink
 #endif
+        // On watchdog recovery, don't hang - try to give pilot passthrough control anyway
+        if (!watchdogRecovery) {
         while (1);
     }
+        LOG_WARN("IMU failed but continuing in MANUAL_MODE for pilot control.");
+    }
 
+    // ─────────────────────────────────────────────────────────────────
+    // Servo Test - SKIP on watchdog recovery!
+    // ─────────────────────────────────────────────────────────────────
+    // During normal boot, test control surfaces.
+    // After watchdog reset, skip this to avoid erratic servo movement during flight.
+    if (!watchdogRecovery) {
     servoMgr.testControlSurfaces();
+    } else {
+        // Immediately command neutral positions to ensure clean PWM output
+        // This prevents any servo glitches from residual PWM state
+        servoMgr.writeCommands(0.0f, 0.0f, 0.0f);
+        servoMgr.writeThrottle(0.0f);
+        LOG_WARN("Skipping servo test - watchdog recovery. Servos neutralized.");
+    }
 
     // Start with a level attitude (Assist mode).
     EulerAngles initialSetpoint {0.0f};
     controller.setAttitudeSetpoint(initialSetpoint);
     controller.setRateSetpoint(initialSetpoint);
 
-    // Set the mode (default is ATTITUDE_MODE).
+    // ─────────────────────────────────────────────────────────────────
+    // Mode Selection Based on Recovery State
+    // ─────────────────────────────────────────────────────────────────
+    if (watchdogRecovery) {
+        // CRITICAL: After watchdog reset, go directly to MANUAL_MODE
+        // This gives the pilot immediate passthrough control.
+        controller.setMode(MANUAL_MODE);
+        LOG_WARN("MANUAL_MODE active - pilot has direct control.");
+    } else {
+        // Normal boot: default is ATTITUDE_MODE.
     controller.setMode(ATTITUDE_MODE);
+    }
 
     // Start the overall control tasks.
     controller.startTasks();
@@ -184,7 +255,11 @@ void arduflite_init()
     crsfRx.setFailsafeCallback(CRSFCallbacks::onFailsafe);
     crsfRx.setFailsafeTimeout(500);
 
+    if (watchdogRecovery) {
+        LOG_WARN("!!! WATCHDOG RECOVERY COMPLETE - FLY TO SAFETY !!!");
+    } else {
     LOG_INF("ArduFlite Controller initialised.");
+    }
 }
 
 void arduflite_loop() 

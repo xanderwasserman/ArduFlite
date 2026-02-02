@@ -102,6 +102,15 @@ void ServoManager::writeThrottle(float throttleCmd)
 
 void ServoManager::writeCommands(float rollCmd, float pitchCmd, float yawCmd) 
 {
+    // ─────────────────────────────────────────────────────────────────
+    // Final safety clamp: ensure all inputs are within valid range [-1, 1]
+    // This is the last line of defense against out-of-range commands
+    // from any source (controller, manual mode, failsafe, etc.)
+    // ─────────────────────────────────────────────────────────────────
+    rollCmd  = constrain(rollCmd,  -1.0f, 1.0f);
+    pitchCmd = constrain(pitchCmd, -1.0f, 1.0f);
+    yawCmd   = constrain(yawCmd,   -1.0f, 1.0f);
+
     // --- Compute loop dt (seconds) ---
     unsigned long now = micros();
     float dt = (now - lastUpdateMicros) * 1e-6f;

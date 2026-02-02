@@ -68,8 +68,11 @@ void ArduFliteRateController::update(Vector3 measuredRate, float dt, EulerAngles
     filteredRateOutput.pitch = outputAlpha * newPitchOut + (1.0f - outputAlpha) * filteredRateOutput.pitch;
     filteredRateOutput.yaw   = outputAlpha * newYawOut   + (1.0f - outputAlpha) * filteredRateOutput.yaw;
 
-    // Use the filtered outputs as the final command.
-    actuatorOut  = filteredRateOutput;
+    // Final safety clamp: ensure all outputs are within valid servo command range [-1, 1]
+    // This protects against any corruption or drift in the EMA filter state.
+    actuatorOut.roll  = constrain(filteredRateOutput.roll,  -1.0f, 1.0f);
+    actuatorOut.pitch = constrain(filteredRateOutput.pitch, -1.0f, 1.0f);
+    actuatorOut.yaw   = constrain(filteredRateOutput.yaw,   -1.0f, 1.0f);
 }
 
 // Reset all PID controllers.

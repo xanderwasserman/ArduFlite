@@ -181,8 +181,8 @@ void arduflite_init()
 #endif
         // On watchdog recovery, don't hang - try to give pilot passthrough control anyway
         if (!watchdogRecovery) {
-        while (1);
-    }
+            while (1);
+        }
         LOG_WARN("IMU failed but continuing in MANUAL_MODE for pilot control.");
     }
 
@@ -192,7 +192,7 @@ void arduflite_init()
     // During normal boot, test control surfaces.
     // After watchdog reset, skip this to avoid erratic servo movement during flight.
     if (!watchdogRecovery) {
-    servoMgr.testControlSurfaces();
+        servoMgr.testControlSurfaces();
     } else {
         // Immediately command neutral positions to ensure clean PWM output
         // This prevents any servo glitches from residual PWM state
@@ -216,7 +216,7 @@ void arduflite_init()
         LOG_WARN("MANUAL_MODE active - pilot has direct control.");
     } else {
         // Normal boot: default is ATTITUDE_MODE.
-    controller.setMode(ATTITUDE_MODE);
+        controller.setMode(ATTITUDE_MODE);
     }
 
     // Start the overall control tasks.
@@ -259,7 +259,7 @@ void arduflite_init()
     if (watchdogRecovery) {
         LOG_WARN("!!! WATCHDOG RECOVERY COMPLETE - FLY TO SAFETY !!!");
     } else {
-    LOG_INF("ArduFlite Controller initialised.");
+        LOG_INF("ArduFlite Controller initialised.");
     }
 }
 

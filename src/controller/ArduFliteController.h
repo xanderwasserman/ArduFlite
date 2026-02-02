@@ -17,6 +17,9 @@
 
 #include <Arduino.h>
 
+// Forward declaration
+class ArdufliteCRSFReceiver;
+
 /**
  * @brief Control loop timing statistics.
  */
@@ -183,10 +186,19 @@ public:
     void resumeTasks();
 
     /**
-     * @brief Arm the controller: enable servo outputs.
-     *        Never suspends the loops—just gates them.
+     * @brief Arm the controller after passing preflight checks.
+     * 
+     * Runs preflight validation before arming. Will reject arm request if:
+     * - IMU is unhealthy
+     * - Gyro bias exceeds threshold
+     * - Accelerometer not reading ~1g
+     * - Receiver link quality too low
+     * - Throttle not at minimum
+     * 
+     * @param receiver Pointer to CRSF receiver for link quality check (may be nullptr)
+     * @return true if arm succeeded, false if preflight check failed
      */
-    void arm();
+    bool arm(ArdufliteCRSFReceiver* receiver = nullptr);
 
     /**
      * @brief Disarm the controller: disable servo outputs immediately.

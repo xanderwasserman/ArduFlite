@@ -22,6 +22,8 @@
 
 #include "src/controller/ArduFliteController.h"
 #include "src/utils/Logging.h"
+#include "src/utils/PreflightCheck.h"
+#include "src/receiver/crsf/ArdufliteCRSFReceiver.h"
 
 #include <Arduino.h>
 #include <esp_task_wdt.h>  // ESP32 hardware watchdog
@@ -285,15 +287,39 @@ void ArduFliteController::resumeTasks()
     LOG_INF("Control tasks resumed (WDT re-subscribed).");
 }
 
-void ArduFliteController::arm() 
+/**
+ * @brief Arm the controller after passing preflight checks.
+ * 
+ * Runs preflight validation before arming. Will reject arm request if
+ * any preflight check fails.
+ * 
+ * @param receiver Pointer to CRSF receiver for link quality check (may be nullptr)
+ * @return true if arm succeeded, false if preflight check failed
+ */
+bool ArduFliteController::arm(ArdufliteCRSFReceiver* receiver) 
 {
+    LOG_INF("Arm requested - running preflight checks...");
+    
+    // Run all preflight checks
+    PreflightResult preflight = PreflightCheck::runAllChecks(imu, this, receiver);
+    
+    if (!preflight.allPassed())
+    {
+        LOG_ERR("ARM REJECTED - Preflight checks failed!");
+        return false;
+    }
+    
+    // All checks passed, proceed to arm
     {
         SemaphoreLock lock(ctrlMutex);
-        // Reset any integrators or last‐commands here if you like:
+        // Reset any integrators or last-commands here:
         rateCtrl->reset();
         attitudeCtrl->reset();
         armed = true;
     }
+    
+    LOG_INF("ARMED - System ready for flight");
+    return true;
 }
 
 void ArduFliteController::disarm() 

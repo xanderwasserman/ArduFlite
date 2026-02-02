@@ -188,13 +188,17 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
             {
                 if (cmd.x_value)
                 {
-                    controller->arm();
+                    // Run preflight checks and arm if passed
+                    bool armed = controller->arm(receiver);
+                    if (!armed)
+                    {
+                        LOG_ERR("ARM REJECTED - preflight checks failed!");
+                    }
                 }
                 else
                 {
                     controller->disarm();
                 }
-                
             }
             else
             {

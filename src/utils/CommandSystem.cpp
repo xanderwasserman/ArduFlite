@@ -42,7 +42,7 @@ bool CommandSystem::pushCommand(const SystemCommand& cmd)
     return xQueueSend(commandQueue_, &cmd, pdMS_TO_TICKS(10)) == pdPASS;
 }
 
-void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIMU* imu) 
+void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIMU* imu, ArdufliteCRSFReceiver* receiver) 
 {
     if (!commandQueue_) return;
     SystemCommand cmd;
@@ -69,13 +69,21 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
             case CMD_CALIBRATE:
             {
                 LOG_DBG("Processing CALIBRATE command...");
-                if (imu != nullptr) 
+                if (imu != nullptr && controller != nullptr) 
                 {
+                    // Pause all tasks before calibration (they will unsubscribe from WDT)
+                    controller->pauseTasks();
+                    imu->pauseTask();
+                    
                     imu->selfCalibrate();
+                    
+                    // Resume all tasks after calibration (they will re-subscribe to WDT)
+                    imu->resumeTask();
+                    controller->resumeTasks();
                 } 
                 else 
                 {
-                    LOG_ERR("IMU pointer not provided.");
+                    LOG_ERR("IMU or Controller pointer not provided.");
                 }
                 break;
             }

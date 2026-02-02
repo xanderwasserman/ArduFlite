@@ -265,8 +265,8 @@ void arduflite_init()
 
 void arduflite_loop() 
 {
-    // Process any pending commands.
-    CommandSystem::instance().processCommands(&controller, &myIMU);
+    // Process any pending commands (pass receiver for preflight checks).
+    CommandSystem::instance().processCommands(&controller, &myIMU, &crsfRx);
     
     // Update buttons.
     HoldButtonManager::updateAll();

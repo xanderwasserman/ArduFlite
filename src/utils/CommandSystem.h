@@ -11,6 +11,7 @@
 
 #include "src/controller/ArduFliteController.h"
 #include "src/orientation/ArduFliteIMU.h"
+#include "src/receiver/crsf/ArdufliteCRSFReceiver.h"
 
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
@@ -97,8 +98,9 @@ public:
      *
      * @param controller Pointer to the ArduFliteController instance.
      * @param imu Pointer to the ArduFliteIMU instance.
+     * @param receiver Pointer to the CRSF receiver for preflight checks (may be nullptr).
      */
-    void processCommands(ArduFliteController *controller, ArduFliteIMU *imu);
+    void processCommands(ArduFliteController *controller, ArduFliteIMU *imu, ArdufliteCRSFReceiver *receiver = nullptr);
 
 private:
     QueueHandle_t commandQueue_;  ///< FreeRTOS queue handle

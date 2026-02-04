@@ -123,6 +123,12 @@ public:
     bool getLinkStats(crsfLinkStatistics_t& out) const;
 
     /**
+     * @brief Check if currently in RC failsafe (link lost).
+     * @return true if in failsafe state
+     */
+    bool isInFailsafe() const;
+
+    /**
      * @brief Register a callback to run when RC failsafe is triggered.
      * @param cb  function to call once upon timeout (and each poll while in failsafe)
      */

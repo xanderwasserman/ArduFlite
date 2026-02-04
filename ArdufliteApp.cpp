@@ -90,7 +90,7 @@ HardwareSerial crsfSerial(1);
 HardwareSerial telemSerial(2);
 
 ArdufliteCRSFReceiver  crsfRx(crsfSerial,  CRSFPinConfig::PIN_CRSF_RX);
-ArdufliteCRSFTelemetry crsfTx(telemSerial, CRSFPinConfig::PIN_CRSF_TX, 1.0); // 1 Hz telemetry
+ArdufliteCRSFTelemetry crsfTx(telemSerial, CRSFPinConfig::PIN_CRSF_TX, 10.0f); // 10 Hz telemetry
 
 // Declare telemetry instnaces.
 TelemetryData               telemetryData;

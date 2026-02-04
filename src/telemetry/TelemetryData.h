@@ -46,6 +46,10 @@ struct TelemetryData
     // vario
     float           climb_rate;         // m/s
 
+    // System status
+    bool            armed;              // true if controller is armed
+    bool            in_failsafe;        // true if in RC failsafe
+
     // Link statistics (populated by CRSFReceiver)
     int8_t               link_rssi1;
     int8_t               link_rssi2;
@@ -94,6 +98,10 @@ struct TelemetryData
 
         // vario
         climb_rate          = myIMU.getClimbRate();
+
+        // System status
+        armed               = myController.isArmed();
+        in_failsafe         = crsfReceiver.isInFailsafe();
 
         // Update link statistics
         crsfLinkStatistics_t stats{};

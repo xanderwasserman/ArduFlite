@@ -83,14 +83,14 @@ private:
     void run();
 
     // CRSF addressing & frame‐type constants:
-    static constexpr uint8_t AddrFC    = 0xC8;  /**< Flight controller address. */
-    static constexpr uint8_t AddrTX    = 0xEE;  /**< Transmitter address. */
+    static constexpr uint8_t AddrFC    = 0xC8;  /**< Flight controller address (sync byte). */
     static constexpr uint8_t T_LINK    = 0x14;  /**< Link statistics. */
     static constexpr uint8_t T_ATT     = 0x1E;  /**< Attitude (6 bytes). */
     static constexpr uint8_t T_MODE    = 0x21;  /**< Flight mode (string). */
     static constexpr uint8_t T_BATTERY = 0x08;  /**< Battery sensor. */
     static constexpr uint8_t T_GPS     = 0x02;  /**< GPS data. */
     static constexpr uint8_t T_VARIO   = 0x07;  /**< Vario (climb rate). */
+    static constexpr uint8_t T_BARO_ALT = 0x09; /**< Barometric altitude. */
 
     /**
      * @brief Send a generic CRSF frame.
@@ -143,6 +143,12 @@ private:
      * @param[in] t  TelemetryData containing climb_rate.
      */
     void sendVario(const TelemetryData& t);
+
+    /**
+     * @brief Send barometric altitude.
+     * @param[in] t  TelemetryData containing altitude.
+     */
+    void sendBaroAlt(const TelemetryData& t);
 };
 
 #endif // ARDUFLITE_CRSF_TELEMETRY_H

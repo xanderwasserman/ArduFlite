@@ -97,6 +97,12 @@ bool ArdufliteCRSFReceiver::getLinkStats(crsfLinkStatistics_t& out) const
     return ok;
 }
 
+bool ArdufliteCRSFReceiver::isInFailsafe() const
+{
+    SemaphoreLock lock(_lock);
+    return _inFailsafe;
+}
+
 void ArdufliteCRSFReceiver::taskLoop(void* pv) 
 {
     static_cast<ArdufliteCRSFReceiver*>(pv)->run();

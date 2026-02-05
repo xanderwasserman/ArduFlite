@@ -39,26 +39,26 @@ public:
     // Erase entire filesystem (use with care)
     void reset() override 
     { 
-        if (_mutex) 
+        if (_fileMutex) 
         {
-            {
-                SemaphoreLock lock(_mutex);
-                LittleFS.format();    
-            }
+            SemaphoreLock lock(_fileMutex);
+            LittleFS.format();    
         }
     }
 
 private:
     static void telemetryTask(void* pvParameters);
 
-    // Helpers (all called under mutex)
+    // Helpers
     int  findNextFlightLogIndex();
     static void formatCSVHeader(char* buf, size_t bufSize);
     static size_t formatCSVRow(char* buf, size_t bufSize, unsigned long ts, const TelemetryData& d);
 
     float             _intervalMs;
-    SemaphoreHandle_t _mutex;
-    TelemetryData     _pendingData;
+    SemaphoreHandle_t _dataMutex;       ///< Protects _pendingData (fast operations)
+    SemaphoreHandle_t _fileMutex;       ///< Protects file I/O (slow operations)
+    TelemetryData     _pendingData;     ///< Updated by publish()
+    TelemetryData     _writeBuffer;     ///< Used by task for writing
     unsigned long     _lastFlushMs;
     File              _logFile;
     bool              _isLogging;

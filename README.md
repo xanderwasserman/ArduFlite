@@ -41,10 +41,10 @@ ArduFlite is a highly modular and real-time flight control framework designed fo
 ### 5. Telemetry & CLI
 
 - **Multiple Backends**  
-  - **MQTT** (WiFi + PubSubClient)  
   - **Debug Serial** (1 Hz)  
   - **Q-Serial** (10 Hz quaternion)  
-  - **CRSF Telemetry** (25 Hz burst + 1 Hz slow frames) — native to ELRS/Crossfire.  
+  - **CRSF Telemetry** (10 Hz fast + 1 Hz slow frames) — native to ELRS/Crossfire.  
+  - **Flash Telemetry** (50 Hz) — on-board flight logging for post-flight analysis.  
 - **CRSF Telemetry Highlights**  
   - Dedicated FreeRTOS task at user-set rate.  
   - Fast (“vital”) frames each loop: Link‐Stats, Vario, Attitude.  
@@ -68,7 +68,7 @@ ArduFlite employs a cascade control structure:
     Maps normalized control outputs to real servo angles, supporting various wing designs and enabling configurable control surface behavior.
 
 4. **Telemetry & CLI:**  
-   Multiple telemetry modules are provided to suit different monitoring needs (MQTT, debug Serial, and high-frequency Serial). A dedicated CLI task supports real-time data queries, dynamic parameter adjustments, and troubleshooting commands.
+   Multiple telemetry modules are provided to suit different monitoring needs (CRSF uplink, Flash logging, and debug Serial). A dedicated CLI task supports real-time data queries, dynamic parameter adjustments, and troubleshooting commands.
 
 ## 🔧 Installation & Setup
 
@@ -84,7 +84,7 @@ ArduFlite employs a cascade control structure:
 
 - Arduino CLI (or Arduino IDE / PlatformIO)
 - ESP32 core for Arduino (includes FreeRTOS)
-- Libraries: FastIMU, ESP32Servo, Adafruit AHRS, Adafruit BMP280, PubSubClient (for MQTT), WiFiManager, ArduinoJson
+- Libraries: FastIMU, ESP32Servo, Adafruit AHRS, Adafruit BMP280, ArduinoJson
 
 ### Setup Instructions
 
@@ -110,8 +110,6 @@ ArduFlite employs a cascade control structure:
     arduino-cli lib install "ESP32Servo"
     arduino-cli lib install "Adafruit AHRS"
     arduino-cli lib install "Adafruit BMP280 Library"
-    arduino-cli lib install "PubSubClient"
-    arduino-cli lib install "WiFiManager"
     arduino-cli lib install "ArduinoJson"
     ```
     
@@ -136,13 +134,13 @@ Once the system is running:
 - Telemetry:
     Choose your telemetry method:
 
-    - MQTT Telemetry: For remote monitoring and dashboard integration. Typically used in conjunction with a laptop or Raspberry Pi with a WiFi AP.
+    - CRSF Telemetry: For sending telemetry directly to your transmitter using the ELRS receiver's uplink. Shows attitude, flight mode, battery, GPS, and link stats on your TX.
+
+    - Flash Telemetry: For high-frequency on-board logging. Use `tools/flash_dump/` to extract flight logs after landing.
 
     - Debug Serial Telemetry: For low-frequency logging and debugging.
 
     - Q Serial Telemetry: For high-frequency, detailed real-time quaternion data output, for use with the visualiser.
-
-    - CRSF Telemetry: For sending telemetry directly to your transmitter using the ELRS receiver's uplink.
 
 - CLI Access:
     Open the Serial Monitor at 115200 baud. Type `help` to see a list of available commands.

@@ -1,4 +1,0 @@
-pygame 
-PyOpenGL 
-paho-mqtt 
-numpy

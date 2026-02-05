@@ -29,8 +29,6 @@ jobs:
       # Step 4: Install required libraries
       - name: Install Libraries
         run: |
-          arduino-cli lib install "PubSubClient"
-          arduino-cli lib install "WiFiManager"
           arduino-cli lib install "FastIMU"
           arduino-cli lib install "Adafruit AHRS"
           arduino-cli lib install "ESP32Servo"

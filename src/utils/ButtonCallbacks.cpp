@@ -9,12 +9,10 @@
 
 #include "src/utils/ButtonCallbacks.h"
 #include "src/utils/CommandSystem.h"
-#include "src/telemetry/mqtt/ArduFliteMqttTelemetry.h"
 #include "src/controller/ArduFliteController.h"
 #include "src/utils/StatusLED.h"
 #include "src/utils/Logging.h"
 
-extern ArduFliteMqttTelemetry   telemetry;
 extern StatusLED                statusLED;
 extern ArduFliteController      controller;
 extern ArduFliteIMU             myIMU;
@@ -58,9 +56,9 @@ void onModeDoubleTap(void)
     }
 }
 
-// Callback for telemetry reset button.
+// Callback for triple-tap action.
 void onResetTripleTap(void) 
 {
-    LOG_INF("Resetting Telemetry layer...");
-    telemetry.reset();
+    // TODO: Implement triple-tap action (e.g., toggle debug mode, reset flash telemetry)
+    LOG_INF("Triple-tap detected - no action configured");
 }

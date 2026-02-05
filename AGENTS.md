@@ -53,7 +53,7 @@ ArduFlite follows a strict layered architecture. Respect these boundaries:
 
 4. **Communication Layer** (`src/receiver/`, `src/telemetry/`)
    - **Receiver**: Input from pilot (CRSF/PWM) with failsafe callbacks
-   - **Telemetry**: Output to ground station/transmitter (MQTT, Serial, CRSF, Flash)
+   - **Telemetry**: Output to ground station/transmitter (Serial, CRSF, Flash)
    - Each backend runs in its own FreeRTOS task
    - Use thread-safe data structures (`TelemetryData`, `ConfigData`) with snapshots
 
@@ -118,7 +118,6 @@ ArduFlite/
 │   ├── telemetry/                    # Data output to ground station
 │   │   ├── TelemetryData.h           # Shared data structure
 │   │   ├── ConfigData.h              # Configuration snapshot
-│   │   ├── mqtt/                     # WiFi + MQTT telemetry
 │   │   ├── serial/                   # Debug and quaternion serial output
 │   │   ├── flash/                    # On-board flash logging
 │   │   └── crsf/                     # CRSF telemetry uplink
@@ -145,11 +144,9 @@ ArduFlite/
 │       └── Button*.*                 # Input handling (hold, multi-tap)
 │
 ├── tools/                            # Ground station and analysis scripts
-│   ├── data_logger/                  # Python: log telemetry to CSV
+│   ├── data_analysis/                # Python: flight data analysis
 │   ├── visualisation/                # Python: 3D attitude visualization
-│   ├── flash_dump/                   # Python: extract flight logs from flash
-│   ├── mqtt_broker/                  # Docker: Mosquitto MQTT broker
-│   └── xbox_to_mqtt/                 # Python: joystick → MQTT for testing
+│   └── flash_dump/                   # Python: extract flight logs from flash
 │
 ├── ArduFlite.ino                     # Arduino entry point (calls arduflite_init/loop)
 ├── ArdufliteApp.cpp                  # Main application logic

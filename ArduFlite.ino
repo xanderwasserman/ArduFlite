@@ -8,8 +8,8 @@
  *   ArduFlite is a highly modular and real-time flight control framework for 
  *   unmanned aerial vehicles (UAVs) and gliders. Built on the ESP32 and FreeRTOS,
  *   it integrates IMU sensor fusion, cascade PID control (attitude and rate loops),
- *   servo management for multiple wing designs, and dynamic telemetry (via MQTT
- *   and Serial) along with a flexible command-line interface (CLI) for live diagnostics 
+ *   servo management for multiple wing designs, and telemetry (via CRSF and Flash)
+ *   along with a flexible command-line interface (CLI) for live diagnostics 
  *   and configuration.
  *
  * Author: Alexander Wasserman

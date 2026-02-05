@@ -8,8 +8,8 @@
  *   ArduFlite is a highly modular and real-time flight control framework for 
  *   unmanned aerial vehicles (UAVs) and gliders. Built on the ESP32 and FreeRTOS,
  *   it integrates IMU sensor fusion, cascade PID control (attitude and rate loops),
- *   servo management for multiple wing designs, and dynamic telemetry (via MQTT
- *   and Serial) along with a flexible command-line interface (CLI) for live diagnostics 
+ *   servo management for multiple wing designs, and telemetry (via CRSF and Flash)
+ *   along with a flexible command-line interface (CLI) for live diagnostics 
  *   and configuration.
  *
  * Author: Alexander Wasserman
@@ -52,7 +52,6 @@
 
 #include "src/telemetry/ArduFliteTelemetry.h"
 #include "src/telemetry/ConfigData.h"
-#include "src/telemetry/mqtt/ArduFliteMqttTelemetry.h"
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
 #include "src/telemetry/serial/ArduFliteDebugSerialTelemetry.h"
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
@@ -92,10 +91,9 @@ HardwareSerial telemSerial(2);
 ArdufliteCRSFReceiver  crsfRx(crsfSerial,  CRSFPinConfig::PIN_CRSF_RX);
 ArdufliteCRSFTelemetry crsfTx(telemSerial, CRSFPinConfig::PIN_CRSF_TX, 10.0f); // 10 Hz telemetry
 
-// Declare telemetry instnaces.
+// Declare telemetry instances.
 TelemetryData               telemetryData;
 ConfigData                  configData;
-ArduFliteMqttTelemetry      telemetry(20.0f);           // 20 Hz telemetry frequency
 ArduFliteFlashTelemetry     flashTelemetry(50.0f);                      // 50 Hz logging
 // ArduFliteDebugSerialTelemetry    debugTelemetry(1.0f);               // 1 Hz telemetry frequency
 // ArduFliteQSerialTelemetry        telemetry(20.0f);
@@ -168,7 +166,6 @@ void arduflite_init()
 
     ControlMixer::init(controller);
 
-    telemetry.begin();
     flashTelemetry.begin();
     // debugTelemetry.begin();
 
@@ -280,7 +277,6 @@ void arduflite_loop()
     configData.update(controller);
 
     crsfTx.publish(telemetryData, configData);
-    telemetry.publish(telemetryData, configData);
     flashTelemetry.publish(telemetryData, configData);
 
     vTaskDelay(pdMS_TO_TICKS(1));

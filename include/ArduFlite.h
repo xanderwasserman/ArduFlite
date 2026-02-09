@@ -34,6 +34,9 @@
  *       }
  *       // Safe to access protected data
  *   } // Automatically releases mutex
+ * 
+ * For indefinite wait (blocking operations), use portMAX_DELAY:
+ *   SemaphoreLock lock(myMutex, portMAX_DELAY);
  */
 struct SemaphoreLock 
 {
@@ -43,12 +46,17 @@ struct SemaphoreLock
     /**
      * @brief Construct and attempt to acquire mutex with timeout.
      * @param h_ Mutex handle
-     * @param timeoutMs Maximum time to wait (default: MUTEX_TIMEOUT_MS)
+     * @param timeout Timeout in milliseconds, or portMAX_DELAY for indefinite wait.
+     *                When portMAX_DELAY is passed, it's used directly as ticks.
+     *                Otherwise the value is treated as milliseconds and converted.
      */
-    SemaphoreLock(SemaphoreHandle_t h_, TickType_t timeoutMs = MUTEX_TIMEOUT_MS)
+    SemaphoreLock(SemaphoreHandle_t h_, TickType_t timeout = MUTEX_TIMEOUT_MS)
         : h(h_), _acquired(false) 
     { 
-        _acquired = (xSemaphoreTake(h, pdMS_TO_TICKS(timeoutMs)) == pdTRUE);
+        // Special handling: portMAX_DELAY is passed directly as ticks (infinite wait)
+        // Other values are treated as milliseconds and converted to ticks
+        TickType_t ticks = (timeout == portMAX_DELAY) ? portMAX_DELAY : pdMS_TO_TICKS(timeout);
+        _acquired = (xSemaphoreTake(h, ticks) == pdTRUE);
     }
     
     ~SemaphoreLock() 

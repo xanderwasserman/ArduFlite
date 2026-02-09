@@ -16,6 +16,8 @@
 
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/utils/Logging.h"
+#include "src/utils/ConfigRegistry.h"
+#include "include/ConfigKeys.h"
 #include "include/ArduFlite.h"
 
 #include <esp_task_wdt.h>  // ESP32 hardware watchdog
@@ -48,6 +50,27 @@ ArduFliteIMU::ArduFliteIMU()
         LOG_ERR("Failed to create IMU mutex!");
     }
 }
+
+void ArduFliteIMU::initFromConfig()
+{
+    auto& config = ConfigRegistry::instance();
+    
+    // Load filter alphas
+    accelAlpha = config.get<float>(CONFIG_KEY_IMU_ACCEL_ALPHA);
+    gyroAlpha  = config.get<float>(CONFIG_KEY_IMU_GYRO_ALPHA);
+    magAlpha   = config.get<float>(CONFIG_KEY_IMU_MAG_ALPHA);
+    altiAlpha  = config.get<float>(CONFIG_KEY_IMU_ALTI_ALPHA);
+    
+    // Madgwick filter tuning
+    madgwickBeta = config.get<float>(CONFIG_KEY_IMU_MADGWICK_BETA);
+    
+    // Load health monitoring thresholds
+    maxAccelG     = config.get<float>(CONFIG_KEY_IMU_MAX_ACCEL_G);
+    maxGyroDPS    = config.get<float>(CONFIG_KEY_IMU_MAX_GYRO_DPS);
+    failThreshold = config.get<uint8_t>(CONFIG_KEY_IMU_FAIL_THRESHOLD);
+    
+    LOG_INF("ArduFliteIMU: initialized from ConfigRegistry");
+}
  
 /**
 * @brief Initializes the IMU.
@@ -73,11 +96,19 @@ bool ArduFliteIMU::begin()
     }
 
     // Set sensor ranges.
-    err = IMU.setGyroRange(300);
-    err = IMU.setAccelRange(4);
-    if (err == -1) 
+    // Valid gyro ranges: 250, 500, 1000, 2000 dps. Using 500 for good resolution
+    // while still supporting aerobatic maneuvers (0.015 deg/s per LSB).
+    err = IMU.setGyroRange(500);
+    if (err != 0) 
     {
-        LOG_ERR("Error setting IMU sensor ranges: %d", err);
+        LOG_ERR("Error setting gyro range: %d", err);
+        return false;
+    }
+    
+    err = IMU.setAccelRange(4);
+    if (err != 0) 
+    {
+        LOG_ERR("Error setting accel range: %d", err);
         return false;
     }
 
@@ -126,9 +157,6 @@ bool ArduFliteIMU::begin()
  */
 void ArduFliteIMU::startTask() 
 {
-    // Create an IMU task that runs at the desired update frequency.
-    // For example, if you want to update every 5 ms (~200Hz), use a period of 5ms.
-    const TickType_t taskPeriod = pdMS_TO_TICKS(5); 
     if (xTaskCreate(imuTask, "IMU Task", 4096, this, 4, &imuTaskHandle) != pdPASS)
     {
         LOG_ERR("Failed to create IMU Task!");
@@ -136,37 +164,59 @@ void ArduFliteIMU::startTask()
 }
 
 /**
- * @brief Suspends the dedicated IMU update task.
+ * @brief Suspends the dedicated IMU update task cooperatively.
  *
- * Suspends the IMU task so that sensor readings are paused during critical operations,
- * such as calibration. This ensures that no new sensor data is processed while changes
- * are being made.
+ * Uses atomic flags to signal the IMU task to pause at a safe point (outside
+ * mutex scope), preventing deadlock during calibration. The task spin-waits
+ * with vTaskDelay(1ms) until resumeTask() is called - this uses minimal CPU
+ * and avoids the complexity of vTaskSuspend/WDT management.
+ *
+ * @note Caller must call resumeTask() to wake the task.
  */
-void ArduFliteIMU::pauseTask() 
+bool ArduFliteIMU::pauseTask() 
 {
-    if (imuTaskHandle != NULL) 
+    if (imuTaskHandle == NULL) return true;  // No task = already "paused"
+
+    // Signal task to pause at next safe point (after update() releases mutex)
+    _pauseRequested.store(true, std::memory_order_release);
+
+    // Wait for task to acknowledge (with 1-second timeout to avoid infinite hang)
+    const TickType_t timeout = pdMS_TO_TICKS(1000);
+    TickType_t start = xTaskGetTickCount();
+    while (!_taskPaused.load(std::memory_order_acquire)) 
     {
-        // Unsubscribe from watchdog BEFORE suspending to prevent false triggers
-        esp_task_wdt_delete(imuTaskHandle);
-        vTaskSuspend(imuTaskHandle);
-        LOG_INF("IMU Task paused (WDT unsubscribed).");
+        if ((xTaskGetTickCount() - start) > timeout) 
+        {
+            LOG_ERR("IMU pause timeout - task did not acknowledge!");
+            // Clear the request since we're not proceeding
+            _pauseRequested.store(false, std::memory_order_release);
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
+
+    // Task is now in cooperative spin-wait - no need to vTaskSuspend.
+    // Avoiding suspend/resume eliminates WDT re-registration race conditions.
+    LOG_INF("IMU Task paused (cooperative spin-wait).");
+    return true;
 }
  
- /**
-  * @brief Resumes the dedicated IMU update task.
-  *
-  * Resumes the previously suspended IMU task, allowing sensor data to be updated again.
-  */
+/**
+ * @brief Resumes the dedicated IMU update task.
+ *
+ * Clears pause flags so the task exits its cooperative spin-wait.
+ */
 void ArduFliteIMU::resumeTask() 
 {
-    if (imuTaskHandle != NULL) 
-    {
-        vTaskResume(imuTaskHandle);
-        // Re-subscribe to watchdog after resuming
-        esp_task_wdt_add(imuTaskHandle);
-        LOG_INF("IMU Task resumed (WDT re-subscribed).");
-    }
+    if (imuTaskHandle == NULL) return;
+
+    // Clear pause flag - task will exit spin-wait on next iteration
+    _pauseRequested.store(false, std::memory_order_release);
+    
+    // Wait briefly for task to acknowledge resume
+    vTaskDelay(pdMS_TO_TICKS(5));
+    
+    LOG_INF("IMU Task resumed.");
 }
 
 /**
@@ -187,7 +237,7 @@ void ArduFliteIMU::imuTask(void* parameters)
     // Register this task with hardware watchdog (must be done from within the task)
     esp_task_wdt_add(NULL);  // NULL = current task
 
-    // Define the task period; here, 5ms corresponds to roughly 200Hz.
+    // Task period derived from IMU_UPDATE_INTERVAL_MS (single source of truth).
     const TickType_t xFrequency = pdMS_TO_TICKS(IMU_UPDATE_INTERVAL_MS);
 
     while (true) 
@@ -204,6 +254,31 @@ void ArduFliteIMU::imuTask(void* parameters)
 
         imuInstance->update(dt);
 
+        // ─────────────────────────────────────────────────────────────
+        // Cooperative pause point - OUTSIDE mutex scope (update() done)
+        // ─────────────────────────────────────────────────────────────
+        // If pauseTask() was called, acknowledge and spin-wait here until
+        // resumeTask() clears the flag. This prevents deadlock because we
+        // are NOT holding imuMutex at this point.
+        if (imuInstance->_pauseRequested.load(std::memory_order_acquire)) 
+        {
+            imuInstance->_taskPaused.store(true, std::memory_order_release);
+            
+            // Spin-wait with yield until resumeTask() clears the request
+            // Reset WDT each iteration to prevent timeout during long pauses (e.g., 10s calibration)
+            while (imuInstance->_pauseRequested.load(std::memory_order_acquire)) 
+            {
+                esp_task_wdt_reset();
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
+            
+            imuInstance->_taskPaused.store(false, std::memory_order_release);
+            
+            // Reset timing after pause to avoid large dt spike
+            lastMicros = micros();
+            xLastWakeTime = xTaskGetTickCount();
+        }
+
         // Delay until the next iteration.
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
@@ -217,8 +292,15 @@ void ArduFliteIMU::imuTask(void* parameters)
 */
 void ArduFliteIMU::initFilter() 
 {   
-    // Begin the filter with an initial sample frequency.
-    filter.begin(FILTER_UPDATE_RATE_HZ);
+    // Begin the filter at the actual IMU update rate (derived from IMU_UPDATE_INTERVAL_MS).
+    filter.begin(IMU_UPDATE_RATE_HZ);
+    
+    // Set Madgwick beta (gyro/accel trust balance) from config.
+    // Higher beta = trust accelerometer more, faster convergence, more noise.
+    // Lower beta = trust gyro more, slower convergence, smoother.
+#if FILTER_TYPE == FILTER_TYPE_MADGWICK
+    filter.setBeta(madgwickBeta);
+#endif
 
     // Warm up the filter by updating it for 2000 iterations.
     unsigned long lastMicros = micros();
@@ -281,6 +363,17 @@ void ArduFliteIMU::initFilter()
 #endif
     }
 
+    // Seed baro data post-warmup to eliminate initial climb rate spike.
+    // Without this, filteredAltitude starts at 0 and produces a false spike.
+#if BARO_TYPE == BARO_TYPE_BMP280
+    LOG_INF("Seeding barometer...");
+    for (int i = 0; i < 50; i++) {
+        altitude = bmp280.readAltitude(referencePressure);
+        filteredAltitude = altiAlpha * altitude + (1.0f - altiAlpha) * filteredAltitude;
+        vTaskDelay(pdMS_TO_TICKS(20));  // ~50 Hz baro rate
+    }
+#endif
+
     lastFilteredAltitude = filteredAltitude;
     climbRate            = 0.0f;
 
@@ -313,9 +406,15 @@ void ArduFliteIMU::update(float dt)
             IMU.getMag(&magData);
         }
 
-        // For BMP280, update barometer reading.
+        // Decimate barometer reads — BMP280 can't produce new data at IMU rate.
+        // Track if baro updated this tick for climb rate calculation.
+        bool baroUpdated = false;
     #if BARO_TYPE == BARO_TYPE_BMP280
-        altitude = bmp280.readAltitude(referencePressure); 
+        if (++_baroTickCounter >= BARO_DECIMATION_FACTOR) {
+            _baroTickCounter = 0;
+            altitude = bmp280.readAltitude(referencePressure);
+            baroUpdated = true;
+        }
     #endif
 
         // Remove calibration offsets.
@@ -336,10 +435,18 @@ void ArduFliteIMU::update(float dt)
         // This updates imuHealthy flag based on consecutive failures.
         validateSensorData();
 
-        // Compute climb rate (m/s) -----
-        // dt is in seconds
-        climbRate = (filteredAltitude - lastFilteredAltitude) / dt;
-        lastFilteredAltitude = filteredAltitude;
+        // Compute climb rate (m/s) only on baro-update ticks to avoid sawtooth.
+        // Use the baro-specific dt (BARO_UPDATE_INTERVAL_MS) for smooth derivative.
+    #if BARO_TYPE == BARO_TYPE_BMP280
+        if (baroUpdated) {
+            constexpr float baroDt = BARO_UPDATE_INTERVAL_MS * 0.001f;
+            climbRate = (filteredAltitude - lastFilteredAltitude) / baroDt;
+            lastFilteredAltitude = filteredAltitude;
+        }
+    #else
+        // No baro, no climb rate
+        climbRate = 0.0f;
+    #endif
 
         // Now update your orientation filter with the smoothed values:
     #if FILTER_TYPE == FILTER_TYPE_MADGWICK
@@ -380,16 +487,26 @@ void ArduFliteIMU::update(float dt)
   * @brief Applies sensor orientation transformations.
   *
   * Adjusts raw sensor data based on the defined IMU orientation configuration.
+  * All sensor axes (accel, gyro, mag) must be transformed consistently since
+  * they share the same physical sensor die orientation.
   */
  void ArduFliteIMU::applyOrientation() 
  {
  #if (IMU_ORIENTATION == ORIENTATION_NORMAL)
      // No transformation needed.
  #elif (IMU_ORIENTATION == ORIENTATION_SENSOR_FLIPPED_YZ)
-     // Transformation: flip gyro X and Z, and invert accelerometer Y.
+     // Transformation for sensor mounted with Y and Z axes flipped.
+     // Apply same transforms to accel, gyro, and magnetometer.
+     // TODO: Verify these transforms match your physical board orientation.
      gyroX = -gyroX;
      accelY = -accelY;
      gyroZ = -gyroZ;
+     
+     // Magnetometer must also be transformed to match accel/gyro frame
+     #if IMU_TYPE == IMU_TYPE_MPU9250
+     magY = -magY;
+     magZ = -magZ;
+     #endif
  #else
      #error "Unknown IMU_ORIENTATION selected!"
  #endif
@@ -466,6 +583,20 @@ bool ArduFliteIMU::selfCalibrate()
     LOG_INF("=== Self Calibration Start ===");
     LOG_INF("Please keep IMU still & level in final orientation...");
 
+    // ─────────────────────────────────────────────────────────────────────
+    // If the IMU task is running, pause it before calibration.
+    // This makes selfCalibrate() self-contained and safe to call from anywhere.
+    // ─────────────────────────────────────────────────────────────────────
+    bool taskWasRunning = (imuTaskHandle != NULL);
+    if (taskWasRunning) 
+    {
+        if (!pauseTask()) 
+        {
+            LOG_ERR("selfCalibrate: Failed to pause IMU task!");
+            return false;
+        }
+    }
+
     const unsigned long CALIB_MS = 10000;
     unsigned long start = millis();
     unsigned int samples = 0;
@@ -501,7 +632,16 @@ bool ArduFliteIMU::selfCalibrate()
 
             samples++;
 
-            delay(5); // Small delay between samples.
+            // Yield CPU properly during calibration loop.
+            // Task is paused (or never started), so mutex contention is avoided.
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+
+        if (samples == 0) 
+        {
+            LOG_ERR("selfCalibrate: No samples collected!");
+            if (taskWasRunning) resumeTask();
+            return false;
         }
 
         double avgAx        = sumAx / samples;
@@ -532,6 +672,19 @@ bool ArduFliteIMU::selfCalibrate()
         // Store and save the calibration offsets.
         setOffsets(newOfs);
         saveOffsetsToEEPROM(newOfs);
+        
+        // Reset filter state so the low-pass filters reinitialize with new offsets
+        lpInitialized = false;
+        
+        // Reset health monitoring state - give the filter time to converge
+        consecutiveFailures = 0;
+        imuHealthy.store(true, std::memory_order_release);
+    }
+
+    // Resume the IMU task if we paused it
+    if (taskWasRunning) 
+    {
+        resumeTask();
     }
 
     LOG_INF("=== Self Calibration Done ===");
@@ -851,12 +1004,8 @@ float ArduFliteIMU::getClimbRate() const
  */
 bool ArduFliteIMU::isHealthy() const
 {
-    bool healthy;
-    {
-        SemaphoreLock lock(imuMutex);
-        healthy = imuHealthy;
-    }
-    return healthy;
+    // Lock-free read via atomic bool
+    return imuHealthy.load(std::memory_order_acquire);
 }
 
 /**
@@ -888,9 +1037,9 @@ bool ArduFliteIMU::validateSensorData()
     }
     
     // Check accelerometer range (values in g)
-    if (fabsf(filteredAccelX) > IMUConfig::MAX_ACCEL_G ||
-        fabsf(filteredAccelY) > IMUConfig::MAX_ACCEL_G ||
-        fabsf(filteredAccelZ) > IMUConfig::MAX_ACCEL_G)
+    if (fabsf(filteredAccelX) > maxAccelG ||
+        fabsf(filteredAccelY) > maxAccelG ||
+        fabsf(filteredAccelZ) > maxAccelG)
     {
         valid = false;
         LOG_ERR("IMU: Accelerometer out of range! X=%.2f Y=%.2f Z=%.2f", 
@@ -898,36 +1047,34 @@ bool ArduFliteIMU::validateSensorData()
     }
     
     // Check gyroscope range (values in deg/s)
-    if (fabsf(filteredGyroX) > IMUConfig::MAX_GYRO_DPS ||
-        fabsf(filteredGyroY) > IMUConfig::MAX_GYRO_DPS ||
-        fabsf(filteredGyroZ) > IMUConfig::MAX_GYRO_DPS)
+    if (fabsf(filteredGyroX) > maxGyroDPS ||
+        fabsf(filteredGyroY) > maxGyroDPS ||
+        fabsf(filteredGyroZ) > maxGyroDPS)
     {
         valid = false;
         LOG_ERR("IMU: Gyroscope out of range! X=%.2f Y=%.2f Z=%.2f", 
                 filteredGyroX, filteredGyroY, filteredGyroZ);
     }
     
-    // Update consecutive failure counter and health status
-    // Protected by mutex to ensure consistent reads from isHealthy()
+    // Update consecutive failure counter and health status.
+    // NOTE: No mutex here — caller (update()) already holds imuMutex.
+    // imuHealthy is atomic, so isHealthy() readers see consistent values.
+    if (valid)
     {
-        SemaphoreLock lock(imuMutex);
-        if (valid)
+        consecutiveFailures = 0;
+        imuHealthy.store(true, std::memory_order_release);
+    }
+    else
+    {
+        consecutiveFailures++;
+        if (consecutiveFailures >= failThreshold)
         {
-            consecutiveFailures = 0;
-            imuHealthy = true;
-        }
-        else
-        {
-            consecutiveFailures++;
-            if (consecutiveFailures >= IMUConfig::CONSECUTIVE_FAILURES_THRESHOLD)
+            if (imuHealthy.load(std::memory_order_relaxed))
             {
-                if (imuHealthy)
-                {
-                    LOG_ERR("IMU: Marked UNHEALTHY after %u consecutive failures!", 
-                            consecutiveFailures);
-                }
-                imuHealthy = false;
+                LOG_ERR("IMU: Marked UNHEALTHY after %u consecutive failures!", 
+                        consecutiveFailures);
             }
+            imuHealthy.store(false, std::memory_order_release);
         }
     }
     
@@ -939,17 +1086,17 @@ bool ArduFliteIMU::validateSensorData()
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
-* @brief Publishes current sensor data to the double-buffer.
+* @brief Publishes current sensor data to the triple-buffer.
 * 
 * Called at the end of update() after all sensor data is processed.
-* Writes to the inactive buffer, then atomically swaps the read index.
+* Uses three buffers so a slow reader can never be caught mid-copy by the writer.
 */
 void ArduFliteIMU::publishSnapshot()
 {
-    // Write to the buffer that readers are NOT currently using
-    int writeIndex = 1 - snapshotReadIndex.load(std::memory_order_relaxed);
+    // Get the pre-determined write index (always different from current read)
+    int writeIdx = snapshotWriteIndex.load(std::memory_order_relaxed);
     
-    ImuSnapshot& snap = snapshotBuffers[writeIndex];
+    ImuSnapshot& snap = snapshotBuffers[writeIdx];
     
     // Fill the snapshot (we already hold imuMutex from update())
     snap.accel.x = filteredAccelX;
@@ -978,8 +1125,16 @@ void ArduFliteIMU::publishSnapshot()
     snap.flightState = flightState;
     snap.timestampUs = micros();
     
-    // Atomic swap: readers will now see the new data
-    snapshotReadIndex.store(writeIndex, std::memory_order_release);
+    // Triple-buffer swap:
+    // 1. Get the old read index (might still be in use by a reader)
+    int oldReadIdx = snapshotReadIndex.load(std::memory_order_relaxed);
+    
+    // 2. Publish: make the buffer we just wrote the new read target
+    snapshotReadIndex.store(writeIdx, std::memory_order_release);
+    
+    // 3. Advance write index to the old read buffer (now safe to overwrite)
+    //    This ensures we never write to the current read buffer.
+    snapshotWriteIndex.store(oldReadIdx, std::memory_order_relaxed);
 }
 
 /**

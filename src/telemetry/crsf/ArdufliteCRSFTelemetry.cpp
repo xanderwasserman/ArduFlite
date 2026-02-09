@@ -23,14 +23,12 @@
 #include <cstring> 
 
 /// @brief Constructor.
-/// @param[in] ser     Reference to a HardwareSerial port for CRSF downlink.
-/// @param[in] txPin   GPIO pin to use as UART TX line.
-/// @param[in] freqHz  Frame-send frequency, in Hz (default 25Hz).
+/// @param[in] ser     Reference to a HardwareSerial port for CRSF (shared with receiver).
+/// @param[in] freqHz  Frame-send frequency, in Hz (default 10Hz).
+/// @note  UART is configured by receiver's begin() - this class uses it for TX.
 ArdufliteCRSFTelemetry::ArdufliteCRSFTelemetry(HardwareSerial& ser,
-                                               int            txPin,
                                                float          freqHz)
   : _serial(ser)
-  , _txPin(txPin)
   , _intervalMs(1000.0f / freqHz)
 {
     _lock = xSemaphoreCreateMutex();
@@ -55,17 +53,39 @@ ArdufliteCRSFTelemetry::~ArdufliteCRSFTelemetry()
     if (_lock) 
     {
         vSemaphoreDelete(_lock);
-        LOG_INF("CRSF Telemetry: mutex deleted");
     }
 }
 
-/// @brief Initializes the UART and starts the telemetry FreeRTOS task.
-/// @note  Baud = 420000, 8N1. TX only.
-/// @see   xTaskCreate()
+/// @brief Pause the telemetry task (unsubscribes from WDT).
+void ArdufliteCRSFTelemetry::pauseTask()
+{
+    if (!_taskHandle) return;
+    
+    _paused.store(true, std::memory_order_release);
+    
+    // Unsubscribe from WDT so we don't trigger during long calibration
+    esp_task_wdt_delete(_taskHandle);
+    
+    LOG_INF("CRSF Telemetry: task paused (WDT unsubscribed)");
+}
+
+/// @brief Resume the telemetry task (re-subscribes to WDT).
+void ArdufliteCRSFTelemetry::resumeTask()
+{
+    if (!_taskHandle) return;
+    
+    // Re-subscribe to WDT before resuming work
+    esp_task_wdt_add(_taskHandle);
+    
+    _paused.store(false, std::memory_order_release);
+    
+    LOG_INF("CRSF Telemetry: task resumed (WDT subscribed)");
+}
+
+/// @brief Starts the telemetry FreeRTOS task (UART already configured by receiver).
 void ArdufliteCRSFTelemetry::begin()
 {
-    LOG_INF("CRSF Telemetry: starting on TX pin %d @ 420000 baud", _txPin);
-    _serial.begin(420000, SERIAL_8N1, /*rxPin=*/-1, _txPin);
+    LOG_INF("CRSF Telemetry: starting task (UART shared with receiver)");
 
     if (_taskHandle) 
     {
@@ -89,23 +109,18 @@ void ArdufliteCRSFTelemetry::begin()
     {
         LOG_INF("CRSF Telemetry: task started (interval %.1f ms)", _intervalMs);
     }
-
-    LOG_INF("Started CRSF Telemetry task.");
 }
 
-/// @brief Publishes new telemetry & config snapshots.
+/// @brief Publishes new telemetry snapshot.
 /// @param[in] telem  Fresh sensor & state data.
-/// @param[in] cfg    Configuration data (not used in this version).
-/// @note  Uses a mutex to safely swap in the pending buffers.
-void ArdufliteCRSFTelemetry::publish(const TelemetryData& telem,
-                                     const ConfigData&    cfg)
+/// @note  Uses a mutex to safely swap in the pending buffer.
+void ArdufliteCRSFTelemetry::publish(const TelemetryData& telem)
 {
     if (!_lock) return;
 
     {
         SemaphoreLock lock(_lock);
-        _pendingData   = telem;
-        _pendingConfig = cfg;
+        _pendingData = telem;
     }
 }
 
@@ -126,21 +141,27 @@ void ArdufliteCRSFTelemetry::telemetryTask(void* pv)
 ///   - Slow (~1Hz): GPS, Flight Mode
 void ArdufliteCRSFTelemetry::run()
 {
-    // Rate tiering intervals (milliseconds)
+    // Rate tiering interval (milliseconds)
     constexpr uint32_t MEDIUM_INTERVAL_MS = 200;   // ~5 Hz
-    constexpr uint32_t SLOW_INTERVAL_MS   = 1000;  // ~1 Hz
 
     LOG_DBG("CRSF Telemetry: run() loop begin");
 
     // Register this task with hardware watchdog
     esp_task_wdt_add(NULL);  // NULL = current task
 
-    // Rate tiering: track last send times
+    // Rate tiering: track last send time
     uint32_t lastMediumTime = millis();
-    uint32_t lastSlowTime   = millis();
 
     while (true) 
     {
+        // Check if paused (during calibration)
+        if (_paused.load(std::memory_order_acquire))
+        {
+            // Skip work and WDT reset - we're unsubscribed from WDT
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+
         // Reset hardware watchdog - proves this task is alive
         esp_task_wdt_reset();
 
@@ -148,12 +169,10 @@ void ArdufliteCRSFTelemetry::run()
 
         // 1) grab a snapshot
         TelemetryData td;
-        ConfigData    cd;
         if (_lock) 
         {
             SemaphoreLock lock(_lock);
             td = _pendingData;
-            cd = _pendingConfig;
         }
 
         // 2) FAST frames: send every loop (~10 Hz)
@@ -165,19 +184,11 @@ void ArdufliteCRSFTelemetry::run()
         // 3) MEDIUM frames: send at ~5 Hz
         if (now - lastMediumTime >= MEDIUM_INTERVAL_MS) 
         {
-            sendBattery(td);
-            sendBaroAlt(td);
-            lastMediumTime = now;
-        }
-
-        // 4) SLOW frames: send at ~1 Hz
-        //    GPS and flight mode don't change rapidly
-        if (now - lastSlowTime >= SLOW_INTERVAL_MS) 
-        {
-            LOG_DBG("CRSF Telemetry: sending 1 Hz frames");
-            sendGps       (td);
+            sendBattery   (td);
+            sendBaroAlt   (td);
+            sendGps       (td);  // Moved from 1Hz - prevents sensor lost warnings
             sendFlightMode(td);
-            lastSlowTime = now;
+            lastMediumTime = now;
         }
 
         // 5) wait until next burst
@@ -224,8 +235,8 @@ void ArdufliteCRSFTelemetry::sendFrame(uint8_t type, const uint8_t* payload, uin
     }
     uint8_t crc = crc8(crcBuf, len + 1);
 
-    // Send frame: [sync=0xC8] [length] [type] [payload...] [crc]
-    _serial.write(AddrFC);  // 0xC8 sync byte for telemetry from FC
+    // Send frame: [sync=0xEA] [length] [type] [payload...] [crc]
+    _serial.write(AddrRX);  // 0xEA = receiver address for FC→RX telemetry
     _serial.write(flen);
     _serial.write(type);
     _serial.write(payload, len);
@@ -323,14 +334,18 @@ void ArdufliteCRSFTelemetry::sendBattery(const TelemetryData& t)
 
 /// @brief Sends GPS fix, speed, heading, altitude, sats.
 /// @param[in] t  Latest telemetry (GPS fields populated).
+/// @note  Always sends frame for sensor discovery; shows zeros when no fix.
 void ArdufliteCRSFTelemetry::sendGps(const TelemetryData& t)
 {
     uint8_t buf[15];
-    int32_t lat = int32_t(t.gps_lat * 1e7);
-    int32_t lon = int32_t(t.gps_lon * 1e7);
-    uint16_t gs = uint16_t(t.gps_groundspeed * 10.0f);   // CRSF: km/h * 10
-    uint16_t hd = uint16_t(t.gps_heading * 100.0f);       // CRSF: degrees * 100
-    uint16_t al = uint16_t(t.gps_alt + 1000.0f);          // CRSF: meters + 1000 offset
+    
+    // When no GPS fix, send safe defaults (Sats=0 tells pilot there's no fix)
+    // Always send so EdgeTX can discover sensors during desk setup
+    int32_t lat = (t.gps_sats > 0) ? int32_t(t.gps_lat * 1e7) : 0;
+    int32_t lon = (t.gps_sats > 0) ? int32_t(t.gps_lon * 1e7) : 0;
+    uint16_t gs = (t.gps_sats > 0) ? uint16_t(t.gps_groundspeed * 10.0f) : 0;  // km/h * 10
+    uint16_t hd = (t.gps_sats > 0) ? uint16_t(t.gps_heading * 100.0f) : 0;      // degrees * 100
+    uint16_t al = (t.gps_sats > 0) ? uint16_t(t.gps_alt + 1000.0f) : 1000;      // +1000 offset, 0m when no fix
 
     // CRSF uses big-endian byte order (MSB first)
     // Latitude: 32-bit signed, big-endian

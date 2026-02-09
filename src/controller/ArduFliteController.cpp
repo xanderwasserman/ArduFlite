@@ -630,13 +630,13 @@ void ArduFliteController::InnerLoopTask(void* parameters)
             controller->servoMgr->writeThrottle(0);
         }
 
-        // Write back actuator command (for telemetry)
+        // Write back actuator command (for telemetry) — non-blocking tryLock
         {
-            SemaphoreLock lock(controller->ctrlMutex);
+            SemaphoreLock lock(controller->ctrlMutex, 0);
             if (lock.acquired()) {
                 controller->lastRateCmd = actuatorCmd;
             }
-            // Non-critical if missed - telemetry will show slightly stale data
+            // Non-critical if missed — telemetry will show slightly stale data
         }
 
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -745,4 +745,40 @@ LoopStats ArduFliteController::getInnerLoopStats()
     }
 
     return statsCopy;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Runtime Configuration Updates
+// ─────────────────────────────────────────────────────────────────
+
+void ArduFliteController::setRatePIDConfig(ControlLoopType loop, const PIDConfig& config)
+{
+    if (rateCtrl != nullptr)
+    {
+        rateCtrl->setPIDConfig(loop, config);
+    }
+}
+
+void ArduFliteController::setAttitudePIDConfig(ControlLoopType loop, const PIDConfig& config)
+{
+    if (attitudeCtrl != nullptr)
+    {
+        attitudeCtrl->setPIDConfig(loop, config);
+    }
+}
+
+void ArduFliteController::setRateOutputAlpha(float alpha)
+{
+    if (rateCtrl != nullptr)
+    {
+        rateCtrl->setOutputAlpha(alpha);
+    }
+}
+
+void ArduFliteController::setAttitudeDeadband(float deadband)
+{
+    if (attitudeCtrl != nullptr)
+    {
+        attitudeCtrl->setDeadband(deadband);
+    }
 }

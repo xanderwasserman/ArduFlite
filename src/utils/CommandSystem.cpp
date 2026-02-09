@@ -9,6 +9,9 @@
 #include "src/utils/CommandSystem.h"
 #include "src/mission_planner/MissionPlanner.h"
 #include "src/utils/Logging.h"
+#include "src/utils/ConfigHelpers.h"
+#include "src/utils/ControlMixer.h"
+#include "include/ConfigKeys.h"
 
 extern MissionPlanner mission;
 
@@ -42,7 +45,8 @@ bool CommandSystem::pushCommand(const SystemCommand& cmd)
     return xQueueSend(commandQueue_, &cmd, pdMS_TO_TICKS(10)) == pdPASS;
 }
 
-void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIMU* imu, ArdufliteCRSFReceiver* receiver) 
+void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIMU* imu, 
+                                     ArdufliteCRSFReceiver* receiver, ArdufliteCRSFTelemetry* crsfTelemetry) 
 {
     if (!commandQueue_) return;
     SystemCommand cmd;
@@ -69,16 +73,25 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
             case CMD_CALIBRATE:
             {
                 LOG_DBG("Processing CALIBRATE command...");
-                if (imu != nullptr && controller != nullptr) 
+                if (imu != nullptr && controller != nullptr && crsfTelemetry != nullptr) 
                 {
-                    // Pause all tasks before calibration (they will unsubscribe from WDT)
+                    // Pause controller tasks during calibration to avoid servo glitches
                     controller->pauseTasks();
-                    imu->pauseTask();
                     
-                    imu->selfCalibrate();
+                    // Pause CRSF telemetry to prevent WDT timeout during long calibration
+                    crsfTelemetry->pauseTask();
                     
-                    // Resume all tasks after calibration (they will re-subscribe to WDT)
-                    imu->resumeTask();
+                    // selfCalibrate() internally handles IMU task pause/resume
+                    // and resets filter state after new offsets are applied
+                    if (!imu->selfCalibrate())
+                    {
+                        LOG_ERR("IMU calibration failed!");
+                    }
+                    
+                    // Resume CRSF telemetry
+                    crsfTelemetry->resumeTask();
+                    
+                    // Resume controller tasks
                     controller->resumeTasks();
                 } 
                 else 
@@ -102,201 +115,243 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
                 break;
             }
 
-            case CMD_SET_CONFIG_PID:
+            case CMD_SET_SETPOINT:
             {
-                // cmd.pidLoop is a ControlLoopType (e.g. ATTITUDE_ROLL_LOOP, RATE_YAW_LOOP, etc.)
-                // cmd.pidConfig is a full PIDConfig struct
-                LOG_DBG("Processing CMD_SET_CONFIG_PID: loop = %d, kp=%.3f, ki=%.3f, kd=%.3f, outLimit=%.3f, maxI=%.3f, alpha=%.3f",
-                        cmd.pidLoop,
-                        cmd.pidConfig.kp,
-                        cmd.pidConfig.ki,
-                        cmd.pidConfig.kd,
-                        cmd.pidConfig.outLimit,
-                        cmd.pidConfig.maxIntegral,
-                        cmd.pidConfig.derivativeAlpha);
+                LOG_DBG("Processing CMD_SET_SETPOINT: roll=%.3f, pitch=%.3f, yaw=%.3f",
+                        cmd.setpoint.roll, cmd.setpoint.pitch, cmd.setpoint.yaw);
 
                 if (controller != nullptr)
                 {
-                    LOG_ERR("Setting of PID values not supported yet! Please implement me :-)"); //TODO
-                }
-                else
-                {
-                    LOG_ERR("CMD_SET_CONFIG_PID: Controller pointer not provided.");
-                }
-                break;
-            }
-
-            case CMD_SET_CONFIG_ATTITUDE:
-            {
-                // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
-                LOG_DBG("Processing CMD_SET_CONFIG_ATTITUDE: roll=%.3f, pitch=%.3f, yaw=%.3f", cmd.attitudeConfig.roll, cmd.attitudeConfig.pitch, cmd.attitudeConfig.yaw);
-
-                if (controller != nullptr)
-                {
-                if (controller->getMode() == ATTITUDE_MODE)
-                {
-                    controller->setAttitudeSetpoint(cmd.attitudeConfig);
-                }
-                else
-                {
-                    controller->setRateSetpoint(cmd.attitudeConfig);
-                }
-            }
-            else
-            {
-                LOG_ERR("CMD_SET_CONFIG_ATTITUDE: Controller pointer not provided.");
-            }
-            break;
-        }
-
-        case CMD_SET_CONFIG_RATE_ALPHA:
-        {
-            // cmd.value is a single float
-            LOG_DBG("Processing CMD_SET_CONFIG_RATE_ALPHA: alpha=%.3f", cmd.value);
-            if (controller != nullptr)
-            {
-                LOG_ERR("Setting of Rate controller Alpha is not supported yet! Please implement me :-)"); //TODO
-            }
-            else
-            {
-                LOG_ERR("CMD_SET_CONFIG_RATE_ALPHA: Controller pointer not provided.");
-            }
-            break;
-        }
-
-        case CMD_SET_MISSION:
-        {
-            // cmd.x_value is a bool
-            LOG_DBG("Processing CMD_SET_MISSION: state=%s", cmd.x_value?"START":"STOP");
-            
-            if (cmd.x_value && !mission.isRunning())
-            {
-                mission.start();
-            }
-            else if (!cmd.x_value && mission.isRunning())
-            {
-                mission.stop();
-            }
-            break;
-        }
-
-        case CMD_SET_ARM:
-        {
-            // cmd.x_value is a bool
-            LOG_DBG("Processing CMD_SET_ARM: state=%s", cmd.x_value?"YES":"NO");
-            if (controller != nullptr)
-            {
-                if (cmd.x_value)
-                {
-                    // Run preflight checks and arm if passed
-                    bool armed = controller->arm(receiver);
-                    if (!armed)
+                    if (controller->getMode() == ATTITUDE_MODE)
                     {
-                        LOG_ERR("ARM REJECTED - preflight checks failed!");
+                        controller->setAttitudeSetpoint(cmd.setpoint);
+                    }
+                    else
+                    {
+                        controller->setRateSetpoint(cmd.setpoint);
                     }
                 }
                 else
                 {
-                    controller->disarm();
+                    LOG_ERR("CMD_SET_SETPOINT: Controller pointer not provided.");
                 }
+                break;
             }
-            else
-            {
-                LOG_ERR("CMD_SET_ARM: Controller pointer not provided.");
-            }
-            break;
-        }
 
-        case CMD_SET_THROTTLE_CUT:
-        {
-            // cmd.x_value is a bool
-            LOG_DBG("Processing CMD_SET_THROTTLE_CUT: state=%s", cmd.x_value?"YES":"NO");
-            if (controller != nullptr)
+            case CMD_SET_MISSION:
             {
-                if (cmd.x_value)
+                LOG_DBG("Processing CMD_SET_MISSION: state=%s", cmd.x_value ? "START" : "STOP");
+                
+                if (cmd.x_value && !mission.isRunning())
                 {
-                    controller->cutThrottle(true);
+                    mission.start();
+                }
+                else if (!cmd.x_value && mission.isRunning())
+                {
+                    mission.stop();
+                }
+                break;
+            }
+
+            case CMD_SET_ARM:
+            {
+                LOG_DBG("Processing CMD_SET_ARM: state=%s", cmd.x_value ? "YES" : "NO");
+                if (controller != nullptr)
+                {
+                    if (cmd.x_value)
+                    {
+                        // Run preflight checks and arm if passed
+                        bool armed = controller->arm(receiver);
+                        if (!armed)
+                        {
+                            LOG_ERR("ARM REJECTED - preflight checks failed!");
+                        }
+                    }
+                    else
+                    {
+                        controller->disarm();
+                    }
                 }
                 else
                 {
-                    controller->cutThrottle(false);
+                    LOG_ERR("CMD_SET_ARM: Controller pointer not provided.");
                 }
-                
+                break;
             }
-            else
-            {
-                LOG_ERR("CMD_SET_THROTTLE_CUT: Controller pointer not provided.");
-            }
-            break;
-        }
 
-        case CMD_RECEIVER_SETPOINT_ROLL:
-        {
-            // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
-            LOG_DBG("Processing CMD_RECEIVER_SETPOINT_ROLL: roll=%.3f", cmd.attitudeConfig.roll);
+            case CMD_SET_THROTTLE_CUT:
+            {
+                LOG_DBG("Processing CMD_SET_THROTTLE_CUT: state=%s", cmd.x_value ? "YES" : "NO");
+                if (controller != nullptr)
+                {
+                    controller->cutThrottle(cmd.x_value);
+                }
+                else
+                {
+                    LOG_ERR("CMD_SET_THROTTLE_CUT: Controller pointer not provided.");
+                }
+                break;
+            }
 
-            if (controller != nullptr)
+            case CMD_SET_SETPOINT_ROLL:
             {
-                controller->setAttitudeSetpointAxis(0, cmd.attitudeConfig.roll);
+                LOG_DBG("Processing CMD_SET_SETPOINT_ROLL: roll=%.3f", cmd.setpoint.roll);
+                if (controller != nullptr)
+                {
+                    controller->setAttitudeSetpointAxis(0, cmd.setpoint.roll);
+                }
+                else
+                {
+                    LOG_ERR("CMD_SET_SETPOINT_ROLL: Controller pointer not provided.");
+                }
+                break;
             }
-            else
-            {
-                LOG_ERR("CMD_RECEIVER_SETPOINT_ROLL: Controller pointer not provided.");
-            }
-            break;
-        }
-        case CMD_RECEIVER_SETPOINT_PITCH:
-        {
-            // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
-            LOG_DBG("Processing CMD_RECEIVER_SETPOINT_PITCH: pitch=%.3f", cmd.attitudeConfig.pitch);
 
-            if (controller != nullptr)
+            case CMD_SET_SETPOINT_PITCH:
             {
-                controller->setAttitudeSetpointAxis(1, cmd.attitudeConfig.pitch);
+                LOG_DBG("Processing CMD_SET_SETPOINT_PITCH: pitch=%.3f", cmd.setpoint.pitch);
+                if (controller != nullptr)
+                {
+                    controller->setAttitudeSetpointAxis(1, cmd.setpoint.pitch);
+                }
+                else
+                {
+                    LOG_ERR("CMD_SET_SETPOINT_PITCH: Controller pointer not provided.");
+                }
+                break;
             }
-            else
-            {
-                LOG_ERR("CMD_RECEIVER_SETPOINT_PITCH: Controller pointer not provided.");
-            }
-            break;
-        }
-        case CMD_RECEIVER_SETPOINT_YAW:
-        {
-            // cmd.attitudeConfig is an EulerAngles { roll, pitch, yaw }
-            LOG_DBG("Processing CMD_RECEIVER_SETPOINT_YAW: yaw=%.3f", cmd.attitudeConfig.yaw);
 
-            if (controller != nullptr)
+            case CMD_SET_SETPOINT_YAW:
             {
-                controller->setAttitudeSetpointAxis(2, cmd.attitudeConfig.yaw);
+                LOG_DBG("Processing CMD_SET_SETPOINT_YAW: yaw=%.3f", cmd.setpoint.yaw);
+                if (controller != nullptr)
+                {
+                    controller->setAttitudeSetpointAxis(2, cmd.setpoint.yaw);
+                }
+                else
+                {
+                    LOG_ERR("CMD_SET_SETPOINT_YAW: Controller pointer not provided.");
+                }
+                break;
             }
-            else
-            {
-                LOG_ERR("CMD_RECEIVER_SETPOINT_YAW: Controller pointer not provided.");
-            }
-            break;
-        }
 
-        case CMD_RECEIVER_SETPOINT_THROTTLE:
-        {
-            // cmd.value is a flaot
-            LOG_DBG("Processing CMD_RECEIVER_SETPOINT_THROTTLE: throttle=%.3f", cmd.value);
-
-            if (controller != nullptr)
+            case CMD_SET_SETPOINT_THROTTLE:
             {
-                controller->setThrottleSetpoint(cmd.value);
+                LOG_DBG("Processing CMD_SET_SETPOINT_THROTTLE: throttle=%.3f", cmd.value);
+                if (controller != nullptr)
+                {
+                    controller->setThrottleSetpoint(cmd.value);
+                }
+                else
+                {
+                    LOG_ERR("CMD_SET_SETPOINT_THROTTLE: Controller pointer not provided.");
+                }
+                break;
             }
-            else
-            {
-                LOG_ERR("CMD_RECEIVER_SETPOINT_THROTTLE: Controller pointer not provided.");
-            }
-            break;
-        }
 
-        default:
-        {
-            LOG_WARN("Received unknown or unhandled command type: %d", cmd.type);
-            break;
-        }
+            // ─────────────────────────────────────────────────────────────────
+            // Config Update Commands (pushed by observers)
+            // ─────────────────────────────────────────────────────────────────
+            case CMD_UPDATE_RATE_ROLL_PID:
+            {
+                LOG_DBG("Processing CMD_UPDATE_RATE_ROLL_PID");
+                if (controller != nullptr)
+                {
+                    PIDConfig cfg = ConfigHelpers::buildPIDConfig(CONFIG_KEY_RATE_ROLL_PREFIX);
+                    controller->setRatePIDConfig(RATE_ROLL_LOOP, cfg);
+                }
+                break;
+            }
+
+            case CMD_UPDATE_RATE_PITCH_PID:
+            {
+                LOG_DBG("Processing CMD_UPDATE_RATE_PITCH_PID");
+                if (controller != nullptr)
+                {
+                    PIDConfig cfg = ConfigHelpers::buildPIDConfig(CONFIG_KEY_RATE_PITCH_PREFIX);
+                    controller->setRatePIDConfig(RATE_PITCH_LOOP, cfg);
+                }
+                break;
+            }
+
+            case CMD_UPDATE_RATE_YAW_PID:
+            {
+                LOG_DBG("Processing CMD_UPDATE_RATE_YAW_PID");
+                if (controller != nullptr)
+                {
+                    PIDConfig cfg = ConfigHelpers::buildPIDConfig(CONFIG_KEY_RATE_YAW_PREFIX);
+                    controller->setRatePIDConfig(RATE_YAW_LOOP, cfg);
+                }
+                break;
+            }
+
+            case CMD_UPDATE_RATE_OUT_ALPHA:
+            {
+                LOG_DBG("Processing CMD_UPDATE_RATE_OUT_ALPHA");
+                if (controller != nullptr)
+                {
+                    float alpha = ConfigRegistry::instance().get<float>(CONFIG_KEY_RATE_OUT_LP_ALPHA);
+                    controller->setRateOutputAlpha(alpha);
+                }
+                break;
+            }
+
+            case CMD_UPDATE_ATT_ROLL_PID:
+            {
+                LOG_DBG("Processing CMD_UPDATE_ATT_ROLL_PID");
+                if (controller != nullptr)
+                {
+                    PIDConfig cfg = ConfigHelpers::buildPIDConfig(CONFIG_KEY_ATT_ROLL_PREFIX);
+                    controller->setAttitudePIDConfig(ATTITUDE_ROLL_LOOP, cfg);
+                }
+                break;
+            }
+
+            case CMD_UPDATE_ATT_PITCH_PID:
+            {
+                LOG_DBG("Processing CMD_UPDATE_ATT_PITCH_PID");
+                if (controller != nullptr)
+                {
+                    PIDConfig cfg = ConfigHelpers::buildPIDConfig(CONFIG_KEY_ATT_PITCH_PREFIX);
+                    controller->setAttitudePIDConfig(ATTITUDE_PITCH_LOOP, cfg);
+                }
+                break;
+            }
+
+            case CMD_UPDATE_ATT_YAW_PID:
+            {
+                LOG_DBG("Processing CMD_UPDATE_ATT_YAW_PID");
+                if (controller != nullptr)
+                {
+                    PIDConfig cfg = ConfigHelpers::buildPIDConfig(CONFIG_KEY_ATT_YAW_PREFIX);
+                    controller->setAttitudePIDConfig(ATTITUDE_YAW_LOOP, cfg);
+                }
+                break;
+            }
+
+            case CMD_UPDATE_ATT_DEADBAND:
+            {
+                LOG_DBG("Processing CMD_UPDATE_ATT_DEADBAND");
+                if (controller != nullptr)
+                {
+                    float deadband = ConfigRegistry::instance().get<float>(CONFIG_KEY_ATT_DEADBAND);
+                    controller->setAttitudeDeadband(deadband);
+                }
+                break;
+            }
+
+            case CMD_UPDATE_MIXER:
+            {
+                LOG_DBG("Processing CMD_UPDATE_MIXER");
+                ControlMixer::reloadConfig();
+                break;
+            }
+
+            default:
+            {
+                LOG_WARN("Received unknown or unhandled command type: %d", cmd.type);
+                break;
+            }
         } // end switch
     } // end while
 }

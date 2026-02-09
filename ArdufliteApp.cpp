@@ -22,10 +22,7 @@
 #include "include/ArduFlite.h"
 #include "include/ReceiverConfiguration.h"
 #include "include/PinConfiguration.h"
-#include "include/ControllerConfiguration.h"
-#include "include/ServoConfiguration.h"
 #include "include/CSRFConfiguration.h"
-#include "include/ControlMixerConfiguration.h"
 
 #include <esp_task_wdt.h>  // ESP32 hardware watchdog
 #include <esp_system.h>    // For esp_reset_reason()
@@ -45,13 +42,17 @@
 #include "src/utils/StatusLED.h"
 #include "src/utils/ButtonCallbacks.h"
 #include "src/utils/Logging.h"
+#include "src/utils/ConfigRegistry.h"
+#include "src/utils/ConfigPersistence.h"
+#include "src/utils/ConfigTask.h"
+#include "src/utils/ConfigObservers.h"
+#include "include/ConfigKeys.h"
 
 #include "src/controller/ArduFliteAttitudeController.h"
 #include "src/controller/ArduFliteRateController.h"
 #include "src/controller/ArduFliteController.h"
 
 #include "src/telemetry/ArduFliteTelemetry.h"
-#include "src/telemetry/ConfigData.h"
 #include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
 #include "src/telemetry/serial/ArduFliteDebugSerialTelemetry.h"
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
@@ -84,16 +85,15 @@ static bool isWatchdogRecovery() {
             reason == ESP_RST_WDT);
 }
 
-// Serial ports for CRSF
+// Single UART for CRSF (ESP32-C3 only has UART0 and UART1; UART0 is used by USB CDC)
+// We must share UART1 between RX and TX with separate pins
 HardwareSerial crsfSerial(1);
-HardwareSerial telemSerial(2);
 
-ArdufliteCRSFReceiver  crsfRx(crsfSerial,  CRSFPinConfig::PIN_CRSF_RX);
-ArdufliteCRSFTelemetry crsfTx(telemSerial, CRSFPinConfig::PIN_CRSF_TX, 10.0f); // 10 Hz telemetry
+ArdufliteCRSFReceiver  crsfRx(crsfSerial, CRSFPinConfig::PIN_CRSF_RX, CRSFPinConfig::PIN_CRSF_TX);
+ArdufliteCRSFTelemetry crsfTx(crsfSerial, 10.0f); // 10 Hz telemetry (uses already-initialized serial)
 
 // Declare telemetry instances.
 TelemetryData               telemetryData;
-ConfigData                  configData;
 ArduFliteFlashTelemetry     flashTelemetry(50.0f);                      // 50 Hz logging
 // ArduFliteDebugSerialTelemetry    debugTelemetry(1.0f);               // 1 Hz telemetry frequency
 // ArduFliteQSerialTelemetry        telemetry(20.0f);
@@ -103,8 +103,8 @@ ArduFliteIMU                myIMU;
 ArduFliteAttitudeController attitudeController;
 ArduFliteRateController     rateController;
 
-// Instantiate the ServoManager for a conventional wing design with dual ailerons.
-ServoManager servoMgr(CONVENTIONAL, ServoSetupConfig::PITCH_CONFIG, ServoSetupConfig::YAW_CONFIG, ServoSetupConfig::LEFT_AIL_CONFIG, ServoSetupConfig::RIGHT_AIL_CONFIG, ServoSetupConfig::THROTTLE_CONFIG, true);
+// Instantiate the ServoManager (deferred init - servos attached after ConfigRegistry loads)
+ServoManager servoMgr;
 
 // Instantiate the Controllers
 ArduFliteController controller(&myIMU, &attitudeController, &rateController, &servoMgr);
@@ -163,6 +163,25 @@ void arduflite_init()
     // ─────────────────────────────────────────────────────────────────
 
     pinMode(ButtonInputConfig::USER_BUTTON_PIN, INPUT_PULLUP);
+
+    // ─────────────────────────────────────────────────────────────────
+    // Initialize Persistent Configuration System
+    // ─────────────────────────────────────────────────────────────────
+    // ConfigRegistry: In-memory config store with validation and observers
+    // ConfigPersistence: NVS storage layer
+    // ConfigTask: Background task for periodic saves
+    ConfigRegistry::instance().init();
+    ConfigPersistence::begin();
+    ConfigPersistence::load();
+    ConfigTask::start();
+    ConfigObservers::registerAll();
+    LOG_INF("Configuration system initialized.");
+
+    // Initialize controllers and servos from ConfigRegistry (must be after config load)
+    attitudeController.initFromConfig();
+    rateController.initFromConfig();
+    servoMgr.initFromConfig();
+    myIMU.initFromConfig();
 
     ControlMixer::init(controller);
 
@@ -241,8 +260,9 @@ void arduflite_init()
     MultiTapButtonManager::registerButton(modeButton);
     LOG_INF("  2x tap - toggle ArduFlite Mode.");
 
+    // Initialize shared CRSF UART with both RX and TX pins
     crsfRx.begin();
-    crsfTx.begin();
+    crsfTx.begin();  // Telemetry uses already-initialized serial
 
     // configure every channel in one loop
     for (uint8_t ch = 0; ch < 16; ++ch) {
@@ -262,8 +282,8 @@ void arduflite_init()
 
 void arduflite_loop() 
 {
-    // Process any pending commands (pass receiver for preflight checks).
-    CommandSystem::instance().processCommands(&controller, &myIMU, &crsfRx);
+    // Process any pending commands (pass receiver for preflight checks, telemetry for calibration pause).
+    CommandSystem::instance().processCommands(&controller, &myIMU, &crsfRx, &crsfTx);
     
     // Update buttons.
     HoldButtonManager::updateAll();
@@ -274,10 +294,9 @@ void arduflite_loop()
         
     // Update telemetry with the latest sensor and control information.
     telemetryData.update(myIMU, controller, crsfRx);
-    configData.update(controller);
 
-    crsfTx.publish(telemetryData, configData);
-    flashTelemetry.publish(telemetryData, configData);
+    crsfTx.publish(telemetryData);
+    flashTelemetry.publish(telemetryData);
 
     vTaskDelay(pdMS_TO_TICKS(1));
 }

@@ -93,10 +93,12 @@ public:
      * @brief Construct with a hardware serial instance.
      * @param serialPort UART port (e.g. Serial1)
      * @param rxPin      GPIO pin for CRSF RX line
+     * @param txPin      GPIO pin for CRSF TX line (for shared telemetry, -1 if unused)
      * @param freqHz     polling frequency (defaults to 500 Hz)
      */
     ArdufliteCRSFReceiver(HardwareSerial& serialPort,
                           int            rxPin,
+                          int            txPin = -1,
                           float          freqHz = 500.0f);
 
     /** @brief Release resources. */
@@ -149,6 +151,7 @@ public:
 private:
     HardwareSerial&    _serial;
     int                _rxPin;
+    int                _txPin;       ///< TX pin for shared UART (telemetry output)
     float              _intervalMs;
     TaskHandle_t       _taskHandle  = nullptr;
     SemaphoreHandle_t  _lock        = nullptr;

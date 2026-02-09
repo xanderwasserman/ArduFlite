@@ -15,9 +15,9 @@
 #define ARDUFLITE_CRSF_TELEMETRY_H
 
 #include <Arduino.h>
+#include <atomic>
 #include "src/telemetry/ArduFliteTelemetry.h"
 #include "src/telemetry/TelemetryData.h"
-#include "src/telemetry/ConfigData.h"
 
 /**
  * @class   ArdufliteCRSFTelemetry
@@ -30,12 +30,11 @@ class ArdufliteCRSFTelemetry : public ArduFliteTelemetry {
 public:
     /**
      * @brief Construct a new CRSF telemetry publisher.
-     * @param[in] serialPort  UART port used for CRSF downlink (e.g. Serial2).
-     * @param[in] txPin       GPIO pin for CRSF TX line.
+     * @param[in] serialPort  UART port used for CRSF (shared with receiver).
      * @param[in] freqHz      Overall send frequency in Hz (default 1 Hz).
+     * @note  UART must be initialized by receiver's begin() before this class is started.
      */
     ArdufliteCRSFTelemetry(HardwareSerial& serialPort,
-                           int            txPin,
                            float          freqHz = 1.0f);
 
     /**
@@ -45,31 +44,39 @@ public:
     virtual ~ArdufliteCRSFTelemetry();
 
     /**
-     * @brief Initialize UART (420 000 baud, 8N1, TX only) and start the FreeRTOS task.
+     * @brief Start telemetry task (UART already configured by receiver).
      */
     void begin() override;
 
     /**
-     * @brief Supply a fresh snapshot of telemetry and config.
+     * @brief Supply a fresh snapshot of telemetry data.
      * @param[in] telem  Latest sensor & state data.
-     * @param[in] cfg    Configuration snapshot (currently unused).
      */
-    void publish(const TelemetryData& telem,
-                 const ConfigData&    cfg) override;
+    void publish(const TelemetryData& telem) override;
 
     /**
      * @brief Reset telemetry state (no-op).
      */
     void reset() override {}
 
+    /**
+     * @brief Pause the telemetry task (unsubscribes from WDT).
+     *        Use during calibration to prevent WDT timeout.
+     */
+    void pauseTask();
+
+    /**
+     * @brief Resume the telemetry task (re-subscribes to WDT).
+     */
+    void resumeTask();
+
 private:
-    HardwareSerial&   _serial;        /**< UART port for CRSF downlink. */
-    int               _txPin;         /**< GPIO pin for CRSF TX. */
+    HardwareSerial&   _serial;        /**< UART port for CRSF (shared with receiver). */
     float             _intervalMs;    /**< Delay between batches, in milliseconds. */
     TaskHandle_t      _taskHandle{};  /**< FreeRTOS task handle. */
-    SemaphoreHandle_t _lock{};        /**< Protects _pendingData/_pendingConfig. */
+    SemaphoreHandle_t _lock{};        /**< Protects _pendingData. */
     TelemetryData     _pendingData;   /**< Last-published TelemetryData. */
-    ConfigData        _pendingConfig; /**< Last-published ConfigData. */
+    std::atomic<bool> _paused{false}; /**< When true, task skips work and WDT is unsubscribed. */
 
     /**
      * @brief FreeRTOS task entry point.
@@ -83,7 +90,8 @@ private:
     void run();
 
     // CRSF addressing & frame‐type constants:
-    static constexpr uint8_t AddrFC    = 0xC8;  /**< Flight controller address (sync byte). */
+    static constexpr uint8_t AddrFC    = 0xC8;  /**< Flight controller address (FC→TX direction). */
+    static constexpr uint8_t AddrRX    = 0xEA;  /**< Receiver address (FC→RX telemetry frames). */
     static constexpr uint8_t T_LINK    = 0x14;  /**< Link statistics. */
     static constexpr uint8_t T_ATT     = 0x1E;  /**< Attitude (6 bytes). */
     static constexpr uint8_t T_MODE    = 0x21;  /**< Flight mode (string). */

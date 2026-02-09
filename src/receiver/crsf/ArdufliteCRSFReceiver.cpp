@@ -16,9 +16,10 @@
 #include <cstring>
 #include <esp_task_wdt.h>  // ESP32 hardware watchdog
 
-ArdufliteCRSFReceiver::ArdufliteCRSFReceiver(HardwareSerial& ser, int rxPin, float freqHz)
+ArdufliteCRSFReceiver::ArdufliteCRSFReceiver(HardwareSerial& ser, int rxPin, int txPin, float freqHz)
   : _serial(ser)
   , _rxPin(rxPin)
+  , _txPin(txPin)
   , _intervalMs(1000.0f/freqHz)
 {
     _lock = xSemaphoreCreateMutex();
@@ -34,8 +35,10 @@ ArdufliteCRSFReceiver::~ArdufliteCRSFReceiver()
 
 void ArdufliteCRSFReceiver::begin() 
 {
-    // 420 000 baud, 8N1, RX only
-    _serial.begin(420000, SERIAL_8N1, _rxPin, -1);
+    // 420 000 baud, 8N1
+    // Configure with both RX and TX pins for shared UART with telemetry
+    _serial.begin(420000, SERIAL_8N1, _rxPin, _txPin);
+    LOG_INF("CRSF UART: RX pin %d, TX pin %d @ 420000 baud", _rxPin, _txPin);
     if (_taskHandle) return;
 
     BaseType_t res = xTaskCreate(

@@ -53,7 +53,23 @@ ArduFlite is a highly modular and real-time flight control framework designed fo
 - **Built-in CLI**  
   - Real-time tuning: `setmode`, `calibrate imu`, `stats`, `tasks`, etc.  
   - Full access to loop-timing statistics and active FreeRTOS tasks.
+### 6. Persistent Configuration System
 
+- **ConfigRegistry Singleton**  
+  - Centralized storage for all runtime-tunable parameters (~90+ parameters).  
+  - Type-safe get/set with validation and range checking.  
+  - Observer pattern for hot-reload of controller parameters.  
+- **NVS Persistence**  
+  - Automatic save of modified parameters to ESP32 flash (NVS).  
+  - Parameters survive power cycles without recompilation.  
+  - Schema versioning with migration support for firmware upgrades.  
+- **JSON Export/Import**  
+  - Backup and restore configuration via CLI or serial.  
+  - Share tuned configs across multiple aircraft.  
+- **CLI Integration**  
+  - `config list`, `config get <key>`, `config set <key> <value>`.  
+  - All changes take effect immediately (hot-reload) and persist automatically.
+  - See [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) for full parameter documentation and tuning guide.
 ## Architecture
 
 ArduFlite employs a cascade control structure:
@@ -121,7 +137,15 @@ ArduFlite employs a cascade control structure:
     ```
 
 6. **Configure Hardware & Parameters:**
-    Update pin assignments, PID gains, CRSF config, etc. in the configuration header files (e.g., [ControllerConfiguration.h](include/ControllerConfiguration.h), [PinConfiguration.h](include/PinConfiguration.h)) as needed.
+    - **Runtime parameters** (PID gains, limits): Use CLI `config set` command or JSON import. Parameters are defined in `include/ConfigSchema.h`.
+    - **Compile-time hardware** (sensor types, pins): Edit `include/IMUConfiguration.h` or `include/PinConfiguration.h`.
+    
+    Available compile-time flags:
+    ```
+    BOARD_TYPE   - BOARD_TYPE_FIREBEETLE (0) or BOARD_TYPE_WEMOS (1)
+    IMU_TYPE     - IMU_TYPE_MPU6500 or IMU_TYPE_MPU9250
+    BARO_TYPE    - BARO_TYPE_BMP280
+    ```
 
 7. **Compile and Upload:**
     ```bash
@@ -160,6 +184,16 @@ Once the system is running:
     - `calibrate imu` – Triggers an IMU self-calibration routine.
 
     - `flash list` - Lists the flight logs that have been stored in the on-board flash.
+
+    - `config list` – Shows all configuration parameters.
+
+    - `config get rate.roll.kp` – Gets the current value of a parameter.
+
+    - `config set rate.roll.kp 0.12` – Sets a parameter value (persisted to flash).
+
+    - `config export` – Exports all config as JSON for backup.
+
+    - `config reset` – Resets all parameters to defaults.
 
 - Control Operation:
     The attitude controller continuously computes new setpoints (from pilot input or test sequences), and the rate controller maintains stable flight even in the presence of disturbances.

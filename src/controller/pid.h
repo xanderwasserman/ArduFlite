@@ -26,6 +26,12 @@ struct PIDConfig {
 class PID {
 public:
     /**
+     * @brief Default constructor with zero-initialized config.
+     *        Call setConfig() before first use.
+     */
+    PID() : config{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.1f} {}
+
+    /**
      * @brief Constructs a PID controller using the provided configuration.
      * 
      * @param cfg The configuration structure containing all tunable PID parameters.

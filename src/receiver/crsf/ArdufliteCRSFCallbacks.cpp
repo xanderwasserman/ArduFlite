@@ -8,6 +8,8 @@
  */
 #include "src/receiver/crsf/ArdufliteCRSFCallbacks.h"
 #include "src/utils/Logging.h"
+#include "src/utils/ConfigRegistry.h"
+#include "include/ConfigKeys.h"
 #include "include/ReceiverConfiguration.h"
 
 namespace CRSFCallbacks
@@ -53,19 +55,23 @@ namespace CRSFCallbacks
         // this creates a tightening spiral rather than coordinated turn. This is
         // intentional: the spiral descends quickly into a small area, making the
         // aircraft easier to locate after link loss.
+        auto& cfg = ConfigRegistry::instance();
+        float fsBankDeg  = cfg.get<float>(CONFIG_KEY_FS_BANK_DEG);
+        float fsPitchDeg = cfg.get<float>(CONFIG_KEY_FS_PITCH_DEG);
+        
         EulerAngles fsAttitude;
-        fsAttitude.roll  = FailsafeConfig::FAILSAFE_BANK_DEG;   // Gentle bank for contained spiral
-        fsAttitude.pitch = FailsafeConfig::FAILSAFE_PITCH_DEG;  // Slight nose-down for glide
-        fsAttitude.yaw   = 0.0f;                                 // Hold heading (intentional spiral)
+        fsAttitude.roll  = fsBankDeg;   // Gentle bank for contained spiral
+        fsAttitude.pitch = fsPitchDeg;  // Slight nose-down for glide
+        fsAttitude.yaw   = 0.0f;        // Hold heading (intentional spiral)
         
         SystemCommand attCmd{};
-        attCmd.type           = CMD_SET_CONFIG_ATTITUDE;
-        attCmd.attitudeConfig = fsAttitude;
+        attCmd.type     = CMD_SET_SETPOINT;
+        attCmd.setpoint = fsAttitude;
         CommandSystem::instance().pushCommand(attCmd);
 
         LOG_WARN("Failsafe: Bank=%.1f° Pitch=%.1f° Throttle=CUT",
-                 FailsafeConfig::FAILSAFE_BANK_DEG,
-                 FailsafeConfig::FAILSAFE_PITCH_DEG);
+                 fsBankDeg,
+                 fsPitchDeg);
     }
 
     /**
@@ -93,8 +99,8 @@ namespace CRSFCallbacks
         zeroAttitude.yaw   = 0.0f;
         
         SystemCommand attCmd{};
-        attCmd.type           = CMD_SET_CONFIG_ATTITUDE;
-        attCmd.attitudeConfig = zeroAttitude;
+        attCmd.type     = CMD_SET_SETPOINT;
+        attCmd.setpoint = zeroAttitude;
         CommandSystem::instance().pushCommand(attCmd);
 
         LOG_INF("Mode restored to %d. Pilot must disengage throttle cut to resume.",
@@ -117,9 +123,8 @@ namespace CRSFCallbacks
     {
         LOG_DBG("onThrottle: %f", v);
 
-        SystemCommand cmd;
-        cmd.type = CMD_RECEIVER_SETPOINT_THROTTLE;
-        
+        SystemCommand cmd{};
+        cmd.type  = CMD_SET_SETPOINT_THROTTLE;
         cmd.value = v;
         CommandSystem::instance().pushCommand(cmd);
     }

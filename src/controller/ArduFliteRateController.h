@@ -11,7 +11,7 @@
 
 #include <Arduino.h>
 #include "src/controller/pid.h"
-#include "include/ControllerConfiguration.h"
+#include "include/ControllerTypes.h"
 #include "src/orientation/ArduFliteIMU.h"
 
 /**
@@ -26,8 +26,17 @@
 class ArduFliteRateController 
 {
 public:
-    // Constructor: Initializes the PID controllers with appropriate gains and output limits.
+    /**
+     * @brief Default constructor with uninitialized PIDs.
+     *        Call initFromConfig() before use.
+     */
     ArduFliteRateController();
+
+    /**
+     * @brief Initialize PID controllers from ConfigRegistry.
+     *        Must be called after ConfigRegistry::init().
+     */
+    void initFromConfig();
 
     // Set the desired angular rates (roll, pitch, yaw). Units can be degrees per second.
     void setRateControlSetpoint(EulerAngles setpoint);
@@ -40,6 +49,23 @@ public:
 
     // Reset the PID controllers' integrators.
     void reset();
+
+    // ─────────────────────────────────────────────────────────────────
+    // Runtime Configuration Updates
+    // ─────────────────────────────────────────────────────────────────
+    
+    /**
+     * @brief Set the PID configuration for a specific axis.
+     * @param loop The control loop type (RATE_ROLL_LOOP, RATE_PITCH_LOOP, RATE_YAW_LOOP)
+     * @param config The PID configuration
+     */
+    void setPIDConfig(ControlLoopType loop, const PIDConfig& config);
+
+    /**
+     * @brief Set the output low-pass filter alpha.
+     * @param alpha Filter alpha (0.0-1.0)
+     */
+    void setOutputAlpha(float alpha);
 
 private:
     // Desired angular rates (set by the outer loop)

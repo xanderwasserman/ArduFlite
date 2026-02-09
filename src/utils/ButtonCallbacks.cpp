@@ -25,9 +25,13 @@ void onCalibrateHold(void)
 #endif
     LOG_INF("Calibrating IMU...");
     controller.pauseTasks();     // Pause control loop tasks
-    myIMU.pauseTask();           // Pause the IMU update task
-    myIMU.selfCalibrate();       // Run calibration
-    myIMU.resumeTask();          // Resume the IMU update task
+    
+    // selfCalibrate() internally handles IMU task pause/resume
+    if (!myIMU.selfCalibrate()) 
+    {
+        LOG_ERR("IMU calibration failed!");
+    }
+    
     controller.resumeTasks();    // Resume control loop tasks
 #if BOARD_TYPE == BOARD_TYPE_WEMOS
     statusLED.setPattern({0,255,0, 500,150});// slow green blink

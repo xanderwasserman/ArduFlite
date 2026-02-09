@@ -12,7 +12,7 @@
 #include "src/orientation/FliteQuaternion.h"
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/controller/pid.h"
-#include "include/ControllerConfiguration.h"
+#include "include/ControllerTypes.h"
 
 #include <Arduino.h>
 
@@ -61,13 +61,18 @@ class ArduFliteAttitudeController
 {
 public:
     /**
-     * @brief Constructor.
+     * @brief Default constructor.
      *
-     * Initializes the PID controllers for roll, pitch, and yaw with preset gains and output
-     * limits, sets the default desired orientation to "straight and level" (i.e., no rotation),
-     * and creates a mutex for protecting the desired orientation.
+     * Creates mutex but does NOT initialize PIDs.
+     * Call initFromConfig() after ConfigRegistry is ready.
      */
     ArduFliteAttitudeController();
+
+    /**
+     * @brief Initialize PID controllers from ConfigRegistry.
+     *        Must be called after ConfigRegistry::init().
+     */
+    void initFromConfig();
 
     /**
      * @brief Sets the desired orientation using a quaternion.
@@ -121,9 +126,27 @@ public:
      */
     void reset();
 
+    // ─────────────────────────────────────────────────────────────────
+    // Runtime Configuration Updates
+    // ─────────────────────────────────────────────────────────────────
+    
+    /**
+     * @brief Set the PID configuration for a specific axis.
+     * @param loop The control loop type (ATTITUDE_ROLL_LOOP, ATTITUDE_PITCH_LOOP, ATTITUDE_YAW_LOOP)
+     * @param config The PID configuration
+     */
+    void setPIDConfig(ControlLoopType loop, const PIDConfig& config);
+
+    /**
+     * @brief Set the attitude error deadband.
+     * @param deadband Deadband in radians
+     */
+    void setDeadband(float deadband);
+
 private:
     FliteQuaternion desiredQ;               //< The desired orientation.
     EulerAngles     attitudeSetpointDegs;   //< The desired orientation in degrees.
+    float           deadbandRads;           //< Error deadband in radians.
     PID             pidRoll;                //< PID controller for roll.
     PID             pidPitch;               //< PID controller for pitch.
     PID             pidYaw;                 //< PID controller for yaw.

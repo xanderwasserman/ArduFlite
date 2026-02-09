@@ -17,21 +17,20 @@
  #include "src/controller/ArduFliteAttitudeController.h"
 #include "src/utils/Logging.h"
 #include "include/ArduFlite.h"
+#include "src/utils/ConfigHelpers.h"
+#include "include/ConfigKeys.h"
 
  #include <math.h>
  #include <Arduino.h>
  
  /**
-  * @brief Constructor.
+  * @brief Default constructor.
   *
-  * Initializes the PID controllers with predetermined gains and output limits,
-  * sets the default desired orientation to "straight and level" (no rotation),
-  * and creates the mutex to protect access to the desired orientation.
+  * Creates mutex but does NOT initialize PIDs. PIDs are zero-initialized
+  * and must be configured by calling initFromConfig() after ConfigRegistry is ready.
   */
  ArduFliteAttitudeController::ArduFliteAttitudeController()
-    : pidRoll(AttitudeControllerConfig::DEFAULT_ROLL_PID),
-      pidPitch(AttitudeControllerConfig::DEFAULT_PITCH_PID),
-      pidYaw(AttitudeControllerConfig::DEFAULT_YAW_PID)
+    : pidRoll(), pidPitch(), pidYaw(), deadbandRads(0.0001f)
  {
      // Desired orientation is initialized to no rotation.
      desiredQ = FliteQuaternion(1, 0, 0, 0);
@@ -42,6 +41,22 @@
          LOG_ERR("Failed to create ArduFliteAttitudeController mutex!");
      }
  }
+
+ /**
+  * @brief Initialize PID controllers from ConfigRegistry.
+  *        Must be called after ConfigRegistry::init().
+  */
+void ArduFliteAttitudeController::initFromConfig()
+{
+    SemaphoreLock lock(attitudeMutex);
+    
+    pidRoll.setConfig(ConfigHelpers::buildPIDConfig(CONFIG_KEY_ATT_ROLL_PREFIX));
+    pidPitch.setConfig(ConfigHelpers::buildPIDConfig(CONFIG_KEY_ATT_PITCH_PREFIX));
+    pidYaw.setConfig(ConfigHelpers::buildPIDConfig(CONFIG_KEY_ATT_YAW_PREFIX));
+    deadbandRads = ConfigRegistry::instance().get<float>(CONFIG_KEY_ATT_DEADBAND);
+    
+    LOG_INF("AttitudeController: initialized from ConfigRegistry");
+}
  
  /**
   * @brief Sets the desired orientation directly.
@@ -180,7 +195,11 @@
     float pitchErr = scale * qErrorRP.y;   // Pitch error component.
     
     // --- Apply Deadband to Filter Out Noise ---
-    float deadband = AttitudeControllerConfig::ATTITUDE_DEADBAND_RADS; 
+    float deadband;
+    {
+        SemaphoreLock lock(attitudeMutex);
+        deadband = deadbandRads;
+    }
     if (fabs(rollErr) < deadband)   rollErr = 0.0f;
     if (fabs(pitchErr) < deadband)  pitchErr = 0.0f;
     if (fabs(yawErr) < deadband)    yawErr = 0.0f;
@@ -204,7 +223,37 @@
      pidPitch.reset();
      pidYaw.reset();
  }
- 
+
+// ─────────────────────────────────────────────────────────────────
+// Runtime Configuration Updates
+// ─────────────────────────────────────────────────────────────────
+
+void ArduFliteAttitudeController::setPIDConfig(ControlLoopType loop, const PIDConfig& config)
+{
+    SemaphoreLock lock(attitudeMutex);
+    
+    switch (loop) {
+        case ATTITUDE_ROLL_LOOP:
+            pidRoll.setConfig(config);
+            break;
+        case ATTITUDE_PITCH_LOOP:
+            pidPitch.setConfig(config);
+            break;
+        case ATTITUDE_YAW_LOOP:
+            pidYaw.setConfig(config);
+            break;
+        default:
+            LOG_WARN("Invalid loop type for attitude PID config: %d", loop);
+            break;
+    }
+}
+
+void ArduFliteAttitudeController::setDeadband(float deadband)
+{
+    SemaphoreLock lock(attitudeMutex);
+    deadbandRads = deadband;
+}
+
  /*============================================================================
    Helper Functions for Decoupling Yaw
    ============================================================================*/

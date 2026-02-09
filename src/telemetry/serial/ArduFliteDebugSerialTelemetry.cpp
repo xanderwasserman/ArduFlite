@@ -30,7 +30,7 @@ void ArduFliteDebugSerialTelemetry::begin() {
     );
 }
 
-void ArduFliteDebugSerialTelemetry::publish(const TelemetryData& telemData, const ConfigData& configData) 
+void ArduFliteDebugSerialTelemetry::publish(const TelemetryData& telemData) 
 {
     // Store new data so the task can print it
     {

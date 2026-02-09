@@ -11,6 +11,7 @@ Provide concise, enforceable guidelines for any AI or human agent contributing t
 5. **Validate changes.** Run targeted tests or provide verification steps; never assume success.
 6. **Fail loudly.** If an assumption or dependency is missing, log/return early so issues are obvious.
 7. **Prefer library built-ins over custom code.** Before implementing functionality, check if the library provides a built-in solution. Use native features when available.
+8. **Never skip documentation updates.** Architectural changes, new modules, or API changes require updates to AGENTS.md and/or README.md before task completion.
 
 ## Workflow Checklist
 - **Before coding**
@@ -32,11 +33,12 @@ Provide concise, enforceable guidelines for any AI or human agent contributing t
 ### Core Architecture Layers
 ArduFlite follows a strict layered architecture. Respect these boundaries:
 
-1. **Configuration Layer** (`include/`)
-   - Pure configuration headers with `constexpr` values and structs
-   - **Never** implement logic here — only declarations and constants
-   - Use namespaces (e.g., `AttitudeControllerConfig`, `RateControllerConfig`) to group related configs
-   - Factory functions like `makePID_TC()` are acceptable for compile-time computation
+1. **Configuration Layer** (`include/` + `src/utils/Config*`)
+   - **Runtime-tunable parameters** use `ConfigRegistry` singleton with NVS persistence
+   - **Compile-time constants** (sensor types, hardware pins) remain in `include/*.h`
+   - Keys defined in `include/ConfigKeys.h`, defaults in `include/ConfigSchema.h`
+   - Controllers use `initFromConfig()` pattern: default constructor + deferred init after ConfigRegistry loads
+   - Hot-reload via observer pattern: `ConfigRegistry::subscribe("rate.roll.*", callback)`
 
 2. **Control Layer** (`src/controller/`)
    - **ArduFliteController**: Top-level orchestrator managing cascade control loops
@@ -55,9 +57,14 @@ ArduFlite follows a strict layered architecture. Respect these boundaries:
    - **Receiver**: Input from pilot (CRSF/PWM) with failsafe callbacks
    - **Telemetry**: Output to ground station/transmitter (Serial, CRSF, Flash)
    - Each backend runs in its own FreeRTOS task
-   - Use thread-safe data structures (`TelemetryData`, `ConfigData`) with snapshots
+   - Use thread-safe `TelemetryData` snapshots; config queries go to `ConfigRegistry`
 
 5. **Utilities Layer** (`src/utils/`)
+   - **ConfigRegistry**: Singleton for runtime config with type-safe get/set, validation, observers
+   - **ConfigPersistence**: NVS-backed storage with schema versioning and JSON export/import
+   - **ConfigTask**: Background FreeRTOS task for periodic dirty-save and import queue
+   - **ConfigHelpers**: `buildPIDConfig()` converts Ti/Td time constants to Ki/Kd gains
+   - **ConfigObservers**: Bridges config changes to CommandSystem for thread-safe updates
    - **ControlMixer**: Mode-dependent scaling and mixing (Attitude/Rate/Manual)
    - **CommandSystem**: Thread-safe command queue using FreeRTOS queues
    - **Logging**: Singleton logger with pluggable handlers (`LOG_INF`, `LOG_ERR`, etc.)
@@ -81,20 +88,21 @@ ArduFlite follows a strict layered architecture. Respect these boundaries:
 - Use `SemaphoreLock` RAII wrapper (defined in `ArduFlite.h`) for automatic mutex management
 - Take snapshots of data structures (like `TelemetryData`) to avoid holding locks too long
 - **Never** block in ISRs or high-priority tasks
+- `ArduFliteIMU` uses a **triple-buffer** for lock-free reads: the IMU task writes sensor data to one buffer while control loops read from another, with a third buffer ensuring readers are never caught mid-copy
 
 ## Folder Structure Overview
 
 ```
 ArduFlite/
-├── include/                          # Configuration headers (compile-time constants)
+├── include/                          # Headers and compile-time constants
 │   ├── ArduFlite.h                   # Main header, SemaphoreLock RAII
-│   ├── ControllerConfiguration.h     # PID tuning parameters (makePID_TC factory)
-│   ├── ServoConfiguration.h          # Servo limits, neutral, deflection
+│   ├── ConfigKeys.h                  # Config key #defines (hierarchical dot notation)
+│   ├── ConfigSchema.h                # Parameter registration with defaults/ranges
+│   ├── ControllerTypes.h             # Shared enums (ControlLoopType)
 │   ├── CSRFConfiguration.h           # CRSF receiver pin/channel mapping
-│   ├── ControlMixerConfiguration.h   # Mode-dependent scaling factors
-│   ├── PinConfiguration.h            # Pin assignments (I2C, PWM, Buttons)
+│   ├── PinConfiguration.h            # Pin assignments (compile-time)
 │   ├── ReceiverConfiguration.h       # Receiver type and failsafe config
-│   ├── IMUConfiguration.h            # IMU sensor selection and calibration
+│   ├── IMUConfiguration.h            # IMU/Baro type selection macros only
 │   └── MissionConfiguration.h        # Mission planner parameters
 │
 ├── src/
@@ -117,7 +125,6 @@ ArduFlite/
 │   │
 │   ├── telemetry/                    # Data output to ground station
 │   │   ├── TelemetryData.h           # Shared data structure
-│   │   ├── ConfigData.h              # Configuration snapshot
 │   │   ├── serial/                   # Debug and quaternion serial output
 │   │   ├── flash/                    # On-board flash logging
 │   │   └── crsf/                     # CRSF telemetry uplink
@@ -137,6 +144,11 @@ ArduFlite/
 │   │   └── ReceiverTests.*           # Receiver input validation
 │   │
 │   └── utils/                        # Shared utilities
+│       ├── ConfigRegistry.*          # Singleton config store with observers
+│       ├── ConfigPersistence.*       # NVS load/save with schema versioning
+│       ├── ConfigTask.*              # Background task for periodic saves
+│       ├── ConfigHelpers.h           # PID config builders (Ti/Td → Ki/Kd)
+│       ├── ConfigObservers.*         # Observer registrations for hot-reload
 │       ├── CommandSystem.*           # Thread-safe command queue
 │       ├── ControlMixer.*            # Mode-dependent input mixing
 │       ├── Logging.*                 # Singleton logger with colors
@@ -155,12 +167,19 @@ ArduFlite/
 
 ### Key Design Patterns
 
-1. **Configuration Segregation**
-   - All tunable parameters live in `include/*Configuration.h`
-   - Use `constexpr` for compile-time evaluation
-   - Use `namespace` to group related configs (avoid global pollution)
+1. **Persistent Configuration System**
+   - `ConfigRegistry`: Singleton storing all runtime-tunable parameters
+   - `ConfigPersistence`: NVS-backed save/load with JSON export/import
+   - `ConfigSchema.h`: Static registration macros (`CONFIG_FLOAT`, `CONFIG_INT`, etc.)
+   - `ConfigKeys.h`: Hierarchical keys with IDE autocomplete (e.g., `CONFIG_KEY_RATE_ROLL_KP`)
+   - Components use `initFromConfig()` pattern for deferred initialization after FreeRTOS
 
-2. **Manager Pattern**
+2. **Deferred Initialization Pattern**
+   - Controllers have default constructors (safe/zero values)
+   - After `ConfigRegistry::init()` + `ConfigPersistence::load()`, call `initFromConfig()`
+   - Enables global objects while respecting FreeRTOS startup order
+
+3. **Manager Pattern****
    - `ServoManager`, `HoldButtonManager`, `MultiTapButtonManager`
    - Managers **own** hardware resources and provide high-level APIs
    - Encapsulate geometry/mixing logic (e.g., delta wing vs. conventional)
@@ -183,14 +202,15 @@ ArduFlite/
 ### Code Quality Guidelines
 
 1. **Configuration Changes**
-   - When adding new tunable parameters, place them in the appropriate `*Configuration.h` file
-   - Use factory functions (like `makePID_TC`) for computed constants
-   - Document units and ranges in comments (e.g., `// degrees/second`)
-   - Prefer `constexpr` over `#define` for type safety
+   - **Runtime-tunable parameters**: Add to `ConfigKeys.h` and `ConfigSchema.h`
+   - **Compile-time constants** (hardware pins, sensor types): Add to appropriate `*Configuration.h`
+   - Use `ConfigHelpers::buildPIDConfig()` for PID-related configs
+   - Document units and ranges in comments and schema description
+   - Register observers in `ConfigObservers.cpp` if hot-reload is needed
 
 2. **Adding New Control Features**
-   - Extend `ControlLoopType` enum and `SystemCommandType` if needed
-   - Add PID configs to `ControllerConfiguration.h`
+   - Extend `ControlLoopType` enum (in `ControllerTypes.h`) and `SystemCommandType` if needed
+   - Add PID configs to `ConfigSchema.h` with `CONFIG_FLOAT` macros
    - Update `ArduFliteController::processCommands()` to handle new commands
    - Add CLI commands in `CLICommands*.cpp` for runtime tuning
 

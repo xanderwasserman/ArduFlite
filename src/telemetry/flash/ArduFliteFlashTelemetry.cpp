@@ -85,7 +85,7 @@ void ArduFliteFlashTelemetry::begin()
     );
 }
 
-void ArduFliteFlashTelemetry::publish(const TelemetryData& telemData, const ConfigData& configData)
+void ArduFliteFlashTelemetry::publish(const TelemetryData& telemData)
 {
     if (!_dataMutex) return;
 

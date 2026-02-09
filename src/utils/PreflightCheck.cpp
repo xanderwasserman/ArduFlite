@@ -15,7 +15,8 @@
 #include "src/controller/ArduFliteController.h"
 #include "src/receiver/crsf/ArdufliteCRSFReceiver.h"
 #include "src/utils/Logging.h"
-#include "include/IMUConfiguration.h"
+#include "src/utils/ConfigRegistry.h"
+#include "include/ConfigKeys.h"
 #include "include/ReceiverConfiguration.h"
 
 #include <math.h>
@@ -93,14 +94,15 @@ bool checkGyroStability(ArduFliteIMU* imu)
     float avgZ = sumZ / NUM_SAMPLES;
     
     // Check if average gyro values are within acceptable bias threshold
-    bool stable = (fabsf(avgX) < IMUConfig::GYRO_BIAS_MAX_DPS) &&
-                  (fabsf(avgY) < IMUConfig::GYRO_BIAS_MAX_DPS) &&
-                  (fabsf(avgZ) < IMUConfig::GYRO_BIAS_MAX_DPS);
+    float gyroBiasMax = ConfigRegistry::instance().get<float>(CONFIG_KEY_IMU_GYRO_BIAS_MAX);
+    bool stable = (fabsf(avgX) < gyroBiasMax) &&
+                  (fabsf(avgY) < gyroBiasMax) &&
+                  (fabsf(avgZ) < gyroBiasMax);
     
     if (!stable)
     {
         LOG_ERR("Preflight: Gyro bias too high! Avg X=%.2f Y=%.2f Z=%.2f (max=%.2f)",
-                avgX, avgY, avgZ, IMUConfig::GYRO_BIAS_MAX_DPS);
+                avgX, avgY, avgZ, gyroBiasMax);
     }
     else
     {
@@ -125,13 +127,17 @@ bool checkAccelerometer(ArduFliteIMU* imu)
                             accel.z * accel.z);
     
     // Check if magnitude is close to 1g (with tolerance)
-    float deviation = fabsf(magnitude - IMUConfig::EXPECTED_GRAVITY_G);
-    bool valid = (deviation < IMUConfig::GRAVITY_TOLERANCE_G);
+    auto& config = ConfigRegistry::instance();
+    float expectedG = config.get<float>(CONFIG_KEY_IMU_EXPECTED_G);
+    float toleranceG = config.get<float>(CONFIG_KEY_IMU_GRAVITY_TOL);
+    
+    float deviation = fabsf(magnitude - expectedG);
+    bool valid = (deviation < toleranceG);
     
     if (!valid)
     {
         LOG_ERR("Preflight: Accelerometer reading invalid! Magnitude=%.3fg (expected=%.2f±%.2f)",
-                magnitude, IMUConfig::EXPECTED_GRAVITY_G, IMUConfig::GRAVITY_TOLERANCE_G);
+                magnitude, expectedG, toleranceG);
     }
     
     return valid;
@@ -156,12 +162,13 @@ bool checkReceiverLink(ArdufliteCRSFReceiver* receiver)
         return false;
     }
     
-    bool linkOk = (stats.uplink_Link_quality >= FailsafeConfig::MIN_LINK_QUALITY_ARM);
+    uint8_t minLQ = ConfigRegistry::instance().get<uint8_t>(CONFIG_KEY_FS_MIN_LQ_ARM);
+    bool linkOk = (stats.uplink_Link_quality >= minLQ);
     
     if (!linkOk)
     {
         LOG_ERR("Preflight: Link quality too low! LQ=%u%% (min=%u%%)",
-                stats.uplink_Link_quality, FailsafeConfig::MIN_LINK_QUALITY_ARM);
+                stats.uplink_Link_quality, minLQ);
     }
     
     return linkOk;

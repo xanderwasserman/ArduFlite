@@ -10,21 +10,31 @@
 #include "src/orientation/ArduFliteIMU.h"
 #include "include/ArduFlite.h"
 #include "src/utils/Logging.h"
+#include "src/utils/ConfigHelpers.h"
+#include "include/ConfigKeys.h"
 
-// Constructor with initial PID parameters.
-// The output limits are set to -1.0 and +1.0 so that the final servo commands remain normalized.
+// Default constructor - creates mutex but does NOT initialize PIDs.
+// Call initFromConfig() after ConfigRegistry is ready.
 ArduFliteRateController::ArduFliteRateController()
-    : pidRoll(RateControllerConfig::DEFAULT_ROLL_PID),
-      pidPitch(RateControllerConfig::DEFAULT_PITCH_PID),
-      pidYaw(RateControllerConfig::DEFAULT_YAW_PID),
-      outputAlpha(RateControllerConfig::outLpAlpha)
+    : pidRoll(), pidPitch(), pidYaw(), outputAlpha(0.1f)
 {
-    // Create the mutex to protect desired rate updates.
     rateMutex = xSemaphoreCreateMutex();
     if (rateMutex == NULL) {
-        // Handle error accordingly (e.g., print an error message)
         LOG_ERR("Failed to create ArduFliteRateController mutex!");
     }
+}
+
+// Initialize PID controllers from ConfigRegistry.
+void ArduFliteRateController::initFromConfig()
+{
+    SemaphoreLock lock(rateMutex);
+    
+    pidRoll.setConfig(ConfigHelpers::buildPIDConfig(CONFIG_KEY_RATE_ROLL_PREFIX));
+    pidPitch.setConfig(ConfigHelpers::buildPIDConfig(CONFIG_KEY_RATE_PITCH_PREFIX));
+    pidYaw.setConfig(ConfigHelpers::buildPIDConfig(CONFIG_KEY_RATE_YAW_PREFIX));
+    outputAlpha = ConfigRegistry::instance().get<float>(CONFIG_KEY_RATE_OUT_LP_ALPHA);
+    
+    LOG_INF("RateController: initialized from ConfigRegistry");
 }
 
 // Set the desired angular rates (e.g., from the outer loop's output)
@@ -81,4 +91,34 @@ void ArduFliteRateController::reset()
     pidRoll.reset();
     pidPitch.reset();
     pidYaw.reset();
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Runtime Configuration Updates
+// ─────────────────────────────────────────────────────────────────
+
+void ArduFliteRateController::setPIDConfig(ControlLoopType loop, const PIDConfig& config)
+{
+    SemaphoreLock lock(rateMutex);
+    
+    switch (loop) {
+        case RATE_ROLL_LOOP:
+            pidRoll.setConfig(config);
+            break;
+        case RATE_PITCH_LOOP:
+            pidPitch.setConfig(config);
+            break;
+        case RATE_YAW_LOOP:
+            pidYaw.setConfig(config);
+            break;
+        default:
+            LOG_WARN("Invalid loop type for rate PID config: %d", loop);
+            break;
+    }
+}
+
+void ArduFliteRateController::setOutputAlpha(float alpha)
+{
+    SemaphoreLock lock(rateMutex);
+    outputAlpha = alpha;
 }

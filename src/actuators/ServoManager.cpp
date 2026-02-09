@@ -7,7 +7,9 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "ServoManager.h"
-#include "include/ServoConfiguration.h"
+#include "include/ConfigKeys.h"
+#include "include/PinConfiguration.h"
+#include "src/utils/ConfigRegistry.h"
 #include "src/utils/Logging.h"
 
 // Helper: maps a float value from [inMin, inMax] to [outMin, outMax].
@@ -17,66 +19,100 @@ int ServoManager::mapFloatToInt(float val, float inMin, float inMax, int outMin,
     return (int)((val - inMin) * (float)(outMax - outMin) / (inMax - inMin) + outMin);
 }
 
-// Constructor for conventional wing designs.
-ServoManager::ServoManager(WingDesign design,
-                           ServoConfig pitchCfg,
-                           ServoConfig yawCfg,
-                           ServoConfig leftAilCfg,
-                           ServoConfig rightAilCfg,
-                           ServoConfig throttleCfg,
-                           bool dual)
-    : wingDesign(design), pitchConfig(pitchCfg), yawConfig(yawCfg),
-      leftAilConfig(leftAilCfg), rightAilConfig(rightAilCfg), dualAilerons(dual),
-      throttleConfig(throttleCfg), maxServoDegPerSec(ServoSetupConfig::MAX_SERVO_DEG_PER_SEC),
-      maxThrottlePerSec(ServoSetupConfig::MAX_THROTTLE_PER_SEC)
+// Default constructor for deferred initialization
+ServoManager::ServoManager()
+    : wingDesign(CONVENTIONAL),
+      pitchConfig{0, 500, 2500, 90, 80, false},
+      yawConfig{0, 500, 2500, 90, 80, false},
+      leftAilConfig{0, 500, 2500, 90, 80, false},
+      rightAilConfig{0, 500, 2500, 90, 80, false},
+      throttleConfig{0, 1000, 2000, 0, 0, false},
+      dualAilerons(true),
+      maxServoDegPerSec(500.0f),
+      maxThrottlePerSec(1.0f)
 {
-    // Attach elevator and rudder servos.
+    // Servos not attached - call initFromConfig() after ConfigRegistry is ready
+}
+
+void ServoManager::initFromConfig() {
+    auto& config = ConfigRegistry::instance();
+    
+    // Load slew rate limits
+    maxServoDegPerSec = config.get<float>(CONFIG_KEY_SERVO_MAX_DEG_SEC);
+    maxThrottlePerSec = config.get<float>(CONFIG_KEY_SERVO_MAX_THR_SEC);
+    
+    // Load pitch servo config (pin from compile-time constant)
+    pitchConfig.pin        = PwmOutputConfig::PITCH_PIN;
+    pitchConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_MIN);
+    pitchConfig.maxPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_MAX);
+    pitchConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_NEUTRAL);
+    pitchConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_DEFL);
+    pitchConfig.invert     = config.get<bool>(CONFIG_KEY_SERVO_PITCH_INV);
+    
+    // Load yaw servo config (pin from compile-time constant)
+    yawConfig.pin        = PwmOutputConfig::YAW_PIN;
+    yawConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_MIN);
+    yawConfig.maxPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_MAX);
+    yawConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_NEUTRAL);
+    yawConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_DEFL);
+    yawConfig.invert     = config.get<bool>(CONFIG_KEY_SERVO_YAW_INV);
+    
+    // Load left aileron servo config (pin from compile-time constant)
+    leftAilConfig.pin        = PwmOutputConfig::LEFT_AIL_PIN;
+    leftAilConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_MIN);
+    leftAilConfig.maxPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_MAX);
+    leftAilConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_NEUTRAL);
+    leftAilConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_DEFL);
+    leftAilConfig.invert     = config.get<bool>(CONFIG_KEY_SERVO_LAIL_INV);
+    
+    // Load right aileron servo config (pin from compile-time constant)
+    rightAilConfig.pin        = PwmOutputConfig::RIGHT_AIL_PIN;
+    rightAilConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_MIN);
+    rightAilConfig.maxPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_MAX);
+    rightAilConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_NEUTRAL);
+    rightAilConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_DEFL);
+    rightAilConfig.invert     = config.get<bool>(CONFIG_KEY_SERVO_RAIL_INV);
+    
+    // Load throttle config (pin from compile-time constant)
+    throttleConfig.pin      = PwmOutputConfig::THROTTLE_PIN;
+    throttleConfig.minPulse = config.get<int32_t>(CONFIG_KEY_SERVO_THR_MIN);
+    throttleConfig.maxPulse = config.get<int32_t>(CONFIG_KEY_SERVO_THR_MAX);
+    throttleConfig.neutral  = 0;
+    throttleConfig.deflection = 0;
+    throttleConfig.invert   = false;
+    
+    // Load wing design from config (0=CONVENTIONAL, 1=DELTA_WING, 2=V_TAIL)
+    int32_t wingDesignVal = config.get<int32_t>(CONFIG_KEY_SERVO_WING_DESIGN);
+    wingDesign = static_cast<WingDesign>(wingDesignVal);
+    dualAilerons = config.get<bool>(CONFIG_KEY_SERVO_DUAL_AILERONS);
+    
+    // Attach servos
     pitchServo.attach(pitchConfig.pin, pitchConfig.minPulse, pitchConfig.maxPulse);
     yawServo.attach(yawConfig.pin, yawConfig.minPulse, yawConfig.maxPulse);
     throttleServo.attach(throttleConfig.pin, throttleConfig.minPulse, throttleConfig.maxPulse);
-
-    if (!dualAilerons) {
-        singleAilServo.attach(leftAilConfig.pin, leftAilConfig.minPulse, leftAilConfig.maxPulse);
-    } else {
+    
+    if (dualAilerons) {
         leftAilServo.attach(leftAilConfig.pin, leftAilConfig.minPulse, leftAilConfig.maxPulse);
         rightAilServo.attach(rightAilConfig.pin, rightAilConfig.minPulse, rightAilConfig.maxPulse);
+    } else {
+        singleAilServo.attach(leftAilConfig.pin, leftAilConfig.minPulse, leftAilConfig.maxPulse);
     }
-
-    lastThrottleTime = micros();
-    lastThrottleCmd = 0.0f;
-
-    lastUpdateMicros   = micros();
-    lastPitchAngleDeg  = pitchConfig.neutral;
-    lastYawAngleDeg    = yawConfig.neutral;
+    
+    // Initialize timing state
+    lastThrottleTime  = micros();
+    lastThrottleCmd   = 0.0f;
+    lastUpdateMicros  = micros();
+    lastPitchAngleDeg = pitchConfig.neutral;
+    lastYawAngleDeg   = yawConfig.neutral;
+    
     if (dualAilerons) {
         lastLeftAngleDeg  = leftAilConfig.neutral;
         lastRightAngleDeg = rightAilConfig.neutral;
     } else {
         lastSingleAilDeg  = leftAilConfig.neutral;
     }
-}
-
-// Constructor for delta wing or V-tail designs.
-ServoManager::ServoManager(WingDesign design,
-                           ServoConfig surfaceLeftCfg,
-                           ServoConfig surfaceRightCfg,
-                           ServoConfig throttleCfg)
-    : wingDesign(design), leftAilConfig(surfaceLeftCfg), rightAilConfig(surfaceRightCfg),
-    throttleConfig(throttleCfg)
-{
-    // In these designs, we use the paired surfaces (e.g., elevons or ruddervators).
-    dualAilerons = true;
-    leftAilServo.attach(leftAilConfig.pin, leftAilConfig.minPulse, leftAilConfig.maxPulse);
-    rightAilServo.attach(rightAilConfig.pin, rightAilConfig.minPulse, rightAilConfig.maxPulse);
-    throttleServo.attach(throttleConfig.pin, throttleConfig.minPulse, throttleConfig.maxPulse);
-
-    lastThrottleTime = micros();
-    lastThrottleCmd = 0.0f;
-
-    lastUpdateMicros  = micros();
-    // only initialize the aileron/elevon state:
-    lastLeftAngleDeg  = leftAilConfig.neutral;
-    lastRightAngleDeg = rightAilConfig.neutral;
+    
+    LOG_INF("ServoManager: initialized from ConfigRegistry");
 }
 
 void ServoManager::writeThrottle(float throttleCmd)

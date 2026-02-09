@@ -32,29 +32,21 @@ struct ServoConfig {
 class ServoManager {
 public:
     /**
-     * @brief Constructor for a conventional wing design.
-     *
-     * Uses separate servos for elevator (pitch), rudder (yaw), and ailerons.
-     * If dualAilerons is true, both left and right aileron configurations must be provided.
-     * Otherwise, only the left (or single) aileron configuration is used.
+     * @brief Default constructor for deferred initialization.
+     * 
+     * Creates an uninitialized ServoManager. Call initFromConfig() after
+     * ConfigRegistry is ready to load configuration and attach servos.
      */
-    ServoManager(WingDesign design,
-                 ServoConfig pitchConfig,
-                 ServoConfig yawConfig,
-                 ServoConfig leftAilConfig,
-                 ServoConfig rightAilConfig, // if not dual, this can be ignored.
-                 ServoConfig throttleConfig, 
-                 bool dualAilerons = true);
+    ServoManager();
 
     /**
-     * @brief Constructor for delta wing or V-tail designs.
-     *
-     * For these designs, only a pair of surfaces (elevons or ruddervators) are used.
+     * @brief Initialize from ConfigRegistry.
+     * 
+     * Reads servo configuration (pins, pulses, deflection, etc.) from
+     * ConfigRegistry and attaches all servos. Must be called after
+     * ConfigRegistry::init().
      */
-    ServoManager(WingDesign design,
-                 ServoConfig surfaceLeftConfig,
-                 ServoConfig surfaceRightConfig,
-                 ServoConfig throttleConfig);
+    void initFromConfig();
 
     /**
      * @brief Write control commands to the servos.

@@ -9,7 +9,6 @@
 #ifndef CONTROL_MIXER_H
 #define CONTROL_MIXER_H
 
-#include "include/ControlMixerConfiguration.h"
 #include "src/utils/CommandSystem.h"
 #include "src/utils/Logging.h"
 #include "src/controller/ArduFliteController.h"
@@ -23,6 +22,27 @@ static constexpr uint8_t CH_PITCH = 1;
 static constexpr uint8_t CH_YAW   = 3;
 
 /**
+ * @brief Cached mixer configuration values.
+ *        Loaded from ConfigRegistry, updated via observer pattern.
+ */
+struct MixerConfig {
+    // Attitude limits (degrees)
+    float maxAttRoll;
+    float maxAttPitch;
+    float maxAttYaw;
+    
+    // Rate limits (deg/s)
+    float maxRateRoll;
+    float maxRatePitch;
+    float maxRateYaw;
+    
+    // Mixing coefficients
+    float mixRollFromYaw;
+    float mixPitchFromRoll;
+    float mixYawFromRoll;
+};
+
+/**
  * @class ControlMixer
  * @brief Centralizes mode-dependent scaling + mixing.
  *
@@ -33,6 +53,9 @@ class ControlMixer {
 public:
     /// Must be called once before any mixing.
     static void init(ArduFliteController& ctrl);
+
+    /// Reload config values from ConfigRegistry (called by observer)
+    static void reloadConfig();
 
     /// Called on each channel update
     static void handleChannelInput(uint8_t ch, float v);
@@ -53,8 +76,9 @@ public:
     static void sendSetpoint(const EulerAngles &sp);
 
 private:
-    static EulerAngles            s_raw;  ///< latest raw sticks
-    static ArduFliteController*   s_ctrl; ///< your controller pointer
+    static EulerAngles            s_raw;    ///< latest raw sticks
+    static ArduFliteController*   s_ctrl;   ///< your controller pointer
+    static MixerConfig            s_config; ///< cached config values
 };
 
 

@@ -14,6 +14,7 @@
 #include "src/controller/ArduFliteRateController.h"
 #include "src/actuators/ServoManager.h"
 #include "include/ArduFlite.h"
+#include "include/ControllerTypes.h"
 
 #include <Arduino.h>
 
@@ -45,16 +46,6 @@ enum ArduFliteMode
     MANUAL_MODE,            // Pilot directly controls the servos.
     UNKNOWN_MODE,
     FLIGHT_MODE_LENGTH
-};
-
-enum ControlLoopType
-{
-    ATTITUDE_ROLL_LOOP = 0,
-    ATTITUDE_PITCH_LOOP,
-    ATTITUDE_YAW_LOOP,
-    RATE_ROLL_LOOP,
-    RATE_PITCH_LOOP,
-    RATE_YAW_LOOP
 };
 
 /**
@@ -231,6 +222,36 @@ public:
 
     LoopStats getOuterLoopStats();
     LoopStats getInnerLoopStats();
+
+    // ─────────────────────────────────────────────────────────────────
+    // Runtime Configuration Updates
+    // ─────────────────────────────────────────────────────────────────
+    
+    /**
+     * @brief Set the PID configuration for a rate (inner loop) axis.
+     * @param loop The control loop type (RATE_ROLL_LOOP, RATE_PITCH_LOOP, RATE_YAW_LOOP)
+     * @param config The PID configuration
+     */
+    void setRatePIDConfig(ControlLoopType loop, const PIDConfig& config);
+
+    /**
+     * @brief Set the PID configuration for an attitude (outer loop) axis.
+     * @param loop The control loop type (ATTITUDE_ROLL_LOOP, ATTITUDE_PITCH_LOOP, ATTITUDE_YAW_LOOP)
+     * @param config The PID configuration
+     */
+    void setAttitudePIDConfig(ControlLoopType loop, const PIDConfig& config);
+
+    /**
+     * @brief Set the rate controller output low-pass filter alpha.
+     * @param alpha Filter alpha (0.0-1.0)
+     */
+    void setRateOutputAlpha(float alpha);
+
+    /**
+     * @brief Set the attitude controller deadband.
+     * @param deadband Deadband in radians
+     */
+    void setAttitudeDeadband(float deadband);
 
 private:
     ArduFliteIMU* imu;                                      //< Pointer to the IMU instance.

@@ -18,7 +18,7 @@ class ArduFliteDebugSerialTelemetry : public ArduFliteTelemetry {
         ArduFliteDebugSerialTelemetry(float frequencyHz = 1.0f);
     
         void begin() override;
-        void publish(const TelemetryData& telemData, const ConfigData& configData)  override;
+        void publish(const TelemetryData& telemData) override;
     
     private:
         static void telemetryTask(void* pvParameters);

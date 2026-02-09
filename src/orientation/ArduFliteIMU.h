@@ -54,8 +54,23 @@
 #define FILTER_TYPE_KALMAN                  1   ///< Use a Kalman filter.
 /** @} */
 
-/// Set the filter update rate in Hz.
-#define FILTER_UPDATE_RATE_HZ               500
+/// IMU task period (ms) — single source of truth for all derived timing.
+#define IMU_UPDATE_INTERVAL_MS              2
+
+/// IMU update rate derived from the task period (Hz).
+#define IMU_UPDATE_RATE_HZ                  (1000 / IMU_UPDATE_INTERVAL_MS)
+
+/// Barometer desired update interval (ms). BMP280 conversion takes ~12 ms,
+/// so ~50 Hz is a practical maximum.
+#define BARO_UPDATE_INTERVAL_MS             20
+
+/// How many IMU ticks between barometer reads (derived, not hardcoded).
+#define BARO_DECIMATION_FACTOR              (BARO_UPDATE_INTERVAL_MS / IMU_UPDATE_INTERVAL_MS)
+
+static_assert(BARO_UPDATE_INTERVAL_MS >= IMU_UPDATE_INTERVAL_MS,
+              "Baro interval must be >= IMU interval");
+static_assert(BARO_UPDATE_INTERVAL_MS % IMU_UPDATE_INTERVAL_MS == 0,
+              "Baro interval must be an exact multiple of IMU interval");
 
 /// Choose the filter type.
 #define FILTER_TYPE                         FILTER_TYPE_MADGWICK
@@ -68,8 +83,6 @@
 
 /// I2C address for the MPU-6500 (the MPU-9250 typically shares the same I2C address).
 #define IMU_ADDRESS                         0x68
-
-#define IMU_UPDATE_INTERVAL_MS              5
  
 //==============================================================
 // Data structures and enums
@@ -174,6 +187,14 @@ public:
     ArduFliteIMU();
 
     /**
+     * @brief Initialize health monitoring thresholds from ConfigRegistry.
+     * 
+     * Should be called after ConfigRegistry::init() to load runtime configuration.
+     * Can also be called to reload config after changes.
+     */
+    void initFromConfig();
+
+    /**
     * @brief Initializes the IMU hardware and sensor fusion filter.
     *
     * Configures I2C and EEPROM, initializes the IMU with calibration data,
@@ -188,16 +209,6 @@ public:
     * @brief Starts a dedicated FreeRTOS task to periodically update the IMU.
     */
     void startTask();
-
-    /**
-    * @brief Performs a calibration routine.
-    *
-    * This method gathers raw sensor data over a fixed period, computes the average
-    * offsets, and saves these offsets to EEPROM.
-    *
-    * @return true if calibration is successful, false otherwise.
-    */
-    bool calibrate();
 
     /**
     * @brief Performs calibration of the barometer, with the current pressure as the 
@@ -298,9 +309,15 @@ public:
     bool isHealthy() const;
 
     /**
-    * @brief Suspends the IMU update task.
+    * @brief Suspends the IMU update task cooperatively.
+    *
+    * Signals the task to pause at a safe point (after releasing mutex),
+    * then waits for acknowledgment. Returns false if the task doesn't
+    * respond within the timeout.
+    *
+    * @return true if task is paused, false if timeout occurred.
     */
-    void pauseTask();
+    bool pauseTask();
 
     /**
     * @brief Resumes the IMU update task.
@@ -323,20 +340,31 @@ private:
 #endif
 
     // ─────────────────────────────────────────────────────────────
-    // Double-buffer for lock-free reads
+    // Triple-buffer for lock-free reads
     // ─────────────────────────────────────────────────────────────
-    // The IMU task writes to buffers[writeIndex], then swaps the index.
+    // The IMU task writes to the next free buffer, then publishes it.
     // Control loops read from buffers[readIndex.load()] without any lock.
-    ImuSnapshot             snapshotBuffers[2];
-    std::atomic<int>        snapshotReadIndex{0};
+    // Three buffers ensure a reader copying data can never be caught by the writer.
+    ImuSnapshot             snapshotBuffers[3];
+    std::atomic<int>        snapshotReadIndex{0};   ///< Index readers should use
+    std::atomic<int>        snapshotWriteIndex{1};  ///< Next index writer will use
 
     /**
-    * @brief Publishes current sensor data to the double-buffer.
+    * @brief Publishes current sensor data to the triple-buffer.
     * 
     * Called at the end of update() to make new data available to readers.
     * Uses atomic index swap for lock-free synchronization.
     */
     void publishSnapshot();
+    // ─────────────────────────────────────────────────────────────
+
+    // ─────────────────────────────────────────────────────────────
+    // Cooperative pause synchronization
+    // ─────────────────────────────────────────────────────────────
+    // Used to safely pause the IMU task at a point where it does NOT
+    // hold imuMutex, preventing deadlock during calibration.
+    std::atomic<bool> _pauseRequested{false};  ///< Signal from caller to pause
+    std::atomic<bool> _taskPaused{false};      ///< Acknowledgment from task
     // ─────────────────────────────────────────────────────────────
  
     ArduFliteIMUOffsets offsets;
@@ -362,19 +390,35 @@ private:
     float qz                = 0.0f;
     float altitude          = 0.0f;
 
-    float accelAlpha        = IMUConfig::ACCEL_ALPHA;
-    float gyroAlpha         = IMUConfig::GYRO_ALPHA;
-    float magAlpha          = IMUConfig::MAG_ALPHA;
-    float altiAlpha         = IMUConfig::ALTI_ALPHA;
+    // Filter coefficients — initialized by initFromConfig() from ConfigRegistry.
+    // Do NOT set defaults here; ConfigSchema.h is the single source of truth.
+    float accelAlpha        = 0.0f;   ///< Accelerometer low-pass filter alpha
+    float gyroAlpha         = 0.0f;   ///< Gyroscope low-pass filter alpha
+    float magAlpha          = 0.0f;   ///< Magnetometer low-pass filter alpha
+    float altiAlpha         = 0.0f;   ///< Altimeter low-pass filter alpha
+    float madgwickBeta      = 0.0f;   ///< Madgwick filter beta (gyro/accel trust balance)
     bool lpInitialized      = false;
+    
+    // Health monitoring thresholds — initialized by initFromConfig() from ConfigRegistry.
+    float maxAccelG         = 0.0f;   ///< Max valid accelerometer magnitude (g)
+    float maxGyroDPS        = 0.0f;   ///< Max valid gyroscope rate (deg/s)
+    uint8_t failThreshold   = 0;      ///< Consecutive failures before unhealthy
 
-    float filteredAccelX, filteredAccelY, filteredAccelZ    = 0.0f;
-    float filteredGyroX, filteredGyroY, filteredGyroZ       = 0.0f;
-    float filteredMagX, filteredMagY, filteredMagZ          = 0.0f;
+    float filteredAccelX = 0.0f;
+    float filteredAccelY = 0.0f;
+    float filteredAccelZ = 0.0f;
+    float filteredGyroX  = 0.0f;
+    float filteredGyroY  = 0.0f;
+    float filteredGyroZ  = 0.0f;
+    float filteredMagX   = 0.0f;
+    float filteredMagY   = 0.0f;
+    float filteredMagZ   = 0.0f;
     float filteredAltitude                                  = 0.0f;
     float lastFilteredAltitude                              = 0.0f;  ///< For vario calculation
     float climbRate                                         = 0.0f;  ///< Last computed vertical speed (m/s)
-    float pitch, roll, yaw                                  = 0.0f;
+    float pitch = 0.0f;
+    float roll  = 0.0f;
+    float yaw   = 0.0f;
 
     // Data structures to hold raw sensor readings.
     AccelData accelData;    //< Structure to store accelerometer data.
@@ -391,7 +435,7 @@ private:
     // ─────────────────────────────────────────────────────────────────
     // Health monitoring state
     // ─────────────────────────────────────────────────────────────────
-    bool    imuHealthy                  = true;  ///< Current health status
+    std::atomic<bool> imuHealthy{true};  ///< Current health status (atomic for lock-free reads)
     uint8_t consecutiveFailures         = 0;     ///< Count of consecutive invalid readings
 
     /**
@@ -406,6 +450,7 @@ private:
 
 #if BARO_TYPE == BARO_TYPE_BMP280
     Adafruit_BMP280 bmp280;
+    uint16_t _baroTickCounter = 0;  ///< Decimation counter for barometer reads
 #endif
 
     /**

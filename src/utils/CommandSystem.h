@@ -12,6 +12,7 @@
 #include "src/controller/ArduFliteController.h"
 #include "src/orientation/ArduFliteIMU.h"
 #include "src/receiver/crsf/ArdufliteCRSFReceiver.h"
+#include "src/telemetry/crsf/ArdufliteCRSFTelemetry.h"
 
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
@@ -29,14 +30,22 @@ enum SystemCommandType
     CMD_SET_THROTTLE_CUT,
     CMD_SET_MODE,
     CMD_SET_MISSION,
-    CMD_SET_CONFIG_PID,
-    CMD_SET_CONFIG_ATTITUDE,
-    CMD_SET_CONFIG_RATE,
-    CMD_SET_CONFIG_RATE_ALPHA,
-    CMD_RECEIVER_SETPOINT_ROLL,
-    CMD_RECEIVER_SETPOINT_PITCH,
-    CMD_RECEIVER_SETPOINT_YAW,
-    CMD_RECEIVER_SETPOINT_THROTTLE,
+    CMD_SET_SETPOINT,               // Set full roll/pitch/yaw setpoint (from mixer)
+    CMD_SET_SETPOINT_ROLL,          // Set roll setpoint (from receiver)
+    CMD_SET_SETPOINT_PITCH,         // Set pitch setpoint (from receiver)
+    CMD_SET_SETPOINT_YAW,           // Set yaw setpoint (from receiver)
+    CMD_SET_SETPOINT_THROTTLE,      // Set throttle setpoint (from receiver)
+    
+    // Config update commands (pushed by observers, processed in main loop)
+    CMD_UPDATE_RATE_ROLL_PID,
+    CMD_UPDATE_RATE_PITCH_PID,
+    CMD_UPDATE_RATE_YAW_PID,
+    CMD_UPDATE_RATE_OUT_ALPHA,
+    CMD_UPDATE_ATT_ROLL_PID,
+    CMD_UPDATE_ATT_PITCH_PID,
+    CMD_UPDATE_ATT_YAW_PID,
+    CMD_UPDATE_ATT_DEADBAND,
+    CMD_UPDATE_MIXER,
 };
 
 /**
@@ -48,12 +57,8 @@ struct SystemCommand
 
     ArduFliteMode                   mode;
 
-    // for CMD_SET_PID_CONFIG
-    ControlLoopType                 pidLoop;
-    PIDConfig                       pidConfig;
-
-    // for CMD_SET_ATTITUDE_CONFIG
-    EulerAngles                     attitudeConfig;
+    // for CMD_SET_SETPOINT* commands
+    EulerAngles                     setpoint;
 
     // for any generic value
     float                           value;
@@ -99,8 +104,11 @@ public:
      * @param controller Pointer to the ArduFliteController instance.
      * @param imu Pointer to the ArduFliteIMU instance.
      * @param receiver Pointer to the CRSF receiver for preflight checks (may be nullptr).
+     * @param crsfTelemetry Pointer to CRSF telemetry for pause during calibration (may be nullptr).
      */
-    void processCommands(ArduFliteController *controller, ArduFliteIMU *imu, ArdufliteCRSFReceiver *receiver = nullptr);
+    void processCommands(ArduFliteController *controller, ArduFliteIMU *imu, 
+                         ArdufliteCRSFReceiver *receiver = nullptr,
+                         ArdufliteCRSFTelemetry *crsfTelemetry = nullptr);
 
 private:
     QueueHandle_t commandQueue_;  ///< FreeRTOS queue handle

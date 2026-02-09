@@ -10,7 +10,6 @@
 #define ARDUFLITE_TELEMETRY_H
 
 #include "src/telemetry/TelemetryData.h"
-#include "src/telemetry/ConfigData.h"
 
 class ArduFliteTelemetry {
 public:
@@ -20,7 +19,7 @@ public:
     virtual void begin() = 0;
 
     // Called in loop() or from a separate thread, etc.
-    virtual void publish(const TelemetryData& telemData, const ConfigData& configData) = 0;
+    virtual void publish(const TelemetryData& telemData) = 0;
 
     // Allows resetting or reconfiguration
     // (default is empty if a derived class doesn't need it)

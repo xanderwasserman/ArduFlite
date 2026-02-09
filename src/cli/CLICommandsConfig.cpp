@@ -493,6 +493,86 @@ void cmdConfig(const String &args)
     }
 }
 
+/**
+ * @brief Stream live IMU telemetry to the serial console.
+ * 
+ * Continuously prints sensor data until any key is pressed.
+ * Uses screen clearing for a live dashboard view.
+ */
+void cmdStream(const String &args) 
+{
+    if (!globalIMU) 
+    {
+        LOG_ERR("IMU not set!");
+        return;
+    }
+    
+    // Parse optional frequency argument (default 1 Hz)
+    float freqHz = 1.0f;
+    if (args.length() > 0) 
+    {
+        float parsed = args.toFloat();
+        if (parsed > 0.0f && parsed <= 100.0f) 
+        {
+            freqHz = parsed;
+        }
+    }
+    unsigned long intervalMs = (unsigned long)(1000.0f / freqHz);
+    
+    LOG("Streaming telemetry at %.1f Hz. Press any key to stop...\n", freqHz);
+    vTaskDelay(pdMS_TO_TICKS(500)); // Brief pause before clearing screen
+    
+    // Drain any pending input
+    while (Serial.available()) Serial.read();
+    
+    for (;;) 
+    {
+        unsigned long startMs = millis();
+        
+        // Get current IMU snapshot
+        ImuSnapshot snap = globalIMU->getSnapshot();
+        
+        // Clear screen and move cursor to home position
+        LOG_N("\033[2J\033[H");
+        
+        // Flight state
+        const char* stateStr = snap.flightState == UNKNOWN_STATE ? "UNKNOWN" :
+                               snap.flightState == PREFLIGHT     ? "PREFLIGHT" :
+                               snap.flightState == INFLIGHT      ? "INFLIGHT" : "LANDED";
+        LOG_N("Flight State: %s\n", stateStr);
+        
+        // Altitude & climb rate
+        LOG_N("Altitude: %.2f m | Climb Rate: %.2f m/s\n", snap.altitude, snap.climbRate);
+        
+        // Raw sensor data
+        LOG_N("Accel: %.3f, %.3f, %.3f g\n", snap.accel.x, snap.accel.y, snap.accel.z);
+        LOG_N("Gyro: %.3f, %.3f, %.3f deg/s\n", snap.gyro.x, snap.gyro.y, snap.gyro.z);
+        LOG_N("Quat: %.4f, %.4f, %.4f, %.4f\n", snap.quat.w, snap.quat.x, snap.quat.y, snap.quat.z);
+        
+        // Orientation (current)
+        LOG_N("Orientation (P/R/Y): %.2f, %.2f, %.2f deg\n", 
+              snap.orientation.pitch, snap.orientation.roll, snap.orientation.yaw);
+        
+        LOG_N("\nPress any key to stop...\n\n");
+        
+        // Check for any keypress to stop
+        if (Serial.available()) 
+        {
+            while (Serial.available()) Serial.read();  // Drain buffer
+            LOG_N("\033[2J\033[H");  // Clear screen
+            LOG("Streaming stopped.");
+            return;
+        }
+        
+        // Delay for the remainder of the interval
+        unsigned long elapsed = millis() - startMs;
+        if (elapsed < intervalMs) 
+        {
+            vTaskDelay(pdMS_TO_TICKS(intervalMs - elapsed));
+        }
+    }
+}
+
 // Define the command table.
 CLICommand cliCommands[] = {
     { "help","      Show help message",                                                        cmdHelp         },
@@ -502,7 +582,8 @@ CLICommand cliCommands[] = {
     { "setmode","   Set mode; usage: setmode assist|stabilized",                               cmdSetMode      },
     { "calibrate"," Calibrate the IMU; usage: calibrate imu",                                  cmdCalibrateIMU },
     { "flash","     Flash functionalities; usage: flash list|start|stop|dump|rm|reset",        cmdFlash        },
-    { "config","    Config commands; usage: config list|get|set|save|load|defaults",           cmdConfig       }
+    { "config","    Config commands; usage: config list|get|set|save|load|defaults",           cmdConfig       },
+    { "stream","    Stream live telemetry; usage: stream [freq_hz]",                           cmdStream       }
 };
 
 const size_t numCLICommands = sizeof(cliCommands) / sizeof(cliCommands[0]);

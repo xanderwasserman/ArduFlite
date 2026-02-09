@@ -180,6 +180,14 @@ CONFIG_FLOAT(CONFIG_KEY_CRSF_TRI_HIGH, 0.66f, 0.6f, 0.9f, "TriState switch high 
 
 CONFIG_STRING(CONFIG_KEY_SYS_AIRCRAFT_NAME, "ArduFlite", "Aircraft name for telemetry");
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Web Server Configuration
+// ═══════════════════════════════════════════════════════════════════════════
+
+CONFIG_BOOL(CONFIG_KEY_WEB_ENABLED, false, "Enable WiFi AP and web server");
+CONFIG_STRING(CONFIG_KEY_WEB_AP_SSID, "ArduFlite", "WiFi AP name (SSID)");
+CONFIG_STRING(CONFIG_KEY_WEB_AP_PASS, "", "WiFi AP password (empty = open)");
+
 #endif // CONFIG_SCHEMA_IMPL
 
 #endif // CONFIG_SCHEMA_H

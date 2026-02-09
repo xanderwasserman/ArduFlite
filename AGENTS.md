@@ -76,6 +76,18 @@ ArduFlite follows a strict layered architecture. Respect these boundaries:
    - Uses `CommandSystem` to send thread-safe commands to other modules
    - **Never** directly modify controller state — always go through the command queue
 
+7. **Web Layer** (`src/web/`)
+   - **WiFiManager**: Singleton for WiFi Access Point management
+   - **ArduFliteWebServer**: REST API for configuration (GET/PUT params, export/import JSON)
+   - **WebUI.h**: Embedded responsive HTML/CSS/JS frontend in PROGMEM
+   - Enabled via `web.enabled` config key; creates AP with configurable SSID/password
+   - REST endpoints: `/api/config`, `/api/system/status`, `/api/flash`
+   - Runs in its own FreeRTOS task at priority 1 (lowest, non-blocking)
+   - **Compile-time toggle**: `ENABLE_WEB_SERVER` in `include/WebConfiguration.h`
+     - Full build: `./build.sh lolin` (~1.3MB, includes WiFi/HTTP stack)
+     - Lite build: `./build.sh lolin lite` (~800KB, flight-only, no WiFi)
+     - WiFi/TCP/HTTP libraries add ~500KB; lite build excludes them entirely
+
 ### Dependency Rules
 - **Higher layers can depend on lower layers, but NOT vice versa**
 - Controllers depend on IMU/ServoManager, but IMU/ServoManager are independent
@@ -103,7 +115,8 @@ ArduFlite/
 │   ├── PinConfiguration.h            # Pin assignments (compile-time)
 │   ├── ReceiverConfiguration.h       # Receiver type and failsafe config
 │   ├── IMUConfiguration.h            # IMU/Baro type selection macros only
-│   └── MissionConfiguration.h        # Mission planner parameters
+│   ├── MissionConfiguration.h        # Mission planner parameters
+│   └── WebConfiguration.h            # ENABLE_WEB_SERVER compile-time flag
 │
 ├── src/
 │   ├── controller/                   # Cascade PID control system
@@ -132,6 +145,11 @@ ArduFlite/
 │   ├── cli/                          # Command-line interface
 │   │   ├── ArduFliteCLI.*            # CLI task and command router
 │   │   └── CLICommands*.*            # Command implementations
+│   │
+│   ├── web/                          # Web configuration interface
+│   │   ├── WiFiManager.*             # WiFi Access Point singleton
+│   │   ├── ArduFliteWebServer.*      # REST API and web server
+│   │   └── WebUI.h                   # Embedded HTML/CSS/JS in PROGMEM
 │   │
 │   ├── mission_planner/              # Autonomous mission execution
 │   │   └── MissionPlanner.*          # Future: waypoint navigation

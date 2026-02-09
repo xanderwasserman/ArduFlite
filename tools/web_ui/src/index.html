@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>ArduFlite</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>ArduFlite</h1>
+        </div>
+        <div class="header-actions">
+            <button id="btn-reboot-now" class="btn-secondary" title="Reboot ESP32">⟳ Reboot</button>
+            <button id="btn-reboot" class="btn-reboot hidden">Apply & Reboot</button>
+        </div>
+    </header>
+
+    <section id="dashboard">
+        <div class="dash-card">
+            <span class="dash-label">Roll</span>
+            <span id="dash-roll" class="dash-value">—</span>
+        </div>
+        <div class="dash-card">
+            <span class="dash-label">Pitch</span>
+            <span id="dash-pitch" class="dash-value">—</span>
+        </div>
+        <div class="dash-card">
+            <span class="dash-label">Yaw</span>
+            <span id="dash-yaw" class="dash-value">—</span>
+        </div>
+        <div class="dash-card">
+            <span class="dash-label">Alt</span>
+            <span id="dash-alt" class="dash-value">—</span>
+        </div>
+        <div class="dash-card status">
+            <span id="dash-mode" class="dash-mode">—</span>
+            <span id="dash-armed" class="dash-armed">—</span>
+        </div>
+    </section>
+    
+    <nav id="tabs">
+        <button class="tab active" data-pattern="rate.*">Rate</button>
+        <button class="tab" data-pattern="att.*">Attitude</button>
+        <button class="tab" data-pattern="mix.*">Mixer</button>
+        <button class="tab" data-pattern="servo.*">Servos</button>
+        <button class="tab" data-pattern="imu.*">IMU</button>
+        <button class="tab" data-pattern="failsafe.*">Failsafe</button>
+        <button class="tab" data-pattern="crsf.*">CRSF</button>
+        <button class="tab" data-pattern="web.*">Web</button>
+        <button class="tab" data-pattern="sys.*">System</button>
+        <button class="tab" data-pattern="__other__">Other</button>
+        <button class="tab" data-pattern="__logs__">Logs</button>
+        <button class="tab" data-pattern="__backup__">Backup</button>
+    </nav>
+
+    <div id="toolbar">
+        <input type="text" id="search" placeholder="Filter...">
+        <button id="btn-calibrate" class="btn-secondary">Calibrate IMU</button>
+    </div>
+    
+    <main id="config-container">
+        <div id="loading">Loading...</div>
+    </main>
+
+    <section id="logs-container" class="hidden">
+        <div class="logs-header">
+            <h2>Flight Logs</h2>
+            <span id="logs-space"></span>
+        </div>
+        <div id="logs-list"></div>
+    </section>
+
+    <section id="backup-container" class="hidden">
+        <div class="backup-section">
+            <h2>Export Configuration</h2>
+            <p>Download all configuration parameters as a JSON file.</p>
+            <button id="btn-export" class="btn-primary">⬇ Export Config</button>
+        </div>
+        <div class="backup-section">
+            <h2>Import Configuration</h2>
+            <p>Load configuration from a previously exported JSON file.</p>
+            <input type="file" id="file-import" accept=".json" hidden>
+            <button id="btn-import" class="btn-secondary">⬆ Import Config</button>
+        </div>
+        <div class="backup-section">
+            <h2>Factory Reset</h2>
+            <p>Reset all parameters to factory defaults. This cannot be undone.</p>
+            <button id="btn-factory-reset" class="btn-danger">Reset to Defaults</button>
+        </div>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <div id="modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <h3 id="modal-title"></h3>
+            <p id="modal-message"></p>
+            <div class="modal-actions">
+                <button id="modal-cancel" class="btn-secondary">Cancel</button>
+                <button id="modal-confirm" class="btn-primary">Confirm</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/app.js"></script>
+</body>
+</html>

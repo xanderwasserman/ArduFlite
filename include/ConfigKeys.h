@@ -174,6 +174,14 @@
 #define CONFIG_KEY_SYS_ALL              "sys.*"
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Web Server Configuration
+// ═══════════════════════════════════════════════════════════════════════════
+#define CONFIG_KEY_WEB_ENABLED          "web.enabled"
+#define CONFIG_KEY_WEB_AP_SSID          "web.ap_ssid"
+#define CONFIG_KEY_WEB_AP_PASS          "web.ap_pass"
+#define CONFIG_KEY_WEB_ALL              "web.*"
+
+// ═══════════════════════════════════════════════════════════════════════════
 // All Configuration (root wildcard)
 // ═══════════════════════════════════════════════════════════════════════════
 #define CONFIG_KEY_ALL                  "*"

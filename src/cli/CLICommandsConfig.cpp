@@ -73,7 +73,8 @@ void cmdStats(const String &args)
 
 void cmdTasks(const String &args) 
 {
-    char taskListBuffer[512];
+    // Buffer sized for ~30 tasks * 64 chars each = ~2KB
+    static char taskListBuffer[2048];
     vTaskList(taskListBuffer);
     LOG("Task List:");
     LOG("%s", taskListBuffer);

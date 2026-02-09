@@ -60,6 +60,12 @@
 
 #include "src/receiver/crsf/ArdufliteCRSFReceiver.h"
 
+#include "include/WebConfiguration.h"
+#if ENABLE_WEB_SERVER
+#include "src/web/WiFiManager.h"
+#include "src/web/ArduFliteWebServer.h"
+#endif
+
 #include "src/tests/AttitudeTests.h"
 
 #include <Arduino.h>
@@ -176,6 +182,24 @@ void arduflite_init()
     ConfigTask::start();
     ConfigObservers::registerAll();
     LOG_INF("Configuration system initialized.");
+
+    // ─────────────────────────────────────────────────────────────────
+    // Initialize Web Configuration Server (if enabled at compile & runtime)
+    // ─────────────────────────────────────────────────────────────────
+#if ENABLE_WEB_SERVER
+    if (ConfigRegistry::instance().get<bool>(CONFIG_KEY_WEB_ENABLED)) {
+        if (WiFiManager::instance().begin()) {
+            LOG_INF("WiFi AP started: %s", WiFiManager::instance().getSSID().c_str());
+            ArduFliteWebServer::instance().begin(&controller, &myIMU, &flashTelemetry);
+            LOG_INF("Web server started at http://%s", 
+                    WiFiManager::instance().getIP().toString().c_str());
+        } else {
+            LOG_ERR("WiFi AP failed to start!");
+        }
+    }
+#else
+    LOG_INF("Web server disabled at compile-time (ENABLE_WEB_SERVER=0)");
+#endif
 
     // Initialize controllers and servos from ConfigRegistry (must be after config load)
     attitudeController.initFromConfig();

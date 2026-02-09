@@ -70,6 +70,30 @@ ArduFlite is a highly modular and real-time flight control framework designed fo
   - `config list`, `config get <key>`, `config set <key> <value>`.  
   - All changes take effect immediately (hot-reload) and persist automatically.
   - See [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) for full parameter documentation and tuning guide.
+
+### 7. Web Configuration Interface
+
+- **WiFi Access Point**  
+  - ArduFlite can create its own WiFi hotspot for configuration.  
+  - Enable via `config set web.enabled true` (requires reboot).  
+  - Customizable SSID and password via `web.ap_ssid` and `web.ap_pass` keys.  
+- **Responsive Web UI**  
+  - Mobile-friendly interface accessible at `http://192.168.4.1`.  
+  - Tabbed navigation: Rate, Attitude, Mixer, Servo, IMU, Failsafe, All.  
+  - Real-time display of controller status (mode, armed state, heap usage).  
+- **REST API Endpoints**  
+  - `GET /api/config` — List all parameters with optional pattern filter.  
+  - `GET/PUT /api/config/:key` — Read or modify individual parameters.  
+  - `GET /api/config/export` — Export full config as JSON file.  
+  - `POST /api/config/import` — Import JSON configuration.  
+  - `GET /api/system/status` — Controller state, uptime, memory.  
+  - `GET /api/flash` — List flight logs.  
+  - `GET/DELETE /api/flash/:file` — Download or delete log files.  
+- **Use Cases**  
+  - Field tuning without a laptop (use phone/tablet).  
+  - Bulk config changes via JSON import.  
+  - Download flight logs wirelessly.
+
 ## Architecture
 
 ArduFlite employs a cascade control structure:

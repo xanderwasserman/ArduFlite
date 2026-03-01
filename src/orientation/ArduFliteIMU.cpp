@@ -475,8 +475,8 @@ void ArduFliteIMU::update(float dt)
         pitch = filter.getPitch();
         yaw = filter.getYaw();
 
-        // Update flight state based on the sensor data.
-        updateFlightState();
+        // Update motion signals (throw/stable detection) based on the sensor data.
+        updateMotionSignals();
     }
 
     // Publish to double-buffer for lock-free reads by control loops
@@ -820,89 +820,92 @@ void ArduFliteIMU::applyLowPassFilters()
 }
 
 /**
- * @brief Updates the flight state based on current sensor values.
+ * @brief Computes debounced motion signals from filtered sensor data.
+ *
+ * The IMU  only produces launchDetected / stableDetected boolean signals. 
+ * FlightState transitions are the sole responsibility of StateManagement, 
+ * which reads these signals each loop tick via getMotionSignals().
+ *
+ * Both signals run independent debounce timers so StateManagement can apply
+ * whatever transition logic it needs without the IMU knowing about FlightState.
  */
- void ArduFliteIMU::updateFlightState()
- {
-    // Calculate the magnitude of the low-pass filtered acceleration.
-    float a_mag = sqrt(filteredAccelX * filteredAccelX +
-                       filteredAccelY * filteredAccelY +
-                       filteredAccelZ * filteredAccelZ);
-    // Calculate the magnitude of the low-pass filtered gyro.
-    float g_mag = sqrt(filteredGyroX * filteredGyroX +
-                       filteredGyroY * filteredGyroY +
-                       filteredGyroZ * filteredGyroZ);
+void ArduFliteIMU::updateMotionSignals()
+{
+    // Compute filtered vector magnitudes.
+    float a_mag = sqrtf(filteredAccelX * filteredAccelX +
+                        filteredAccelY * filteredAccelY +
+                        filteredAccelZ * filteredAccelZ);
+    float g_mag = sqrtf(filteredGyroX * filteredGyroX +
+                        filteredGyroY * filteredGyroY +
+                        filteredGyroZ * filteredGyroZ);
 
-     unsigned long now = millis();
- 
-     // 2) thresholds & timing
-     const float ACC_MOV_THR      = 1.0f;   // >g translation
-     const float GYRO_THROW_MAX   = 120.0f;  // <deg/s rotation during throw
-     const float GYRO_STABLE_THR  = 2.0f;   // <deg/s considered “steady”
-     const unsigned long DEBOUNCE  = 50;    // ms of continuous throw-like motion
-     const unsigned long STABLE_MS = 2000;  // ms to declare landed
- 
-     switch (flightState)
-     {
-       case PREFLIGHT:
-         // detect a “throw” = strong accel spike + low rotation
-         if ( fabsf(a_mag - 1.0f) >  ACC_MOV_THR && g_mag < GYRO_THROW_MAX )
-         {
-             if ( now - motionStartTime > DEBOUNCE )
-             {
-                 flightState = INFLIGHT;
-                 flightStableStartTime = now;
-             }
-         }
-         else 
-         {
-             motionStartTime = now;
-         }
-         break;
- 
-       case INFLIGHT:
-         // only land if *both* very steady *and* no altitude change
-         if ( fabsf(a_mag - 1.0f) < ACC_MOV_THR && g_mag < GYRO_STABLE_THR)
-         {
-             if ( now - flightStableStartTime >= STABLE_MS )
-                 flightState = LANDED;
-         }
-         else
-         {
-             flightStableStartTime = now;
-         }
-         break;
- 
-       case LANDED:
-         // same “throw” test if you pick it up again
-         if ( fabsf(a_mag - 1.0f) >  ACC_MOV_THR && g_mag < GYRO_THROW_MAX )
-         {
-             if ( now - motionStartTime > DEBOUNCE )
-             {
-                 flightState = INFLIGHT;
-                 flightStableStartTime = now;
-             }
-         }
-         else
-         {
-             motionStartTime = now;
-         }
-         break;
- 
-       default:
-         flightState = PREFLIGHT;
-         break;
-     }
- } 
+    unsigned long now = millis();
+
+    // Detection thresholds.
+    constexpr float         ACC_MOV_THR     = 0.5f;   ///< g deviation above gravity to detect motion
+    constexpr float         GYRO_THROW_MAX  = 120.0f; ///< deg/s must be below this during a throw
+    constexpr float         GYRO_STABLE_THR = 2.0f;   ///< deg/s below this is considered "steady"
+    constexpr unsigned long DEBOUNCE        = 50;     ///< ms motion must sustain to trigger launchDetected
+    constexpr unsigned long STABLE_MS       = 2000;   ///< ms stability must sustain to trigger stableDetected
+
+    // Throw detection: sustained high-g, low-rotation condition.
+    if (fabsf(a_mag - 1.0f) > ACC_MOV_THR && g_mag < GYRO_THROW_MAX)
+    {
+        _launchDetected = (now - motionStartTime > DEBOUNCE);
+    }
+    else
+    {
+        motionStartTime = now;  // Reset timer while condition is not met
+        _launchDetected  = false;
+    }
+
+    // Stability detection: sustained near-1g, low-rotation condition (on the ground).
+    if (fabsf(a_mag - 1.0f) < ACC_MOV_THR && g_mag < GYRO_STABLE_THR)
+    {
+        _stableDetected = (now - flightStableStartTime >= STABLE_MS);
+    }
+    else
+    {
+        flightStableStartTime = now;  // Reset timer while condition is not met
+        _stableDetected       = false;
+    }
+}
+
+/**
+ * @brief Updates the display flight state stored in the snapshot.
+ *
+ * Called by StateManagement after each FlightState transition so that
+ * telemetry and the CLI stream command continue to show the correct state.
+ * Thread-safe: writes to an internal atomic variable picked up by publishSnapshot().
+ *
+ * @param state New FlightState to report.
+ */
+void ArduFliteIMU::setFlightState(FlightState state)
+{
+    _flightState.store(static_cast<int>(state), std::memory_order_release);
+}
+
+/**
+ * @brief Returns the latest debounced motion signals.
+ *
+ * Lock-free read from the triple-buffer snapshot. Called by StateManagement
+ * each loop tick to decide FlightState transitions.
+ *
+ * @return MotionSignals containing launchDetected and stableDetected.
+ */
+MotionSignals ArduFliteIMU::getMotionSignals() const
+{
+    return snapshotBuffers[snapshotReadIndex.load(std::memory_order_acquire)].motion;
+}
 
 /**
  * @brief Retrieves the current flight state.
- * 
- * Lock-free read from the double-buffer snapshot.
- * 
+ *
+ * Lock-free read from the triple-buffer snapshot.
+ *
  * @return The flight state (PREFLIGHT, INFLIGHT, or LANDED).
  */
-FlightState ArduFliteIMU::getFlightState() const 
+FlightState ArduFliteIMU::getFlightState() const
 {
     return snapshotBuffers[snapshotReadIndex.load(std::memory_order_acquire)].flightState;
 }
@@ -1122,7 +1125,9 @@ void ArduFliteIMU::publishSnapshot()
     
     snap.altitude = filteredAltitude;
     snap.climbRate = climbRate;
-    snap.flightState = flightState;
+    snap.flightState = static_cast<FlightState>(_flightState.load(std::memory_order_acquire));
+    snap.motion.launchDetected  = _launchDetected;
+    snap.motion.stableDetected = _stableDetected;
     snap.timestampUs = micros();
     
     // Triple-buffer swap:

@@ -571,9 +571,6 @@ void ArduFliteWebServer::handleCalibrate()
 
 void ArduFliteWebServer::handleFlashList()
 {
-    JsonDocument doc;
-    JsonArray arr = doc.to<JsonArray>();
-
     // List files in LittleFS
     if (!LittleFS.begin(false))
     {
@@ -588,17 +585,32 @@ void ArduFliteWebServer::handleFlashList()
         return;
     }
 
+    JsonDocument doc;
+    JsonArray arr = doc["files"].to<JsonArray>();
+
     File file = root.openNextFile();
     while (file)
     {
-        if (!file.isDirectory() && String(file.name()).startsWith("log_"))
+        if (!file.isDirectory())
         {
-            JsonObject obj = arr.add<JsonObject>();
-            obj["name"] = String(file.name());
-            obj["size"] = file.size();
+            // LittleFS returns names with a leading '/' — strip it before comparing.
+            String name = String(file.name());
+            if (name.startsWith("/")) name = name.substring(1);
+
+            if (name.startsWith("log_"))
+            {
+                JsonObject obj = arr.add<JsonObject>();
+                obj["name"] = name;
+                obj["size"] = file.size();
+            }
         }
         file = root.openNextFile();
     }
+    root.close();
+
+    // Include filesystem usage so the UI can show a space indicator.
+    doc["used"]  = LittleFS.usedBytes();
+    doc["total"] = LittleFS.totalBytes();
 
     String response;
     serializeJson(doc, response);

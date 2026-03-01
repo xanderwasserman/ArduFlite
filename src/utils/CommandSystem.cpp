@@ -12,8 +12,10 @@
 #include "src/utils/ConfigHelpers.h"
 #include "src/utils/ControlMixer.h"
 #include "include/ConfigKeys.h"
+#include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
 
-extern MissionPlanner mission;
+extern MissionPlanner           mission;
+extern ArduFliteFlashTelemetry  flashTelemetry;
 
 CommandSystem& CommandSystem::instance() 
 {
@@ -165,6 +167,12 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
                         if (!armed)
                         {
                             LOG_ERR("ARM REJECTED - preflight checks failed!");
+                        }
+                        else
+                        {
+                            // Start flash logging immediately on arm so the
+                            // entire launch sequence is captured.
+                            flashTelemetry.startLogging();
                         }
                     }
                     else

@@ -50,33 +50,74 @@ void handleModeState()
     }
 }
 
+/**
+ * @brief Owns the FlightState machine, applying an arm guard on INFLIGHT transitions.
+ *
+ * Reads debounced motion signals from the IMU each loop tick and applies state
+ * transitions. The IMU no longer owns FlightState; it only produces signals.
+ *
+ * Transitions:
+ *   PREFLIGHT / LANDED → INFLIGHT  : launchDetected AND controller.isArmed()
+ *   INFLIGHT           → LANDED    : stableDetected (stopLogging called here)
+ *
+ * startLogging() is called by CommandSystem on ARM so telemetry captures
+ * the entire flight including any ground taxi / hand-launch wind-up.
+ */
 void handleFlightState()
 {
-    // Retrieve the current flight state from the IMU.
-    static FlightState lastState = UNKNOWN_STATE;
-    FlightState currentState = myIMU.getFlightState();
+    static FlightState currentState = PREFLIGHT;
 
-    // Print transitions when they occur.
-    if (currentState != lastState) 
+    MotionSignals motion = myIMU.getMotionSignals();
+    FlightState   newState = currentState;
+
+    switch (currentState)
     {
-        switch (currentState) 
+        case PREFLIGHT:
+        case LANDED:
+            if (motion.launchDetected)
+            {
+                if (controller.isArmed())
+                {
+                    newState = INFLIGHT;
+                }
+                else
+                {
+                    LOG_WARN("Throw detected but aircraft is NOT armed — ignoring.");
+                }
+            }
+            break;
+
+        case INFLIGHT:
+            if (motion.stableDetected)
+            {
+                newState = LANDED;
+            }
+            break;
+
+        default:
+            newState = PREFLIGHT;
+            break;
+    }
+
+    if (newState != currentState)
+    {
+        currentState = newState;
+        myIMU.setFlightState(currentState);
+
+        switch (currentState)
         {
             case PREFLIGHT:
-                LOG_INF("Aircraft is in PREFLIGHT state.");;
+                LOG_INF("Aircraft is in PREFLIGHT state.");
                 break;
             case INFLIGHT:
                 LOG_INF("Aircraft is in FLIGHT state.");
-                flashTelemetry.startLogging();
-                
                 break;
             case LANDED:
                 LOG_INF("Aircraft has LANDED.");
-
                 flashTelemetry.stopLogging();
                 break;
             default:
                 break;
         }
-        lastState = currentState;
     }
 }

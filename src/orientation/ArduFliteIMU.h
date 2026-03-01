@@ -117,6 +117,18 @@ struct EulerAngles {
 };
 
 /**
+* @brief Debounced motion event signals derived from filtered sensor data.
+*
+* Computed by the IMU task at 500 Hz and consumed by StateManagement to drive
+* FlightState transitions. The IMU does NOT own FlightState — it only provides
+* the raw signal inputs for the state machine in StateManagement.
+*/
+struct MotionSignals {
+    bool launchDetected;    ///< True when sustained high-g, low-rotation motion is detected (launch)
+    bool stableDetected;   ///< True when sustained near-1g, low-rotation condition is detected (landed)
+};
+
+/**
 * @brief Lock-free snapshot of all IMU sensor data.
 * 
 * Used for double-buffering to eliminate mutex contention between
@@ -130,7 +142,8 @@ struct ImuSnapshot {
     EulerAngles     orientation;    ///< Euler angles (degrees)
     float           altitude;       ///< Barometric altitude (m)
     float           climbRate;      ///< Vertical speed (m/s)
-    FlightState     flightState;    ///< Current flight state
+    FlightState     flightState;    ///< Display state — owned by StateManagement, written back via setFlightState()
+    MotionSignals   motion;         ///< Debounced motion signals from IMU sensor layer
     uint32_t        timestampUs;    ///< Timestamp when snapshot was captured
 };
 
@@ -283,6 +296,27 @@ public:
     FlightState getFlightState() const;
 
     /**
+     * @brief Returns the latest debounced motion signals.
+     *
+     * Read by StateManagement each loop tick to drive FlightState transitions.
+     * Lock-free read from the triple-buffer snapshot.
+     *
+     * @return MotionSignals with launchDetected and stableDetected flags.
+     */
+    MotionSignals getMotionSignals() const;
+
+    /**
+     * @brief Updates the display flight state in the snapshot.
+     *
+     * Called by StateManagement after each FlightState transition so that
+     * telemetry and the stream CLI command reflect the current state.
+     * Thread-safe: uses an atomic internal variable.
+     *
+     * @param state The new FlightState to report.
+     */
+    void setFlightState(FlightState state);
+
+    /**
     * @brief Retrieves the current estimated altitude in meters.
     * @return Altitude in meters.
     */
@@ -427,10 +461,17 @@ private:
 
     SemaphoreHandle_t imuMutex;
 
-    // Flight state
-    FlightState flightState             = PREFLIGHT;
-    unsigned long flightStableStartTime = 0;
-    unsigned long motionStartTime       = 0;
+    // Motion detection signals — written by updateMotionSignals() (inside imuMutex),
+    // published to the snapshot by publishSnapshot(), and consumed lock-free by StateManagement.
+    bool _launchDetected  = false;  ///< True when sustained throw/launch motion detected
+    bool _stableDetected = false;  ///< True when sustained stable (landed) condition detected
+    unsigned long flightStableStartTime = 0;  ///< Timer for stability debounce
+    unsigned long motionStartTime       = 0;  ///< Timer for throw debounce
+
+    // Flight state for telemetry snapshot only.
+    // Owned by StateManagement; written back here via setFlightState() so
+    // telemetry and CLI stream continue to display the correct state.
+    std::atomic<int> _flightState{PREFLIGHT};
 
     // ─────────────────────────────────────────────────────────────────
     // Health monitoring state
@@ -513,9 +554,13 @@ private:
     void applyLowPassFilters();
 
     /**
-    * @brief Updates the flight state based on filtered sensor data.
-    */
-    void updateFlightState();
+     * @brief Computes debounced motion signals from filtered sensor data.
+     *
+     * Replaces the old updateFlightState() — the IMU now only produces
+     * launchDetected / stableDetected signals. FlightState transitions are
+     * the responsibility of StateManagement.
+     */
+    void updateMotionSignals();
 };
 
 #endif // ARDU_FLITE_IMU_H

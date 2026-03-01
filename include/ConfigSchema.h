@@ -36,9 +36,9 @@ CONFIG_FLOAT(CONFIG_KEY_RATE_ROLL_HEADROOM, 0.80f,  0.5f,   1.0f,   "Roll rate a
 CONFIG_FLOAT(CONFIG_KEY_RATE_ROLL_ALPHA,    0.10f,  0.01f,  1.0f,   "Roll rate D filter alpha");
 
 // Pitch
-CONFIG_FLOAT(CONFIG_KEY_RATE_PITCH_KP,       0.06f,  0.0f,   1.0f,   "Pitch rate P gain");
+CONFIG_FLOAT(CONFIG_KEY_RATE_PITCH_KP,       0.04f,  0.0f,   1.0f,   "Pitch rate P gain");
 CONFIG_FLOAT(CONFIG_KEY_RATE_PITCH_TI,       5.00f,  0.0f,   10.0f,  "Pitch rate I time constant (s)");
-CONFIG_FLOAT(CONFIG_KEY_RATE_PITCH_TD,       0.70f,  0.0f,   1.0f,   "Pitch rate D time constant (s)");
+CONFIG_FLOAT(CONFIG_KEY_RATE_PITCH_TD,       0.45f,  0.0f,   1.0f,   "Pitch rate D time constant (s)");
 CONFIG_FLOAT(CONFIG_KEY_RATE_PITCH_OUTLIMIT, 1.00f,  0.1f,   1.0f,   "Pitch rate output limit");
 CONFIG_FLOAT(CONFIG_KEY_RATE_PITCH_HEADROOM, 0.80f,  0.5f,   1.0f,   "Pitch rate anti-windup headroom");
 CONFIG_FLOAT(CONFIG_KEY_RATE_PITCH_ALPHA,    0.10f,  0.01f,  1.0f,   "Pitch rate D filter alpha");
@@ -89,14 +89,14 @@ CONFIG_FLOAT(CONFIG_KEY_ATT_DEADBAND, 0.0001f, 0.0f, 0.01f, "Attitude error dead
 // Mixer Configuration
 // ═══════════════════════════════════════════════════════════════════════════
 
-CONFIG_FLOAT(CONFIG_KEY_MIX_MAX_ATT_ROLL,    45.0f,  10.0f, 90.0f,  "Max roll angle in attitude mode (deg)");
-CONFIG_FLOAT(CONFIG_KEY_MIX_MAX_ATT_PITCH,   45.0f,  10.0f, 90.0f,  "Max pitch angle in attitude mode (deg)");
+CONFIG_FLOAT(CONFIG_KEY_MIX_MAX_ATT_ROLL,    55.0f,  10.0f, 90.0f,  "Max roll angle in attitude mode (deg)");
+CONFIG_FLOAT(CONFIG_KEY_MIX_MAX_ATT_PITCH,   50.0f,  10.0f, 90.0f,  "Max pitch angle in attitude mode (deg)");
 CONFIG_FLOAT(CONFIG_KEY_MIX_MAX_ATT_YAW,     180.0f, 45.0f, 360.0f, "Max yaw heading offset (deg)");
 CONFIG_FLOAT(CONFIG_KEY_MIX_MAX_RATE_ROLL,   90.0f,  30.0f, 360.0f, "Max roll rate in rate mode (deg/s)");
 CONFIG_FLOAT(CONFIG_KEY_MIX_MAX_RATE_PITCH,  60.0f,  30.0f, 360.0f, "Max pitch rate in rate mode (deg/s)");
 CONFIG_FLOAT(CONFIG_KEY_MIX_MAX_RATE_YAW,    60.0f,  30.0f, 360.0f, "Max yaw rate in rate mode (deg/s)");
 CONFIG_FLOAT(CONFIG_KEY_MIX_ROLL_FROM_YAW,   0.00f,  0.0f,  0.5f,   "SAFE yaw->roll mixing coefficient");
-CONFIG_FLOAT(CONFIG_KEY_MIX_PITCH_FROM_ROLL, 0.05f,  0.0f,  0.5f,   "SAFE roll->pitch mixing coefficient");
+CONFIG_FLOAT(CONFIG_KEY_MIX_PITCH_FROM_ROLL, 0.08f,  0.0f,  0.5f,   "SAFE roll->pitch mixing coefficient");
 CONFIG_FLOAT(CONFIG_KEY_MIX_YAW_FROM_ROLL,   0.10f,  0.0f,  0.5f,   "SAFE roll->yaw mixing coefficient");
 
 // ═══════════════════════════════════════════════════════════════════════════

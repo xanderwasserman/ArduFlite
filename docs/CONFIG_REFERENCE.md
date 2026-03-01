@@ -52,9 +52,9 @@ The rate controller runs at ~500 Hz and converts angular rate errors (deg/s) int
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `rate.pitch.kp` | 0.06 | 0.0 - 1.0 | Proportional gain |
+| `rate.pitch.kp` | 0.04 | 0.0 - 1.0 | Proportional gain |
 | `rate.pitch.ti` | 5.00 | 0.0 - 10.0 | Integral time constant (seconds) |
-| `rate.pitch.td` | 0.70 | 0.0 - 1.0 | Derivative time constant (seconds) |
+| `rate.pitch.td` | 0.45 | 0.0 - 1.0 | Derivative time constant (seconds) |
 | `rate.pitch.outlimit` | 1.00 | 0.1 - 1.0 | Output limit (normalized) |
 | `rate.pitch.headroom` | 0.80 | 0.5 - 1.0 | Anti-windup headroom factor |
 | `rate.pitch.alpha` | 0.10 | 0.01 - 1.0 | Derivative low-pass filter coefficient |
@@ -160,8 +160,8 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `mix.max.att.roll` | 45.0 | 10.0 - 90.0 | Max roll angle (degrees) |
-| `mix.max.att.pitch` | 45.0 | 10.0 - 90.0 | Max pitch angle (degrees) |
+| `mix.max.att.roll` | 55.0 | 10.0 - 90.0 | Max roll angle (degrees) |
+| `mix.max.att.pitch` | 50.0 | 10.0 - 90.0 | Max pitch angle (degrees) |
 | `mix.max.att.yaw` | 180.0 | 45.0 - 360.0 | Max yaw heading offset (degrees) |
 
 **Tuning Notes:**
@@ -187,7 +187,7 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
 | `mix.roll.from.yaw` | 0.00 | 0.0 - 0.5 | Yaw input adds roll |
-| `mix.pitch.from.roll` | 0.05 | 0.0 - 0.5 | Roll input adds pitch (prevents nose drop in turns) |
+| `mix.pitch.from.roll` | 0.08 | 0.0 - 0.5 | Roll input adds pitch (prevents nose drop in turns) |
 | `mix.yaw.from.roll` | 0.10 | 0.0 - 0.5 | Roll input adds yaw (coordinated turn) |
 
 **Tuning Notes:**

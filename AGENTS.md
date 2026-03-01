@@ -173,6 +173,10 @@ ArduFlite/
 │       ├── StatusLED.*               # Visual feedback patterns
 │       └── Button*.*                 # Input handling (hold, multi-tap)
 │
+├── docs/                             # Project documentation
+│   ├── CONFIG_REFERENCE.md           # Runtime parameter reference
+│   └── flight_logs/                  # Chronological flight test records (FL001, FL002, ...)
+│
 ├── tools/                            # Ground station and analysis scripts
 │   ├── data_analysis/                # Python: flight data analysis
 │   ├── visualisation/                # Python: 3D attitude visualization

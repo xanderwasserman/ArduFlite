@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ArduFlite Log Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --bg-card: #1e293b;
+            --bg-input: #334155;
+            --text: #f1f5f9;
+            --text-dim: #94a3b8;
+            --accent: #3b82f6;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --border: #475569;
+            --radius: 8px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { height: 100%; overflow: hidden; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 13px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Header ── */
+        header {
+            display: flex;
+            align-items: center;
+            gap: .75rem;
+            padding: .5rem 1rem;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        header h1 { font-size: 1rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
+
+        #drop-zone {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            padding: .375rem .85rem;
+            border: 1.5px dashed var(--border);
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: all .15s;
+            color: var(--text-dim);
+            font-size: .8rem;
+            white-space: nowrap;
+        }
+        #drop-zone:hover, #drop-zone.drag-over {
+            border-color: var(--accent);
+            color: var(--text);
+            background: rgba(59,130,246,.08);
+        }
+        #drop-zone.has-file {
+            border-color: var(--success);
+            color: var(--success);
+            border-style: solid;
+            background: rgba(34,197,94,.08);
+        }
+
+        .preset-group { display: flex; gap: .375rem; flex-wrap: wrap; }
+        .btn-preset {
+            padding: .35rem .75rem;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-dim);
+            font-size: .75rem;
+            cursor: pointer;
+            transition: all .15s;
+        }
+        .btn-preset:hover { border-color: var(--accent); color: var(--text); }
+        .btn-preset.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+        .header-actions { margin-left: auto; display: flex; gap: .5rem; align-items: center; }
+        .btn-sm {
+            padding: .35rem .7rem;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-dim);
+            font-size: .75rem;
+            cursor: pointer;
+            transition: all .15s;
+            white-space: nowrap;
+        }
+        .btn-sm:hover { border-color: var(--accent); color: var(--text); }
+
+        /* ── Stats bar ── */
+        #stats-bar {
+            display: flex;
+            gap: 1.25rem;
+            padding: .3rem 1rem;
+            background: #0d1929;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            overflow-x: auto;
+            min-height: 29px;
+            align-items: center;
+        }
+        #stats-bar::-webkit-scrollbar { height: 3px; }
+        .stat-item { display: flex; align-items: center; gap: .3rem; white-space: nowrap; font-size: .7rem; }
+        .stat-swatch { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+        .stat-name { color: var(--text-dim); }
+        .stat-sep  { color: var(--border); font-size: .65rem; }
+        .stat-kv   { color: var(--text); font-variant-numeric: tabular-nums; }
+        .stat-k    { color: var(--text-dim); margin-right: 1px; }
+
+        /* ── App body ── */
+        .app-body { display: flex; flex: 1; overflow: hidden; }
+
+        /* ── Sidebar ── */
+        aside {
+            width: 200px;
+            flex-shrink: 0;
+            background: var(--bg-card);
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
+            padding: .4rem;
+        }
+        aside::-webkit-scrollbar { width: 4px; }
+        .group-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: .3rem .5rem;
+            font-size: .65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            color: var(--text-dim);
+            cursor: pointer;
+            border-radius: 4px;
+            margin-top: .2rem;
+            user-select: none;
+        }
+        .group-header:hover { background: var(--bg-input); color: var(--text); }
+        .col-row {
+            display: flex;
+            align-items: center;
+            gap: .4rem;
+            padding: .22rem .4rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background .1s;
+        }
+        .col-row:hover { background: var(--bg-input); }
+        .col-swatch {
+            width: 9px; height: 9px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            border: 1.5px solid transparent;
+            transition: all .15s;
+        }
+        .col-row.inactive .col-swatch { background: transparent !important; border-color: var(--border); }
+        .col-label { font-size: .72rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .col-row.inactive .col-label { color: var(--text-dim); }
+
+        /* ── Main area ── */
+        .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        #chart-container { flex: 1; position: relative; padding: .5rem .75rem .5rem .5rem; min-height: 0; }
+
+        #empty-state {
+            position: absolute; inset: 0;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: .75rem; color: var(--text-dim); pointer-events: none; user-select: none;
+        }
+        #empty-state.hidden { display: none; }
+        .empty-icon { font-size: 3.5rem; opacity: .25; }
+        .empty-hint { font-size: .85rem; }
+
+        /* ── Table ── */
+        #table-panel {
+            height: 220px;
+            border-top: 1px solid var(--border);
+            display: flex; flex-direction: column;
+            flex-shrink: 0; transition: height .2s;
+        }
+        #table-panel.collapsed { height: 32px; overflow: hidden; }
+        #table-toggle {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 .75rem; height: 32px; flex-shrink: 0;
+            background: var(--bg-card); border-bottom: 1px solid var(--border);
+            cursor: pointer; font-size: .72rem; font-weight: 600; color: var(--text-dim); user-select: none;
+        }
+        #table-toggle:hover { color: var(--text); }
+        #table-scroll { flex: 1; overflow: auto; }
+        #table-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+        #table-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        table { border-collapse: collapse; font-size: .68rem; width: 100%; font-variant-numeric: tabular-nums; }
+        th {
+            position: sticky; top: 0; background: var(--bg-card);
+            padding: .3rem .55rem; text-align: right; font-weight: 600; color: var(--text-dim);
+            white-space: nowrap; border-bottom: 1px solid var(--border); z-index: 2;
+        }
+        th:first-child { text-align: left; }
+        td { padding: .18rem .55rem; border-bottom: 1px solid rgba(71,85,105,.25); text-align: right; white-space: nowrap; }
+        td:first-child { text-align: left; color: var(--text-dim); }
+        tr:hover td { background: rgba(59,130,246,.05); }
+
+        input[type="file"] { display: none; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>✈ ArduFlite Log Viewer</h1>
+
+    <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <span>📂</span>
+        <span id="drop-label">Drop CSV or click to open</span>
+    </div>
+    <input type="file" id="file-input" accept=".csv">
+
+    <div class="preset-group">
+        <button class="btn-preset" data-preset="attitude">Attitude</button>
+        <button class="btn-preset" data-preset="inner">Inner Loop</button>
+        <button class="btn-preset" data-preset="imu">IMU</button>
+        <button class="btn-preset" data-preset="comparison">Setpt vs Actual</button>
+        <button class="btn-preset" data-preset="all">All</button>
+    </div>
+
+    <div class="header-actions">
+        <button class="btn-sm" id="btn-reset-zoom" title="Reset zoom (double-click chart also works)">⤢ Reset Zoom</button>
+        <button class="btn-sm" id="btn-export-png">⬇ PNG</button>
+    </div>
+</header>
+
+<div id="stats-bar">
+    <span class="stat-item" style="color:var(--text-dim)">Load a CSV to begin</span>
+</div>
+
+<div class="app-body">
+    <aside>
+        <div id="column-list">
+            <div style="color:var(--text-dim);font-size:.75rem;padding:.75rem .5rem;text-align:center;line-height:1.6">
+                Open a CSV to<br>see columns
+            </div>
+        </div>
+    </aside>
+
+    <div class="main-area">
+        <div id="chart-container">
+            <div id="empty-state">
+                <div class="empty-icon">📈</div>
+                <div class="empty-hint">Drop a flight log CSV to get started</div>
+            </div>
+            <canvas id="chart-canvas"></canvas>
+        </div>
+
+        <div id="table-panel">
+            <div id="table-toggle">
+                <span id="table-title">Data Table</span>
+                <span id="table-toggle-icon">▼</span>
+            </div>
+            <div id="table-scroll">
+                <table id="data-table"><thead></thead><tbody></tbody></table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Column metadata: group, colour, unit, dash pattern ───────────────────────
+const COLUMN_META = {
+    // Orientation
+    roll:          { group: 'Orientation',    color: '#3b82f6', unit: '°' },
+    pitch:         { group: 'Orientation',    color: '#22c55e', unit: '°' },
+    yaw:           { group: 'Orientation',    color: '#f59e0b', unit: '°' },
+    // Attitude setpoints (long dash)
+    att_sp_roll:   { group: 'Att Setpoints',  color: '#60a5fa', unit: '°',   dash: [6,3] },
+    att_sp_pitch:  { group: 'Att Setpoints',  color: '#4ade80', unit: '°',   dash: [6,3] },
+    att_sp_yaw:    { group: 'Att Setpoints',  color: '#fcd34d', unit: '°',   dash: [6,3] },
+    // Rate setpoints (long dash)
+    rate_sp_roll:  { group: 'Rate Setpoints', color: '#818cf8', unit: '°/s', dash: [6,3] },
+    rate_sp_pitch: { group: 'Rate Setpoints', color: '#34d399', unit: '°/s', dash: [6,3] },
+    rate_sp_yaw:   { group: 'Rate Setpoints', color: '#fb923c', unit: '°/s', dash: [6,3] },
+    // Attitude commands (short dash)
+    att_cmd_roll:  { group: 'Att Commands',   color: '#93c5fd', unit: '°',   dash: [2,2] },
+    att_cmd_pitch: { group: 'Att Commands',   color: '#86efac', unit: '°',   dash: [2,2] },
+    att_cmd_yaw:   { group: 'Att Commands',   color: '#fde68a', unit: '°',   dash: [2,2] },
+    // Rate commands (short dash)
+    rate_cmd_roll: { group: 'Rate Commands',  color: '#a5b4fc', unit: '°/s', dash: [2,2] },
+    rate_cmd_pitch:{ group: 'Rate Commands',  color: '#6ee7b7', unit: '°/s', dash: [2,2] },
+    rate_cmd_yaw:  { group: 'Rate Commands',  color: '#fed7aa', unit: '°/s', dash: [2,2] },
+    // IMU
+    accel_x:       { group: 'Accelerometer',  color: '#ef4444', unit: 'g'   },
+    accel_y:       { group: 'Accelerometer',  color: '#f97316', unit: 'g'   },
+    accel_z:       { group: 'Accelerometer',  color: '#eab308', unit: 'g'   },
+    gyro_x:        { group: 'Gyroscope',      color: '#a855f7', unit: '°/s' },
+    gyro_y:        { group: 'Gyroscope',      color: '#ec4899', unit: '°/s' },
+    gyro_z:        { group: 'Gyroscope',      color: '#14b8a6', unit: '°/s' },
+    // Quaternion
+    quat_w:        { group: 'Quaternion',     color: '#64748b' },
+    quat_x:        { group: 'Quaternion',     color: '#94a3b8' },
+    quat_y:        { group: 'Quaternion',     color: '#cbd5e1' },
+    quat_z:        { group: 'Quaternion',     color: '#e2e8f0' },
+    // Altitude
+    altitude:      { group: 'Altitude',       color: '#06b6d4', unit: 'm'   },
+    climb_rate:    { group: 'Altitude',       color: '#0891b2', unit: 'm/s', dash: [5,3] },
+    // System
+    flight_state:  { group: 'System',         color: '#475569' },
+    flight_mode:   { group: 'System',         color: '#334155' },
+};
+
+const PRESETS = {
+    attitude:   ['roll','pitch','yaw','att_sp_roll','att_sp_pitch','att_sp_yaw'],
+    inner:      ['rate_sp_roll','rate_sp_pitch','rate_sp_yaw','rate_cmd_roll','rate_cmd_pitch','rate_cmd_yaw'],
+    imu:        ['accel_x','accel_y','accel_z','gyro_x','gyro_y','gyro_z'],
+    comparison: ['roll','att_sp_roll','pitch','att_sp_pitch'],
+    all:        null,   // null = every non-timestamp column
+};
+
+const MAX_CHART_POINTS = 3000;
+const TABLE_MAX_ROWS   = 500;
+
+let rows = [], headers = [], displayRows = [];
+let activeColumns = new Set();
+let chartInstance  = null;
+let activePreset   = null;
+
+const dropZone    = document.getElementById('drop-zone');
+const dropLabel   = document.getElementById('drop-label');
+const fileInput   = document.getElementById('file-input');
+const statsBar    = document.getElementById('stats-bar');
+const columnList  = document.getElementById('column-list');
+const chartCanvas = document.getElementById('chart-canvas');
+const emptyState  = document.getElementById('empty-state');
+const tablePanel  = document.getElementById('table-panel');
+const tableToggle = document.getElementById('table-toggle');
+const tableTitle  = document.getElementById('table-title');
+const tableIcon   = document.getElementById('table-toggle-icon');
+const tableHead   = document.querySelector('#data-table thead');
+const tableBody   = document.querySelector('#data-table tbody');
+
+// ── Drag & drop ───────────────────────────────────────────────────────────────
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
+document.body.addEventListener('dragover', e => e.preventDefault());
+document.body.addEventListener('drop', e => {
+    e.preventDefault();
+    const f = e.dataTransfer.files[0];
+    if (f && f.name.toLowerCase().endsWith('.csv')) loadFile(f);
+});
+
+function loadFile(file) {
+    const r = new FileReader();
+    r.onload = e => parseCSV(e.target.result, file.name);
+    r.readAsText(file);
+}
+
+// ── CSV parsing ───────────────────────────────────────────────────────────────
+function parseCSV(text, filename) {
+    const lines = text.replace(/\r/g, '').trim().split('\n');
+    if (lines.length < 2) { alert('CSV appears empty.'); return; }
+
+    headers = lines[0].trim().split(',').map(h => h.trim());
+    rows = [];
+
+    for (let i = 1; i < lines.length; i++) {
+        const parts = lines[i].trim().split(',');
+        if (parts.length !== headers.length) continue;
+        const row = {};
+        headers.forEach((h, idx) => { row[h] = parseFloat(parts[idx]); });
+        rows.push(row);
+    }
+
+    if (!rows.length) { alert('No data rows found. Check the CSV format.'); return; }
+
+    // Derived _time: seconds from log start
+    if (headers.includes('timestamp')) {
+        const t0 = rows[0].timestamp;
+        rows.forEach(r => { r._time = (r.timestamp - t0) / 1000; });
+    }
+
+    rebuildDisplayRows();
+
+    dropZone.classList.add('has-file');
+    dropLabel.textContent = `${filename}  (${rows.length.toLocaleString()} rows)`;
+    emptyState.classList.add('hidden');
+
+    buildSidebar();
+    applyPreset('attitude');
+    buildTable();
+}
+
+function rebuildDisplayRows() {
+    if (rows.length <= MAX_CHART_POINTS) { displayRows = rows; return; }
+    const step = Math.ceil(rows.length / MAX_CHART_POINTS);
+    displayRows = rows.filter((_, i) => i % step === 0);
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function buildSidebar() {
+    const plot = headers.filter(h => h !== 'timestamp' && h !== '_time');
+    const groupOrder = [...new Set(Object.values(COLUMN_META).map(m => m.group).concat(['Other']))];
+    const groups = {};
+    groupOrder.forEach(g => { groups[g] = []; });
+    plot.forEach(h => {
+        const g = COLUMN_META[h] ? COLUMN_META[h].group : 'Other';
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(h);
+    });
+
+    columnList.innerHTML = '';
+    Object.entries(groups).forEach(([gName, cols]) => {
+        if (!cols.length) return;
+        const wrap  = document.createElement('div');
+        const hdr   = document.createElement('div');
+        const items = document.createElement('div');
+        hdr.className   = 'group-header';
+        hdr.innerHTML   = `<span>${gName}</span><span>▾</span>`;
+        items.className = 'group-items';
+        cols.forEach(col => {
+            const meta = COLUMN_META[col] || { color: '#64748b' };
+            const row  = document.createElement('div');
+            row.className   = 'col-row' + (activeColumns.has(col) ? '' : ' inactive');
+            row.dataset.col = col;
+            row.innerHTML   = `
+                <span class="col-swatch" style="background:${activeColumns.has(col) ? meta.color : 'transparent'};
+                    ${!activeColumns.has(col) ? 'border-color:var(--border)' : ''}"></span>
+                <span class="col-label" title="${col}">${col}</span>`;
+            row.addEventListener('click', () => toggleColumn(col));
+            items.appendChild(row);
+        });
+        hdr.addEventListener('click', () => {
+            const hidden = items.style.display === 'none';
+            items.style.display = hidden ? '' : 'none';
+            hdr.querySelector('span:last-child').textContent = hidden ? '▾' : '▸';
+        });
+        wrap.append(hdr, items);
+        columnList.appendChild(wrap);
+    });
+}
+
+function updateSidebarHighlights() {
+    document.querySelectorAll('.col-row').forEach(row => {
+        const col  = row.dataset.col;
+        const meta = COLUMN_META[col] || { color: '#64748b' };
+        const on   = activeColumns.has(col);
+        row.classList.toggle('inactive', !on);
+        const s = row.querySelector('.col-swatch');
+        s.style.background  = on ? meta.color : 'transparent';
+        s.style.borderColor = on ? 'transparent' : 'var(--border)';
+    });
+}
+
+function toggleColumn(col) {
+    activeColumns.has(col) ? activeColumns.delete(col) : activeColumns.add(col);
+    activePreset = null;
+    document.querySelectorAll('.btn-preset').forEach(b => b.classList.remove('active'));
+    updateSidebarHighlights();
+    updateChart();
+    updateStats();
+}
+
+// ── Presets ───────────────────────────────────────────────────────────────────
+document.querySelectorAll('.btn-preset').forEach(btn =>
+    btn.addEventListener('click', () => applyPreset(btn.dataset.preset))
+);
+
+function applyPreset(name) {
+    if (!rows.length) return;
+    activePreset = name;
+    document.querySelectorAll('.btn-preset').forEach(b =>
+        b.classList.toggle('active', b.dataset.preset === name)
+    );
+    const cols = PRESETS[name];
+    activeColumns = cols === null
+        ? new Set(headers.filter(h => h !== 'timestamp' && h !== '_time'))
+        : new Set(cols.filter(c => headers.includes(c)));
+    updateSidebarHighlights();
+    updateChart();
+    updateStats();
+}
+
+// ── Chart ─────────────────────────────────────────────────────────────────────
+function buildDatasets() {
+    return [...activeColumns].filter(col => headers.includes(col)).map(col => {
+        const meta = COLUMN_META[col] || { color: '#94a3b8' };
+        return {
+            label:           col,
+            data:            displayRows.map(r => r[col]),
+            borderColor:     meta.color,
+            backgroundColor: 'transparent',
+            borderWidth:     1.5,
+            borderDash:      meta.dash || [],
+            pointRadius:     displayRows.length < 300 ? 2 : 0,
+            pointHoverRadius: 4,
+            tension:         0.1,
+        };
+    });
+}
+
+function updateChart() {
+    const xLabels  = displayRows.map(r =>
+        r._time !== undefined ? r._time.toFixed(2) : String(r[headers[0]])
+    );
+    const datasets = buildDatasets();
+
+    if (chartInstance) {
+        chartInstance.data.labels   = xLabels;
+        chartInstance.data.datasets = datasets;
+        chartInstance.update('none');
+        return;
+    }
+
+    chartInstance = new Chart(chartCanvas, {
+        type: 'line',
+        data: { labels: xLabels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    display: datasets.length <= 10,
+                    position: 'top',
+                    labels: {
+                        color: '#94a3b8',
+                        font: { size: 10 },
+                        boxWidth: 24,
+                        padding: 8,
+                    }
+                },
+                tooltip: {
+                    backgroundColor: '#1e293b',
+                    titleColor:      '#94a3b8',
+                    bodyColor:       '#f1f5f9',
+                    borderColor:     '#475569',
+                    borderWidth:     1,
+                    bodyFont: { family: 'ui-monospace, monospace', size: 11 },
+                    callbacks: {
+                        title:  items => `t = ${items[0].label}s`,
+                        label:  item  => {
+                            const m = COLUMN_META[item.dataset.label];
+                            return ` ${item.dataset.label}: ${item.formattedValue}${m && m.unit ? m.unit : ''}`;
+                        }
+                    }
+                },
+                zoom: {
+                    pan:  { enabled: true, mode: 'x' },
+                    zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#64748b', font: { size: 10 }, maxRotation: 0, maxTicksLimit: 14 },
+                    grid:  { color: 'rgba(71,85,105,.35)' },
+                    title: { display: true, text: 'Time (s)', color: '#64748b', font: { size: 10 }, padding: { top: 2 } }
+                },
+                y: {
+                    ticks: { color: '#64748b', font: { size: 10 } },
+                    grid:  { color: 'rgba(71,85,105,.35)' },
+                }
+            }
+        }
+    });
+}
+
+// ── Stats bar ─────────────────────────────────────────────────────────────────
+function updateStats() {
+    if (!rows.length || !activeColumns.size) {
+        statsBar.innerHTML = '<span class="stat-item" style="color:var(--text-dim)">No columns selected</span>';
+        return;
+    }
+    const MAX_S = 8;
+    const parts = [...activeColumns].slice(0, MAX_S).map(col => {
+        const vals = rows.map(r => r[col]).filter(v => !isNaN(v));
+        if (!vals.length) return null;
+        const min  = Math.min(...vals).toFixed(2);
+        const max  = Math.max(...vals).toFixed(2);
+        const mean = (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2);
+        const meta = COLUMN_META[col] || { color: '#94a3b8' };
+        return `<span class="stat-item">
+            <span class="stat-swatch" style="background:${meta.color}"></span>
+            <span class="stat-name">${col}</span>
+            <span class="stat-kv"><span class="stat-k">min</span>${min}</span>
+            <span class="stat-kv"><span class="stat-k">max</span>${max}</span>
+            <span class="stat-kv"><span class="stat-k">avg</span>${mean}</span>
+        </span>`;
+    }).filter(Boolean);
+
+    statsBar.innerHTML = parts.join('<span class="stat-sep">│</span>');
+    if (activeColumns.size > MAX_S)
+        statsBar.innerHTML += `<span class="stat-item" style="color:var(--text-dim)">+${activeColumns.size - MAX_S} more</span>`;
+}
+
+// ── Table ─────────────────────────────────────────────────────────────────────
+let tableCollapsed = false;
+
+tableToggle.addEventListener('click', () => {
+    tableCollapsed = !tableCollapsed;
+    tablePanel.classList.toggle('collapsed', tableCollapsed);
+    tableIcon.textContent = tableCollapsed ? '▲' : '▼';
+});
+
+function buildTable() {
+    const cols = headers.filter(h => h !== '_time');
+    tableTitle.textContent = `Data Table  (${rows.length.toLocaleString()} rows)`;
+    tableHead.innerHTML = '<tr>' + cols.map(h => `<th>${h}</th>`).join('') + '</tr>';
+    const sliced = rows.slice(0, TABLE_MAX_ROWS);
+    tableBody.innerHTML = sliced.map(r =>
+        '<tr>' + cols.map(h => {
+            const v = r[h];
+            const isInt = h === 'timestamp' || h === 'flight_state' || h === 'flight_mode';
+            const disp  = isNaN(v) ? '—' : isInt ? Math.round(v) : v.toFixed(3);
+            return `<td>${disp}</td>`;
+        }).join('') + '</tr>'
+    ).join('');
+    if (rows.length > TABLE_MAX_ROWS)
+        tableBody.innerHTML += `<tr><td colspan="${cols.length}" style="text-align:center;color:var(--text-dim);padding:.5rem 0">
+            Showing first ${TABLE_MAX_ROWS.toLocaleString()} of ${rows.length.toLocaleString()} rows
+        </td></tr>`;
+}
+
+// ── Toolbar ───────────────────────────────────────────────────────────────────
+document.getElementById('btn-reset-zoom').addEventListener('click', () => chartInstance && chartInstance.resetZoom());
+
+document.getElementById('btn-export-png').addEventListener('click', () => {
+    if (!chartInstance) return;
+    const a = document.createElement('a');
+    a.download = 'flight_log.png';
+    a.href = chartCanvas.toDataURL('image/png');
+    a.click();
+});
+
+chartCanvas.addEventListener('dblclick', () => chartInstance && chartInstance.resetZoom());
+</script>
+</body>
+</html>

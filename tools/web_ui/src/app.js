@@ -48,6 +48,7 @@
     const dashAlt = document.getElementById('dash-alt');
     const dashMode = document.getElementById('dash-mode');
     const dashArmed = document.getElementById('dash-armed');
+    const dashFlightState = document.getElementById('dash-flight-state');
     
     // --- Telemetry ---
     async function pollTelemetry() {
@@ -70,6 +71,12 @@
             
             dashArmed.textContent = data.armed ? 'ARMED' : 'DISARMED';
             dashArmed.className = 'dash-armed ' + (data.armed ? 'armed' : 'disarmed');
+
+            const fsLabels = ['Unknown', 'Preflight', 'Inflight', 'Landed'];
+            const fsClasses = ['fs-unknown', 'fs-preflight', 'fs-inflight', 'fs-landed'];
+            const fsi = data.flight_state || 0;
+            dashFlightState.textContent = fsLabels[fsi] || 'Unknown';
+            dashFlightState.className = 'dash-flight-state ' + (fsClasses[fsi] || 'fs-unknown');
         } catch (err) {
             // Silently fail - device may be offline
         }

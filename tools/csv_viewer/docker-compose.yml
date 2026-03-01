@@ -1,0 +1,5 @@
+services:
+  csv-viewer:
+    build: .
+    ports:
+      - "8080:80"

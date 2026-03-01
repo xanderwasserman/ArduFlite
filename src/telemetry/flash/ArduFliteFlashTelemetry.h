@@ -30,6 +30,9 @@ public:
     void startLogging();
     void stopLogging();
 
+    /// @brief Returns true if a log file is currently open and recording.
+    bool isLogging() const { return _isLogging; }
+
     // File management
     void listLogs();
     void dumpLog(int index);

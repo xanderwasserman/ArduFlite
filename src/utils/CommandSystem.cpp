@@ -172,7 +172,17 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
                         {
                             // Start flash logging immediately on arm so the
                             // entire launch sequence is captured.
-                            flashTelemetry.startLogging();
+                            // Guard against inflight re-arm: the log is already
+                            // active and must NOT be restarted (doing so would
+                            // truncate the ongoing flight record).
+                            if (!flashTelemetry.isLogging())
+                            {
+                                flashTelemetry.startLogging();
+                            }
+                            else
+                            {
+                                LOG_INF("Flash log already active — not restarting on re-arm.");
+                            }
                         }
                     }
                     else

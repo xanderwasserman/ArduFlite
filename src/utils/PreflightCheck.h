@@ -28,6 +28,21 @@ class ArduFliteController;
 class ArdufliteCRSFReceiver;
 
 /**
+ * @brief Context for an arm request — determines which checks are enforced.
+ *
+ * GROUND_ARM:     Full suite of preflight checks (gyro stability, accel, throttle).
+ * INFLIGHT_REARM: Reduced checks — only IMU health and receiver link quality are
+ *                 required. Motion-dependent checks are bypassed because the aircraft
+ *                 is already airborne and rotating, making gyro bias and the 1g
+ *                 accelerometer tests meaningless and always-failing.
+ */
+enum class ArmContext
+{
+    GROUND_ARM,      ///< Normal preflight: aircraft stationary on the ground
+    INFLIGHT_REARM,  ///< Mid-flight recovery: aircraft already airborne
+};
+
+/**
  * @brief Result of individual preflight checks.
  */
 struct PreflightResult
@@ -37,6 +52,11 @@ struct PreflightResult
     bool accelValid         = false;    ///< Accelerometer reading ~1g
     bool receiverLinked     = false;    ///< Receiver link quality OK
     bool throttleMinimum    = false;    ///< Throttle at minimum position
+
+    /// True when this result was produced under INFLIGHT_REARM context.
+    /// Motion-dependent fields (gyroStable, accelValid, throttleMinimum) are
+    /// trivially true in this mode — do not interpret them as measured passes.
+    bool inflightRearm      = false;
     
     /**
      * @brief Returns true only if ALL checks passed.
@@ -57,20 +77,27 @@ struct PreflightResult
 namespace PreflightCheck
 {
     /**
-     * @brief Run all preflight checks.
+     * @brief Run preflight checks appropriate for the given arm context.
      * 
-     * Validates IMU health, gyro stability, accelerometer gravity reading,
-     * receiver link quality, and throttle position.
+     * GROUND_ARM:     Validates IMU health, gyro stability, accelerometer gravity,
+     *                 receiver link quality, and throttle position. All must pass.
      * 
-     * @param imu Pointer to the ArduFliteIMU instance
+     * INFLIGHT_REARM: Only validates IMU health and receiver link quality. Gyro
+     *                 stability, accelerometer, and throttle checks are bypassed
+     *                 because the aircraft is airborne. These fields are set to
+     *                 `true` (bypassed) in the returned result.
+     * 
+     * @param imu        Pointer to the ArduFliteIMU instance
      * @param controller Pointer to the ArduFliteController instance
-     * @param receiver Pointer to the ArdufliteCRSFReceiver instance (may be nullptr for PWM receivers)
+     * @param receiver   Pointer to the ArdufliteCRSFReceiver instance (may be nullptr)
+     * @param context    ArmContext::GROUND_ARM (default) or ArmContext::INFLIGHT_REARM
      * @return PreflightResult with individual check results
      */
     PreflightResult runAllChecks(
         ArduFliteIMU* imu,
         ArduFliteController* controller,
-        ArdufliteCRSFReceiver* receiver
+        ArdufliteCRSFReceiver* receiver,
+        ArmContext context = ArmContext::GROUND_ARM
     );
 
     /**

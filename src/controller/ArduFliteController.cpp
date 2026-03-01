@@ -298,10 +298,25 @@ void ArduFliteController::resumeTasks()
  */
 bool ArduFliteController::arm(ArdufliteCRSFReceiver* receiver) 
 {
-    LOG_INF("Arm requested - running preflight checks...");
-    
-    // Run all preflight checks
-    PreflightResult preflight = PreflightCheck::runAllChecks(imu, this, receiver);
+    // Detect whether the aircraft is already in flight so we can skip the
+    // ground-specific preflight checks (gyro bias, 1g accel, throttle cut)
+    // that will always fail on a moving, airborne airframe.
+    const bool isInflight = (imu != nullptr) && (imu->getFlightState() == INFLIGHT);
+    const ArmContext context = isInflight
+                               ? ArmContext::INFLIGHT_REARM
+                               : ArmContext::GROUND_ARM;
+
+    if (isInflight)
+    {
+        LOG_WARN("Arm requested INFLIGHT — using reduced preflight checks.");
+    }
+    else
+    {
+        LOG_INF("Arm requested - running full preflight checks...");
+    }
+
+    // Run appropriate preflight checks for this context
+    PreflightResult preflight = PreflightCheck::runAllChecks(imu, this, receiver, context);
     
     if (!preflight.allPassed())
     {

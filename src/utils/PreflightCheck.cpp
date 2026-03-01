@@ -27,20 +27,38 @@ namespace PreflightCheck
 PreflightResult runAllChecks(
     ArduFliteIMU* imu,
     ArduFliteController* controller,
-    ArdufliteCRSFReceiver* receiver)
+    ArdufliteCRSFReceiver* receiver,
+    ArmContext context)
 {
     PreflightResult result;
-    
-    LOG_INF("=== Running Preflight Checks ===");
-    
-    result.imuHealthy       = checkIMUHealth(imu);
-    result.gyroStable       = checkGyroStability(imu);
-    result.accelValid       = checkAccelerometer(imu);
-    result.receiverLinked   = checkReceiverLink(receiver);
-    result.throttleMinimum  = checkThrottleMinimum(controller);
-    
+    result.inflightRearm = (context == ArmContext::INFLIGHT_REARM);
+
+    if (result.inflightRearm)
+    {
+        LOG_WARN("=== Running Preflight Checks (INFLIGHT RE-ARM — reduced suite) ===");
+
+        // Only checks safe to run on a moving, airborne aircraft.
+        result.imuHealthy      = checkIMUHealth(imu);
+        result.receiverLinked  = checkReceiverLink(receiver);
+
+        // Bypass motion-dependent checks — aircraft is already flying.
+        result.gyroStable     = true;   // SKIP: gyro rotating in flight
+        result.accelValid     = true;   // SKIP: accel != 1g when banked
+        result.throttleMinimum = true;  // SKIP: throttle cut not required mid-flight
+    }
+    else
+    {
+        LOG_INF("=== Running Preflight Checks ===");
+
+        result.imuHealthy      = checkIMUHealth(imu);
+        result.gyroStable      = checkGyroStability(imu);
+        result.accelValid      = checkAccelerometer(imu);
+        result.receiverLinked  = checkReceiverLink(receiver);
+        result.throttleMinimum = checkThrottleMinimum(controller);
+    }
+
     logResults(result);
-    
+
     return result;
 }
 
@@ -198,11 +216,23 @@ bool checkThrottleMinimum(ArduFliteController* controller)
 void logResults(const PreflightResult& result)
 {
     LOG_INF("=== Preflight Results ===");
-    LOG_INF("  IMU Health:     %s", result.imuHealthy ? "PASS" : "FAIL");
-    LOG_INF("  Gyro Stability: %s", result.gyroStable ? "PASS" : "FAIL");
-    LOG_INF("  Accelerometer:  %s", result.accelValid ? "PASS" : "FAIL");
-    LOG_INF("  Receiver Link:  %s", result.receiverLinked ? "PASS" : "FAIL");
-    LOG_INF("  Throttle Min:   %s", result.throttleMinimum ? "PASS" : "FAIL");
+    LOG_INF("  IMU Health:     %s", result.imuHealthy      ? "PASS" : "FAIL");
+    LOG_INF("  Receiver Link:  %s", result.receiverLinked  ? "PASS" : "FAIL");
+
+    if (result.inflightRearm)
+    {
+        // Motion-dependent checks were bypassed for inflight re-arm.
+        LOG_INF("  Gyro Stability: SKIP (inflight re-arm)");
+        LOG_INF("  Accelerometer:  SKIP (inflight re-arm)");
+        LOG_INF("  Throttle Min:   SKIP (inflight re-arm)");
+    }
+    else
+    {
+        LOG_INF("  Gyro Stability: %s", result.gyroStable      ? "PASS" : "FAIL");
+        LOG_INF("  Accelerometer:  %s", result.accelValid      ? "PASS" : "FAIL");
+        LOG_INF("  Throttle Min:   %s", result.throttleMinimum ? "PASS" : "FAIL");
+    }
+
     LOG_INF("  Overall:        %s", result.allPassed() ? "PASS - Ready to arm" : "FAIL - Cannot arm");
 }
 

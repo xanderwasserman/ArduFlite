@@ -2,7 +2,7 @@
  * ArduFliteCLI.h
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 08 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
@@ -18,7 +18,7 @@ public:
     /**
      * @brief Constructs the CLI.
      * @param controller A pointer to the controller, whose statistics and state we want to query.
-     */
+    */
     ArduFliteCLI(ArduFliteController* controller, ArduFliteIMU* imu, ArduFliteFlashTelemetry* flashTelemetry);
 
     /**

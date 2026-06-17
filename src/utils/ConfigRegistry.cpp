@@ -9,8 +9,14 @@
 #include "src/utils/ConfigRegistry.h"
 #include "src/utils/Logging.h"
 #include "include/ArduFlite.h"
+#include "include/ConfigKeys.h"
 
 #include <cstring>  // For strcmp, strncmp
+
+// Maximum time (ms) to wait for the ConfigRegistry mutex.
+// Bounded to prevent infinite blocking if a lower-priority task holds the
+// lock (priority inversion). 100 ms is generous for an in-memory map op.
+static constexpr TickType_t CONFIG_LOCK_TIMEOUT_MS = 100;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // LOCK ORDERING (must follow to prevent deadlock):
@@ -36,19 +42,19 @@ ConfigRegistry& ConfigRegistry::instance() {
 
 void ConfigRegistry::init() {
     if (_initialized) return;
-    
+
     // Create the mutex now that FreeRTOS is ready
     ensureMutex();
-    
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return;
-    
+
     // Process any pending registrations from static initialization
     for (const auto& pending : _pendingRegistrations) {
         if (_params.find(pending.key) != _params.end()) {
             continue;  // Already registered
         }
-        
+
         ConfigParam param;
         param.key           = pending.key;
         param.description   = pending.description;
@@ -59,14 +65,14 @@ void ConfigRegistry::init() {
         param.currentVal    = pending.defaultVal;
         param.dirty         = false;
         param.requiresReboot = pending.requiresReboot;
-        
+
         _params[pending.key] = param;
     }
-    
+
     _pendingRegistrations.clear();
     _pendingRegistrations.shrink_to_fit();  // Release memory
     _initialized = true;
-    
+
     LOG_INF("ConfigRegistry initialized with %u params", _params.size());
 }
 
@@ -84,7 +90,7 @@ void ConfigRegistry::ensureMutex() const {
             return;  // Will fail on lock acquisition
         }
         // Atomically set _mutex if it's still nullptr
-        if (!_mutex.compare_exchange_strong(expected, newMutex, 
+        if (!_mutex.compare_exchange_strong(expected, newMutex,
                                              std::memory_order_release,
                                              std::memory_order_relaxed)) {
             // Another thread already created a mutex, delete ours
@@ -113,7 +119,7 @@ void ConfigRegistry::registerParam(
         });
         return;
     }
-    
+
     // Normal registration path (FreeRTOS is ready)
     registerParamInternal(key, type, defaultVal, minVal, maxVal, description, requiresReboot);
 }
@@ -128,7 +134,7 @@ void ConfigRegistry::registerParamInternal(
     bool        requiresReboot
 ) {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return;
 
     // Check for duplicate registration
@@ -158,7 +164,7 @@ void ConfigRegistry::registerParamInternal(
 template<>
 float ConfigRegistry::get<float>(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return 0.0f;
 
     auto it = _params.find(key);
@@ -176,7 +182,7 @@ float ConfigRegistry::get<float>(const char* key) const {
 template<>
 int32_t ConfigRegistry::get<int32_t>(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return 0;
 
     auto it = _params.find(key);
@@ -194,7 +200,7 @@ int32_t ConfigRegistry::get<int32_t>(const char* key) const {
 template<>
 uint8_t ConfigRegistry::get<uint8_t>(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return 0;
 
     auto it = _params.find(key);
@@ -212,7 +218,7 @@ uint8_t ConfigRegistry::get<uint8_t>(const char* key) const {
 template<>
 bool ConfigRegistry::get<bool>(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return false;
 
     auto it = _params.find(key);
@@ -230,7 +236,7 @@ bool ConfigRegistry::get<bool>(const char* key) const {
 template<>
 String ConfigRegistry::get<String>(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return String();
 
     auto it = _params.find(key);
@@ -273,14 +279,14 @@ bool ConfigRegistry::validate(const ConfigParam& param, const ConfigValue& value
 template<>
 bool ConfigRegistry::set<float>(const char* key, float value) {
     ensureMutex();
-    
+
     ConfigChange change;
     change.key = key;
     change.type = ConfigType::FLOAT;
     change.newValue.f = value;
 
     {
-        SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
         if (!lock.acquired()) return false;
 
         auto it = _params.find(key);
@@ -315,14 +321,14 @@ bool ConfigRegistry::set<float>(const char* key, float value) {
 template<>
 bool ConfigRegistry::set<int32_t>(const char* key, int32_t value) {
     ensureMutex();
-    
+
     ConfigChange change;
     change.key = key;
     change.type = ConfigType::INT32;
     change.newValue.i = value;
 
     {
-        SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
         if (!lock.acquired()) return false;
 
         auto it = _params.find(key);
@@ -356,14 +362,14 @@ bool ConfigRegistry::set<int32_t>(const char* key, int32_t value) {
 template<>
 bool ConfigRegistry::set<uint8_t>(const char* key, uint8_t value) {
     ensureMutex();
-    
+
     ConfigChange change;
     change.key = key;
     change.type = ConfigType::UINT8;
     change.newValue.u8 = value;
 
     {
-        SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
         if (!lock.acquired()) return false;
 
         auto it = _params.find(key);
@@ -397,14 +403,14 @@ bool ConfigRegistry::set<uint8_t>(const char* key, uint8_t value) {
 template<>
 bool ConfigRegistry::set<bool>(const char* key, bool value) {
     ensureMutex();
-    
+
     ConfigChange change;
     change.key = key;
     change.type = ConfigType::BOOL;
     change.newValue.b = value;
 
     {
-        SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
         if (!lock.acquired()) return false;
 
         auto it = _params.find(key);
@@ -429,14 +435,14 @@ bool ConfigRegistry::set<bool>(const char* key, bool value) {
 template<>
 bool ConfigRegistry::set<String>(const char* key, String value) {
     ensureMutex();
-    
+
     // Validate string length
     if (value.length() >= CONFIG_STRING_MAX_LEN) {
         LOG_WARN("Config string too long for %s: %u >= %u",
                  key, value.length(), CONFIG_STRING_MAX_LEN);
         return false;
     }
-    
+
     ConfigChange change;
     change.key = key;
     change.type = ConfigType::STRING;
@@ -444,7 +450,7 @@ bool ConfigRegistry::set<String>(const char* key, String value) {
     change.newValue.s[CONFIG_STRING_MAX_LEN - 1] = '\0';
 
     {
-        SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
         if (!lock.acquired()) return false;
 
         auto it = _params.find(key);
@@ -473,13 +479,19 @@ bool ConfigRegistry::set<String>(const char* key, String value) {
 
 void ConfigRegistry::setRaw(const char* key, ConfigValue value) {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return;
 
     auto it = _params.find(key);
     if (it != _params.end()) {
-        it->second.currentVal = value;
-        it->second.dirty = false;  // Loaded from storage, not dirty
+        if (!validate(it->second, value)) {
+            // Out-of-range NVS value: log and keep the current (default) value.
+            LOG_WARN("Config: NVS value for '%s' failed range validation — keeping default.", key);
+            it->second.dirty = false;
+        } else {
+            it->second.currentVal = value;
+            it->second.dirty = false;  // Loaded from storage, not dirty
+        }
     }
 }
 
@@ -489,7 +501,7 @@ void ConfigRegistry::setRaw(const char* key, ConfigValue value) {
 
 bool ConfigRegistry::requiresReboot(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return false;
 
     auto it = _params.find(key);
@@ -502,12 +514,12 @@ bool ConfigRegistry::requiresReboot(const char* key) const {
 
 bool ConfigRegistry::reset(const char* key) {
     ensureMutex();
-    
+
     ConfigChange change;
     change.key = key;
 
     {
-        SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
         if (!lock.acquired()) return false;
 
         auto it = _params.find(key);
@@ -529,11 +541,11 @@ bool ConfigRegistry::reset(const char* key) {
 
 void ConfigRegistry::resetAll() {
     ensureMutex();
-    
+
     std::vector<ConfigChange> changes;
 
     {
-        SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
         if (!lock.acquired()) return;
 
         for (auto& [key, param] : _params) {
@@ -562,7 +574,7 @@ void ConfigRegistry::resetAll() {
 
 void ConfigRegistry::subscribe(const char* pattern, ConfigObserver callback) {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return;
 
     _observers.emplace_back(pattern, callback);
@@ -571,7 +583,7 @@ void ConfigRegistry::subscribe(const char* pattern, ConfigObserver callback) {
 bool ConfigRegistry::matchPattern(const char* pattern, const char* key) const {
     // Exact match
     if (strcmp(pattern, key) == 0) return true;
-    
+
     // Root wildcard matches everything
     if (strcmp(pattern, "*") == 0) return true;
 
@@ -580,7 +592,7 @@ bool ConfigRegistry::matchPattern(const char* pattern, const char* key) const {
     if (patLen >= 2 && pattern[patLen - 1] == '*' && pattern[patLen - 2] == '.') {
         // Check prefix without ".*"
         size_t prefixLen = patLen - 2;
-        return (strncmp(pattern, key, prefixLen) == 0 && 
+        return (strncmp(pattern, key, prefixLen) == 0 &&
                 (key[prefixLen] == '.' || key[prefixLen] == '\0'));
     }
 
@@ -596,10 +608,10 @@ bool ConfigRegistry::matchPattern(const char* pattern, const char* key) const {
 void ConfigRegistry::notifyObservers(const ConfigChange& change) {
     // Copy observers under lock, then notify outside lock
     std::vector<ConfigObserver> matchingObservers;
-    
+
     {
         ensureMutex();
-        SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
         if (!lock.acquired()) return;
 
         for (const auto& [pattern, callback] : _observers) {
@@ -622,7 +634,7 @@ void ConfigRegistry::notifyObservers(const ConfigChange& change) {
 
 bool ConfigRegistry::hasDirty() const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return false;
 
     for (const auto& [key, param] : _params) {
@@ -633,8 +645,8 @@ bool ConfigRegistry::hasDirty() const {
 
 std::vector<String> ConfigRegistry::getDirtyKeys() const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
-    
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+
     std::vector<String> result;
     if (!lock.acquired()) return result;
 
@@ -648,7 +660,7 @@ std::vector<String> ConfigRegistry::getDirtyKeys() const {
 
 void ConfigRegistry::clearDirty(const char* key) {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return;
 
     auto it = _params.find(key);
@@ -659,7 +671,7 @@ void ConfigRegistry::clearDirty(const char* key) {
 
 void ConfigRegistry::clearAllDirty() {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return;
 
     for (auto& [key, param] : _params) {
@@ -669,7 +681,7 @@ void ConfigRegistry::clearAllDirty() {
 
 void ConfigRegistry::markDirty(const char* key) {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return;
 
     auto it = _params.find(key);
@@ -684,7 +696,7 @@ void ConfigRegistry::markDirty(const char* key) {
 
 std::optional<ConfigParam> ConfigRegistry::getParam(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return std::nullopt;
 
     auto it = _params.find(key);
@@ -696,22 +708,22 @@ std::optional<ConfigParam> ConfigRegistry::getParam(const char* key) const {
 
 std::unordered_map<std::string, ConfigParam> ConfigRegistry::getAllParams() const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return {};
     return _params;  // Return copy
 }
 
 size_t ConfigRegistry::count() const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
     if (!lock.acquired()) return 0;
     return _params.size();
 }
 
 std::vector<ConfigParam> ConfigRegistry::list(const char* pattern) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
-    
+    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+
     std::vector<ConfigParam> result;
     if (!lock.acquired()) return result;
 

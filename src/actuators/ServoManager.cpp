@@ -2,7 +2,7 @@
  * ServoManager.cpp
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 08 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
@@ -36,11 +36,11 @@ ServoManager::ServoManager()
 
 void ServoManager::initFromConfig() {
     auto& config = ConfigRegistry::instance();
-    
+
     // Load slew rate limits
     maxServoDegPerSec = config.get<float>(CONFIG_KEY_SERVO_MAX_DEG_SEC);
     maxThrottlePerSec = config.get<float>(CONFIG_KEY_SERVO_MAX_THR_SEC);
-    
+
     // Load pitch servo config (pin from compile-time constant)
     pitchConfig.pin        = PwmOutputConfig::PITCH_PIN;
     pitchConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_MIN);
@@ -48,7 +48,7 @@ void ServoManager::initFromConfig() {
     pitchConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_NEUTRAL);
     pitchConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_DEFL);
     pitchConfig.invert     = config.get<bool>(CONFIG_KEY_SERVO_PITCH_INV);
-    
+
     // Load yaw servo config (pin from compile-time constant)
     yawConfig.pin        = PwmOutputConfig::YAW_PIN;
     yawConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_MIN);
@@ -56,7 +56,7 @@ void ServoManager::initFromConfig() {
     yawConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_NEUTRAL);
     yawConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_DEFL);
     yawConfig.invert     = config.get<bool>(CONFIG_KEY_SERVO_YAW_INV);
-    
+
     // Load left aileron servo config (pin from compile-time constant)
     leftAilConfig.pin        = PwmOutputConfig::LEFT_AIL_PIN;
     leftAilConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_MIN);
@@ -64,7 +64,7 @@ void ServoManager::initFromConfig() {
     leftAilConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_NEUTRAL);
     leftAilConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_DEFL);
     leftAilConfig.invert     = config.get<bool>(CONFIG_KEY_SERVO_LAIL_INV);
-    
+
     // Load right aileron servo config (pin from compile-time constant)
     rightAilConfig.pin        = PwmOutputConfig::RIGHT_AIL_PIN;
     rightAilConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_MIN);
@@ -72,7 +72,7 @@ void ServoManager::initFromConfig() {
     rightAilConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_NEUTRAL);
     rightAilConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_DEFL);
     rightAilConfig.invert     = config.get<bool>(CONFIG_KEY_SERVO_RAIL_INV);
-    
+
     // Load throttle config (pin from compile-time constant)
     throttleConfig.pin      = PwmOutputConfig::THROTTLE_PIN;
     throttleConfig.minPulse = config.get<int32_t>(CONFIG_KEY_SERVO_THR_MIN);
@@ -80,38 +80,38 @@ void ServoManager::initFromConfig() {
     throttleConfig.neutral  = 0;
     throttleConfig.deflection = 0;
     throttleConfig.invert   = false;
-    
+
     // Load wing design from config (0=CONVENTIONAL, 1=DELTA_WING, 2=V_TAIL)
     int32_t wingDesignVal = config.get<int32_t>(CONFIG_KEY_SERVO_WING_DESIGN);
     wingDesign = static_cast<WingDesign>(wingDesignVal);
     dualAilerons = config.get<bool>(CONFIG_KEY_SERVO_DUAL_AILERONS);
-    
+
     // Attach servos
     pitchServo.attach(pitchConfig.pin, pitchConfig.minPulse, pitchConfig.maxPulse);
     yawServo.attach(yawConfig.pin, yawConfig.minPulse, yawConfig.maxPulse);
     throttleServo.attach(throttleConfig.pin, throttleConfig.minPulse, throttleConfig.maxPulse);
-    
+
     if (dualAilerons) {
         leftAilServo.attach(leftAilConfig.pin, leftAilConfig.minPulse, leftAilConfig.maxPulse);
         rightAilServo.attach(rightAilConfig.pin, rightAilConfig.minPulse, rightAilConfig.maxPulse);
     } else {
         singleAilServo.attach(leftAilConfig.pin, leftAilConfig.minPulse, leftAilConfig.maxPulse);
     }
-    
+
     // Initialize timing state
     lastThrottleTime  = micros();
     lastThrottleCmd   = 0.0f;
     lastUpdateMicros  = micros();
     lastPitchAngleDeg = pitchConfig.neutral;
     lastYawAngleDeg   = yawConfig.neutral;
-    
+
     if (dualAilerons) {
         lastLeftAngleDeg  = leftAilConfig.neutral;
         lastRightAngleDeg = rightAilConfig.neutral;
     } else {
         lastSingleAilDeg  = leftAilConfig.neutral;
     }
-    
+
     LOG_INF("ServoManager: initialized from ConfigRegistry");
 }
 
@@ -136,8 +136,19 @@ void ServoManager::writeThrottle(float throttleCmd)
     throttleServo.writeMicroseconds(pulse);
 }
 
-void ServoManager::writeCommands(float rollCmd, float pitchCmd, float yawCmd) 
+void ServoManager::writeCommands(float rollCmd, float pitchCmd, float yawCmd)
 {
+    // ─────────────────────────────────────────────────────────────────
+    // Guard: reject NaN/Inf inputs — constrain() passes NaN through
+    // (all NaN comparisons are false), leading to UB in the int cast
+    // inside mapFloatToInt. Hold last slew-limited position instead.
+    // ─────────────────────────────────────────────────────────────────
+    if (!isfinite(rollCmd) || !isfinite(pitchCmd) || !isfinite(yawCmd))
+    {
+        LOG_ERR("ServoManager: NaN/Inf in servo commands — holding last valid position.");
+        return;
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // Final safety clamp: ensure all inputs are within valid range [-1, 1]
     // This is the last line of defense against out-of-range commands
@@ -155,9 +166,9 @@ void ServoManager::writeCommands(float rollCmd, float pitchCmd, float yawCmd)
     // Maximum allowed change this cycle (degrees)
     float maxDelta = maxServoDegPerSec * dt;
 
-    switch (wingDesign) 
+    switch (wingDesign)
     {
-        case CONVENTIONAL: 
+        case CONVENTIONAL:
         {
             // 1) Elevator (pitch control)
             int rawPitch = mapFloatToInt(pitchCmd, -1.0f, 1.0f, -pitchConfig.deflection, pitchConfig.deflection);
@@ -178,7 +189,7 @@ void ServoManager::writeCommands(float rollCmd, float pitchCmd, float yawCmd)
 
             // 3) Ailerons (roll control)
             int rawRollDeflect = mapFloatToInt(rollCmd, -1.0f, 1.0f, -leftAilConfig.deflection, leftAilConfig.deflection);
-            if (dualAilerons) 
+            if (dualAilerons)
             {
                 float desiredLeft  = leftAilConfig.neutral + (leftAilConfig.invert ? -rawRollDeflect : rawRollDeflect);
                 float desiredRight = rightAilConfig.neutral + (rightAilConfig.invert ? rawRollDeflect : -rawRollDeflect);
@@ -191,17 +202,17 @@ void ServoManager::writeCommands(float rollCmd, float pitchCmd, float yawCmd)
                 leftAilServo.write((int)limitedLeft);
                 rightAilServo.write((int)limitedRight);
             }
-            else 
+            else
             {
                 float desiredAil = leftAilConfig.neutral + (leftAilConfig.invert ? -rawRollDeflect : rawRollDeflect);
                 float limitedAil = constrain(desiredAil, lastSingleAilDeg - maxDelta, lastSingleAilDeg + maxDelta);
-                lastSingleAilDeg = limitedAil; 
+                lastSingleAilDeg = limitedAil;
                 singleAilServo.write((int)limitedAil);
             }
             break;
         }
 
-        case DELTA_WING: 
+        case DELTA_WING:
         {
             // Elevon mixing: left = pitch – roll, right = pitch + roll
             int rawLeftMix  = mapFloatToInt(pitchCmd - rollCmd, -2.0f, 2.0f, -leftAilConfig.deflection, leftAilConfig.deflection);
@@ -221,7 +232,7 @@ void ServoManager::writeCommands(float rollCmd, float pitchCmd, float yawCmd)
             rightAilServo.write((int)limitedRight);
             break;
         }
-        case V_TAIL: 
+        case V_TAIL:
         {
             // Ruddervator mixing: left = pitch + yaw, right = pitch – yaw
             int rawLeftMix  = mapFloatToInt(pitchCmd + yawCmd, -2.0f, 2.0f, -leftAilConfig.deflection, leftAilConfig.deflection);
@@ -305,7 +316,7 @@ void ServoManager::setRightSurfaceConfig(const ServoConfig &config) {
  * in sequence over multiple cycles, ensuring the servo outputs respond correctly.
  * This is useful for verifying hardware functionality during startup or in the field.
  */
-void ServoManager::testControlSurfaces() 
+void ServoManager::testControlSurfaces()
 {
     const int numCycles = 2;    // Number of test cycles
     const int delayTime = 500;    // Delay (in milliseconds) between commands

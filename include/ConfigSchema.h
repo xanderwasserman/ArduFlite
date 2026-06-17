@@ -67,10 +67,10 @@ CONFIG_FLOAT(CONFIG_KEY_ATT_ROLL_HEADROOM, 0.80f,  0.5f,   1.0f,    "Roll attitu
 CONFIG_FLOAT(CONFIG_KEY_ATT_ROLL_ALPHA,    0.10f,  0.01f,  1.0f,    "Roll attitude D filter alpha");
 
 // Pitch
-CONFIG_FLOAT(CONFIG_KEY_ATT_PITCH_KP,       200.0f, 0.0f,   1000.0f, "Pitch attitude P gain");
+CONFIG_FLOAT(CONFIG_KEY_ATT_PITCH_KP,       150.0f, 0.0f,   1000.0f, "Pitch attitude P gain");
 CONFIG_FLOAT(CONFIG_KEY_ATT_PITCH_TI,       0.00f,  0.0f,   10.0f,   "Pitch attitude I time constant (s)");
 CONFIG_FLOAT(CONFIG_KEY_ATT_PITCH_TD,       0.00f,  0.0f,   1.0f,    "Pitch attitude D time constant (s)");
-CONFIG_FLOAT(CONFIG_KEY_ATT_PITCH_OUTLIMIT, 60.0f,  10.0f,  180.0f,  "Pitch attitude output limit (deg/s)");
+CONFIG_FLOAT(CONFIG_KEY_ATT_PITCH_OUTLIMIT, 45.0f,  10.0f,  180.0f,  "Pitch attitude output limit (deg/s)");
 CONFIG_FLOAT(CONFIG_KEY_ATT_PITCH_HEADROOM, 0.80f,  0.5f,   1.0f,    "Pitch attitude anti-windup headroom");
 CONFIG_FLOAT(CONFIG_KEY_ATT_PITCH_ALPHA,    0.10f,  0.01f,  1.0f,    "Pitch attitude D filter alpha");
 
@@ -107,7 +107,7 @@ CONFIG_FLOAT(CONFIG_KEY_MIX_YAW_FROM_ROLL,   0.10f,  0.0f,  0.5f,   "SAFE roll->
 CONFIG_INT(CONFIG_KEY_SERVO_WING_DESIGN,   0,     0,    2,    "Wing design (0=Conventional, 1=Delta, 2=V-Tail)");
 CONFIG_BOOL(CONFIG_KEY_SERVO_DUAL_AILERONS, true,       "Use dual ailerons (vs single)");
 
-CONFIG_FLOAT(CONFIG_KEY_SERVO_MAX_DEG_SEC, 500.0f, 100.0f, 1000.0f, "Max servo slew rate (deg/s)");;
+CONFIG_FLOAT(CONFIG_KEY_SERVO_MAX_DEG_SEC, 500.0f, 100.0f, 1000.0f, "Max servo slew rate (deg/s)");
 CONFIG_FLOAT(CONFIG_KEY_SERVO_MAX_THR_SEC, 1.0f,   0.1f,   5.0f,    "Max throttle slew rate (range/s)");
 
 // Pitch servo
@@ -149,7 +149,7 @@ CONFIG_INT(CONFIG_KEY_SERVO_THR_MAX,  2000, 1500, 2500, "Throttle max pulse (us)
 CONFIG_FLOAT(CONFIG_KEY_IMU_ACCEL_ALPHA,    0.02f,  0.01f, 1.0f,   "Accelerometer low-pass filter alpha");
 CONFIG_FLOAT(CONFIG_KEY_IMU_GYRO_ALPHA,     0.4f,   0.01f, 1.0f,   "Gyroscope low-pass filter alpha");
 CONFIG_FLOAT(CONFIG_KEY_IMU_MAG_ALPHA,      0.04f,  0.01f, 1.0f,   "Magnetometer low-pass filter alpha");
-CONFIG_FLOAT(CONFIG_KEY_IMU_ALTI_ALPHA,     0.005f, 0.001f, 0.1f,  "Altimeter low-pass filter alpha");
+CONFIG_FLOAT(CONFIG_KEY_IMU_ALTI_ALPHA,     0.10f,  0.01f, 0.50f, "Altimeter low-pass filter alpha (at 50 Hz baro rate; 0.10 → τ≈200ms)");
 CONFIG_FLOAT(CONFIG_KEY_IMU_MADGWICK_BETA,  0.1f,   0.01f, 1.0f,   "Madgwick filter beta (gyro/accel trust)");
 CONFIG_FLOAT(CONFIG_KEY_IMU_MAX_ACCEL_G,    16.0f,  4.0f,  16.0f,  "Max valid accelerometer magnitude (g)");
 CONFIG_FLOAT(CONFIG_KEY_IMU_MAX_GYRO_DPS,   2000.0f, 250.0f, 2000.0f, "Max valid gyroscope rate (deg/s)");
@@ -186,7 +186,7 @@ CONFIG_STRING(CONFIG_KEY_SYS_AIRCRAFT_NAME, "ArduFlite", "Aircraft name for tele
 
 CONFIG_BOOL(CONFIG_KEY_WEB_ENABLED, false, "Enable WiFi AP and web server");
 CONFIG_STRING(CONFIG_KEY_WEB_AP_SSID, "ArduFlite", "WiFi AP name (SSID)");
-CONFIG_STRING(CONFIG_KEY_WEB_AP_PASS, "", "WiFi AP password (empty = open)");
+CONFIG_STRING(CONFIG_KEY_WEB_AP_PASS, "arduflite", "WiFi AP password (8+ characters; set before field use)");
 
 #endif // CONFIG_SCHEMA_IMPL
 

@@ -32,7 +32,7 @@
 #define IMU_TYPE_MPU9250 1
 
 #if BARO_TYPE == BARO_TYPE_BMP280
-#include <Adafruit_BMP280.h> // Include barometer library when using MPU9250
+#include <Adafruit_BMP280.h>
 #endif
 
 /**
@@ -131,7 +131,7 @@ struct MotionSignals {
 /**
 * @brief Lock-free snapshot of all IMU sensor data.
 * 
-* Used for double-buffering to eliminate mutex contention between
+* Used with a versioned snapshot copy to eliminate mutex contention between
 * the IMU task (writer) and control loops (readers).
 */
 struct ImuSnapshot {
@@ -145,6 +145,15 @@ struct ImuSnapshot {
     FlightState     flightState;    ///< Display state — owned by StateManagement, written back via setFlightState()
     MotionSignals   motion;         ///< Debounced motion signals from IMU sensor layer
     uint32_t        timestampUs;    ///< Timestamp when snapshot was captured
+};
+
+/**
+* @brief Runtime health counters for lock-free IMU snapshot reads.
+*/
+struct ImuSnapshotHealth {
+    uint32_t totalReadRetries;      ///< Cumulative retry count across snapshot reads
+    uint32_t maxReadRetries;        ///< Highest retry count observed for one read
+    uint32_t retryLimitHits;        ///< Reads that returned the stale coherent fallback
 };
 
 /**
@@ -186,8 +195,9 @@ static const int CALIB_DATA_ADDR = 0;
 *
 * Provides an interface to the IMU (either MPU-6500 or MPU-9250). This class handles
 * initialization, calibration, sensor updates, filtering, and orientation estimation.
-* It also supports reading magnetometer data (if available) and, for the MPU-9250,
-* reading barometer data from an onboard BMP280.
+* It also supports reading magnetometer data (if available) and, when
+* BARO_TYPE == BARO_TYPE_BMP280, barometric altitude from an external BMP280 —
+* sampled inline in the IMU task at BARO_DECIMATION_FACTOR cadence (~50 Hz).
 */
 class ArduFliteIMU {
 public:
@@ -263,15 +273,16 @@ public:
     /**
     * @brief Updates the IMU sensor data and orientation filter.
     *
-    * Reads raw accelerometer, gyroscope, magnetometer and barometer data, subtracts calibration offsets,
-    * applies orientation transformations and low-pass filtering, updates the orientation
-    * filter, and retrieves the latest quaternion and Euler angles.
+    * Reads raw accelerometer, gyroscope, and magnetometer data; decimates barometer reads
+    * to every BARO_DECIMATION_FACTOR ticks (~50 Hz); subtracts calibration offsets;
+    * applies orientation transformations and low-pass filtering; updates the orientation
+    * filter; and publishes a lock-free versioned snapshot.
     *
     * @param dt Time step in seconds.
     */
     void update(float dt);
 
-    // Grouped getters (lock-free, read from double-buffer):
+    // Grouped getters (lock-free, read from versioned snapshot):
     Vector3 getAcceleration() const;
     Vector3 getGyro() const;
     Vector3 getMag() const;
@@ -283,12 +294,23 @@ public:
     * 
     * This is the preferred method for control loops as it provides
     * consistent data without mutex contention. The snapshot may be
-    * up to one IMU cycle (5ms) old, but timing is deterministic.
+    * up to one IMU cycle (IMU_UPDATE_INTERVAL_MS, currently 2 ms) old,
+    * but timing is deterministic.
     *
     * @return ImuSnapshot containing all sensor data
     */
     ImuSnapshot getSnapshot() const;
- 
+
+    /**
+     * @brief Returns cumulative health counters for snapshot reads.
+     *
+     * These counters are diagnostic only and use relaxed atomics so they do not
+     * add synchronization cost to the control loop.
+     *
+     * @return ImuSnapshotHealth counters since boot.
+     */
+    ImuSnapshotHealth getSnapshotHealth() const;
+
     /**
     * @brief Retrieves the current flight state.
     * @return FlightState (PREFLIGHT, INFLIGHT, or LANDED).
@@ -299,7 +321,7 @@ public:
      * @brief Returns the latest debounced motion signals.
      *
      * Read by StateManagement each loop tick to drive FlightState transitions.
-     * Lock-free read from the triple-buffer snapshot.
+     * Lock-free read from the versioned snapshot.
      *
      * @return MotionSignals with launchDetected and stableDetected flags.
      */
@@ -374,22 +396,34 @@ private:
 #endif
 
     // ─────────────────────────────────────────────────────────────
-    // Triple-buffer for lock-free reads
+    // Versioned snapshot for lock-free reads
     // ─────────────────────────────────────────────────────────────
-    // The IMU task writes to the next free buffer, then publishes it.
-    // Control loops read from buffers[readIndex.load()] without any lock.
-    // Three buffers ensure a reader copying data can never be caught by the writer.
-    ImuSnapshot             snapshotBuffers[3];
-    std::atomic<int>        snapshotReadIndex{0};   ///< Index readers should use
-    std::atomic<int>        snapshotWriteIndex{1};  ///< Next index writer will use
+    // The IMU task marks the snapshot version odd while writing, then even
+    // once the copy is complete. Readers retry if the version changes mid-copy.
+    static constexpr uint32_t SNAPSHOT_READ_RETRY_LIMIT = 8;
+
+    ImuSnapshot             snapshotCurrent{};
+    std::atomic<uint32_t>   snapshotVersion{0};
+
+    // One-cycle-old coherent fallback used only when the current snapshot cannot
+    // be read within SNAPSHOT_READ_RETRY_LIMIT attempts.
+    ImuSnapshot             snapshotLastComplete{};
+    std::atomic<uint32_t>   snapshotLastCompleteVersion{0};
+
+    mutable std::atomic<uint32_t> snapshotTotalReadRetries{0};
+    mutable std::atomic<uint32_t> snapshotMaxReadRetries{0};
+    mutable std::atomic<uint32_t> snapshotRetryLimitHits{0};
 
     /**
-    * @brief Publishes current sensor data to the triple-buffer.
+    * @brief Publishes current sensor data to the versioned snapshot.
     * 
     * Called at the end of update() to make new data available to readers.
-    * Uses atomic index swap for lock-free synchronization.
+    * Uses a seqlock-style version counter for lock-free synchronization.
     */
     void publishSnapshot();
+    void publishLastCompleteSnapshot();
+    ImuSnapshot getLastCompleteSnapshot() const;
+    void recordSnapshotReadRetries(uint32_t retries, bool limitHit) const;
     // ─────────────────────────────────────────────────────────────
 
     // ─────────────────────────────────────────────────────────────
@@ -491,7 +525,16 @@ private:
 
 #if BARO_TYPE == BARO_TYPE_BMP280
     Adafruit_BMP280 bmp280;
-    uint16_t _baroTickCounter = 0;  ///< Decimation counter for barometer reads
+    uint32_t _baroTickCounter = 0;  ///< Decimates baro reads to BARO_UPDATE_INTERVAL_MS within the IMU task
+    bool _baroFilterInitialized = false;  ///< Seeds the altitude EMA on the first baro sample (and re-seeds after recalibration)
+
+    /**
+    * @brief Computes barometric altitude (m) above the calibrated ground reference.
+    *
+    * Single-precision powf implementation (cheaper than the library's double-precision
+    * readAltitude()) used on baro-decimation ticks inside the IMU task.
+    */
+    float readBaroAltitude();
 #endif
 
     /**
@@ -564,4 +607,3 @@ private:
 };
 
 #endif // ARDU_FLITE_IMU_H
- 

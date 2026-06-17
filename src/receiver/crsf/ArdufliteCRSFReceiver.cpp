@@ -5,7 +5,7 @@
  * Author: Alexander Wasserman | Version: 1.1 | 07 June 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
- * 
+ *
  * Receives and decodes CRSF RC channels in a dedicated FreeRTOS task.
  */
 
@@ -27,13 +27,13 @@ ArdufliteCRSFReceiver::ArdufliteCRSFReceiver(HardwareSerial& ser, int rxPin, int
     for (auto &v : _lastRaw) v = 0xFFFF;  // force first‐time callbacks
 }
 
-ArdufliteCRSFReceiver::~ArdufliteCRSFReceiver() 
+ArdufliteCRSFReceiver::~ArdufliteCRSFReceiver()
 {
     if (_taskHandle) vTaskDelete(_taskHandle);
     if (_lock)       vSemaphoreDelete(_lock);
 }
 
-void ArdufliteCRSFReceiver::begin() 
+void ArdufliteCRSFReceiver::begin()
 {
     // 420 000 baud, 8N1
     // Configure with both RX and TX pins for shared UART with telemetry
@@ -49,38 +49,42 @@ void ArdufliteCRSFReceiver::begin()
         tskIDLE_PRIORITY+2,  // Priority 2: above telemetry/CLI, below control loops
         &_taskHandle
     );
-    if (res != pdPASS) 
+    if (res != pdPASS)
     {
         LOG_ERR("Failed to create CRSFRecv Task!");
     }
 }
 
-void ArdufliteCRSFReceiver::configureChannel(uint8_t idx, const ChannelConfig& cfg) 
+void ArdufliteCRSFReceiver::configureChannel(uint8_t idx, const ChannelConfig& cfg)
 {
-    LOG_DBG("Configured channel: %u", idx);
     if (idx >= 16) return;
+    LOG_DBG("Configuring channel: %u", idx);
 
     {
         SemaphoreLock lock(_lock);
+        if (!lock.acquired()) return;
         _chCfg[idx] = cfg;
     }
 }
 
-void ArdufliteCRSFReceiver::setFailsafeCallback(void (*cb)()) 
+void ArdufliteCRSFReceiver::setFailsafeCallback(void (*cb)())
 {
     SemaphoreLock lock(_lock);
+    if (!lock.acquired()) return;
     _failsafeCb = cb;
 }
 
-void ArdufliteCRSFReceiver::setFailsafeExitCallback(void (*cb)()) 
+void ArdufliteCRSFReceiver::setFailsafeExitCallback(void (*cb)())
 {
     SemaphoreLock lock(_lock);
+    if (!lock.acquired()) return;
     _failsafeExitCb = cb;
 }
 
 void ArdufliteCRSFReceiver::setFailsafeTimeout(uint32_t timeout)
 {
     SemaphoreLock lock(_lock);
+    if (!lock.acquired()) return;
     _failsafeTimeoutMs = timeout;
 }
 
@@ -90,7 +94,7 @@ bool ArdufliteCRSFReceiver::getLinkStats(crsfLinkStatistics_t& out) const
 
     {
         SemaphoreLock lock(_lock);
-        if (_haveLinkStats) 
+        if (lock.acquired() && _haveLinkStats)
         {
             out = _latestLinkStats;
             ok = true;
@@ -103,15 +107,16 @@ bool ArdufliteCRSFReceiver::getLinkStats(crsfLinkStatistics_t& out) const
 bool ArdufliteCRSFReceiver::isInFailsafe() const
 {
     SemaphoreLock lock(_lock);
+    if (!lock.acquired()) return true;
     return _inFailsafe;
 }
 
-void ArdufliteCRSFReceiver::taskLoop(void* pv) 
+void ArdufliteCRSFReceiver::taskLoop(void* pv)
 {
     static_cast<ArdufliteCRSFReceiver*>(pv)->run();
 }
 
-void ArdufliteCRSFReceiver::run() 
+void ArdufliteCRSFReceiver::run()
 {
     // Register this task with hardware watchdog (must be done from within the task)
     esp_task_wdt_add(NULL);  // NULL = current task
@@ -119,12 +124,12 @@ void ArdufliteCRSFReceiver::run()
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(_intervalMs);
 
-    while (true) 
+    while (true)
     {
         // Reset hardware watchdog - proves this task is alive
         esp_task_wdt_reset();
 
-        while (_serial.available()) 
+        while (_serial.available())
         {
             parseByte((uint8_t)_serial.read());
         }
@@ -135,9 +140,11 @@ void ArdufliteCRSFReceiver::run()
             void (*entryCb)() = nullptr;  // Store callback to invoke outside lock
             {
                 SemaphoreLock lock(_lock);
-                if (_lastRcMicros != 0 && (now - _lastRcMicros) > _failsafeTimeoutMs * 1000u)
+                if (lock.acquired() &&
+                    _lastRcMicros != 0 &&
+                    (now - _lastRcMicros) > (uint64_t)_failsafeTimeoutMs * 1000ULL)
                 {
-                    if (!_inFailsafe) 
+                    if (!_inFailsafe)
                     {
                         LOG_WARN("Entering RC failsafe");
                         _inFailsafe = true;
@@ -155,7 +162,7 @@ void ArdufliteCRSFReceiver::run()
     }
 }
 
-uint8_t ArdufliteCRSFReceiver::crc8(const uint8_t* data, uint8_t len) 
+uint8_t ArdufliteCRSFReceiver::crc8(const uint8_t* data, uint8_t len)
 {
     uint8_t crc = 0;
     while (len--) {
@@ -167,48 +174,50 @@ uint8_t ArdufliteCRSFReceiver::crc8(const uint8_t* data, uint8_t len)
     return crc;
 }
 
-void ArdufliteCRSFReceiver::parseByte(uint8_t b) 
+void ArdufliteCRSFReceiver::parseByte(uint8_t b)
 {
     LOG_DBG("Received: %u", b);
-    if (_bufLen == 0) 
+    if (_bufLen == 0)
     {
         if (b != DestFC) return;
-        _buf[0] = b; 
+        _buf[0] = b;
         _bufLen = 1;
         return;
     }
     _buf[_bufLen++] = b;
-    if (_bufLen == 2) 
+    if (_bufLen == 2)
     {
         _expectedLen = b + 2;
-        if (_expectedLen > MaxFrame) _bufLen = 0;
+        if (_expectedLen > MaxFrame) { _bufLen = 0; return; }
+        if (_expectedLen < 4)        { _bufLen = 0; return; }  // guard crc8 underflow
         return;
     }
 
     if (_bufLen < _expectedLen) return;
 
     // full frame
-    uint8_t type = _buf[2];
     uint8_t crcR = _buf[_expectedLen-1];
 
-    if (crc8(_buf+2, _expectedLen-3) == crcR) 
+    if (crc8(_buf+2, _expectedLen-3) == crcR)
     {
         dispatchFrame(_buf, _expectedLen);
     }
     _bufLen = 0;
 }
 
-void ArdufliteCRSFReceiver::dispatchFrame(const uint8_t* frame, size_t len) 
+void ArdufliteCRSFReceiver::dispatchFrame(const uint8_t* frame, size_t len)
 {
     uint8_t type = frame[2];
-    if (type == CRSF_FRAMETYPE_RC_CHANNELS_PACKED) 
+    if (type == CRSF_FRAMETYPE_RC_CHANNELS_PACKED)
     {
         // got a real RC frame: reset failsafe timer
         void (*exitCb)() = nullptr;  // Store callback to invoke outside lock
         {
             SemaphoreLock lock(_lock);
+            if (!lock.acquired()) return;
+
             _lastRcMicros = micros();
-            if (_inFailsafe) 
+            if (_inFailsafe)
             {
                 LOG_INF("Exiting RC failsafe");
                 _inFailsafe = false;
@@ -219,57 +228,85 @@ void ArdufliteCRSFReceiver::dispatchFrame(const uint8_t* frame, size_t len)
         if (exitCb) {
             exitCb();
         }
-        
-        {
-            SemaphoreLock lock(_lock);
-            handleRC(frame + 3, len - 4);
-        }
 
-    } 
-    else if (type == CRSF_FRAMETYPE_LINK_STATISTICS) 
+        // Decode channels and fire per-channel callbacks. Payload starts after the
+        // 3-byte header and excludes the trailing CRC byte: payloadLen = len - 4.
+        handleRC(frame + 3, len - 4);
+    }
+    else if (type == CRSF_FRAMETYPE_LINK_STATISTICS)
     {
         crsfLinkStatistics_t stats;
+        if (len < 4 + sizeof(stats))
+        {
+            LOG_WARN("CRSF: LINK_STATISTICS frame too short (%u bytes)", (unsigned)len);
+            return;
+        }
         std::memcpy(&stats, frame + 3, sizeof(stats));
 
         {
             SemaphoreLock lock(_lock);
+            if (!lock.acquired()) return;
             _latestLinkStats = stats;
             _haveLinkStats   = true;
         }
-    } 
-    else if (type == CRSF_FRAMETYPE_DEVICE_PING) 
+    }
+    else if (type == CRSF_FRAMETYPE_DEVICE_PING)
     {
         // you could reply or log ping timestamps here…
-    } 
-    else if (type == CRSF_FRAMETYPE_DEVICE_INFO) 
+    }
+    else if (type == CRSF_FRAMETYPE_DEVICE_INFO)
     {
         // parse device-info payload if you like
-    } 
-    else if (type == CRSF_FRAMETYPE_SUBSCRIBE_TELEMETRY) 
+    }
+    else if (type == CRSF_FRAMETYPE_SUBSCRIBE_TELEMETRY)
     {
         // the TX telling you which telemetry it wants
     }
 }
 
-void ArdufliteCRSFReceiver::handleRC(const uint8_t* payload, size_t) 
+void ArdufliteCRSFReceiver::handleRC(const uint8_t* payload, size_t payloadLen)
 {
+    if (payloadLen < 22) return;  // guard: RC frame requires 22 bytes of payload
     uint16_t raw[16];
     decodeChannels(payload, raw);
-    for (uint8_t ch = 0; ch < 16; ++ch) 
+
+    // Snapshot the changed channels under the lock, then map + fire callbacks outside it.
+    // We capture a copy of the ChannelConfig so that applyMapping() — which may invoke a
+    // user-supplied Custom converter — and the callback both run off the lock, avoiding
+    // lock inversion if either touches another mutex.
+    struct ChanUpdate { uint8_t ch; uint16_t raw; ChannelConfig cfg; };
+    ChanUpdate updates[16];
+    int updateCount = 0;
+
     {
-        // only fire when the raw value changed
-        if (_chCfg[ch].callback && raw[ch] != _lastRaw[ch]) 
+        SemaphoreLock lock(_lock);
+        if (!lock.acquired()) return;
+
+        for (uint8_t ch = 0; ch < 16; ++ch)
         {
-            _lastRaw[ch] = raw[ch];
-            float v = applyMapping(_chCfg[ch], raw[ch]);
-            _chCfg[ch].callback(ch, v);
+            // only fire when the raw value changed
+            if (_chCfg[ch].callback && raw[ch] != _lastRaw[ch])
+            {
+                _lastRaw[ch] = raw[ch];
+                updates[updateCount].ch  = ch;
+                updates[updateCount].raw = raw[ch];
+                updates[updateCount].cfg = _chCfg[ch];
+                updateCount++;
+            }
         }
+    }
+
+    // Map raw→float and fire callbacks outside the lock — safe from lock inversion.
+    for (int i = 0; i < updateCount; ++i)
+    {
+        float val = applyMapping(updates[i].cfg, updates[i].raw);
+        updates[i].cfg.callback(updates[i].ch, val);
     }
 }
 
-void ArdufliteCRSFReceiver::decodeChannels(const uint8_t* p, uint16_t out[16]) 
+void ArdufliteCRSFReceiver::decodeChannels(const uint8_t* p, uint16_t out[16])
 {
-    for (uint8_t i = 0; i < 16; ++i) 
+    for (uint8_t i = 0; i < 16; ++i)
     {
         uint32_t bit = i*11;
         uint32_t byte = bit/8;
@@ -281,19 +318,21 @@ void ArdufliteCRSFReceiver::decodeChannels(const uint8_t* p, uint16_t out[16])
     }
 }
 
-float ArdufliteCRSFReceiver::applyMapping(const ChannelConfig& c, uint16_t r) 
+float ArdufliteCRSFReceiver::applyMapping(const ChannelConfig& c, uint16_t r)
 {
-    switch (c.type) 
+    switch (c.type)
     {
         case ChannelType::Raw:
             return (float)r;
         case ChannelType::DualThrow:
-            return ((float)r - 1024.0f)/1023.0f;
+            // r∈[0,2047] maps to [-1.001, +1.0]; clamp so a full-low stick can't
+            // exceed -1 and over-drive the downstream control mixer.
+            return constrain(((float)r - 1024.0f)/1023.0f, -1.0f, 1.0f);
         case ChannelType::SingleThrow:
             return (float)r/2047.0f;
         case ChannelType::Boolean:
             return r > 1024 ? 1.0f : 0.0f;
-        case ChannelType::TriState: 
+        case ChannelType::TriState:
         {
             float n = (float)r/2047.0f;
             if (n < c.thrLow)   return -1.0f;

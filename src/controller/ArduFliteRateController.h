@@ -2,7 +2,7 @@
  * ArduFliteRateController.h
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 08 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
@@ -23,7 +23,7 @@
  * All angular rates should be in the same units (e.g., degrees per second).
  * The final servo outputs are normalized to the range [-1, 1].
  */
-class ArduFliteRateController 
+class ArduFliteRateController
 {
 public:
     /**
@@ -39,21 +39,33 @@ public:
     void initFromConfig();
 
     // Set the desired angular rates (roll, pitch, yaw). Units can be degrees per second.
-    void setRateControlSetpoint(EulerAngles setpoint);
+    void setRateControlSetpoint(const EulerAngles &setpoint);
 
     // Main update function:
-    // measuredRollRate, measuredPitchRate, measuredYawRate: measured angular rates from the IMU.
-    // dt: time step in seconds.
-    // rollOut, pitchOut, yawOut: final control signals (normalized to [-1, 1]) to drive the servos.
+    //   measuredRate: measured angular rates from the IMU (x=roll, y=pitch, z=yaw).
+    //   dt:           time step in seconds.
+    //   actuatorOut:  final control signals (normalized to [-1, 1]) to drive the servos.
+    //
+    // Uses a non-blocking lock: if the mutex is contended this call returns early
+    // WITHOUT modifying actuatorOut, so the caller's previous command is held. The
+    // caller must persist actuatorOut across iterations to rely on this fail-soft.
     void update(Vector3 measuredRate, float dt, EulerAngles &actuatorOut);
 
     // Reset the PID controllers' integrators.
     void reset();
 
+    /**
+     * @brief Resets only the integral accumulators for all rate PIDs.
+     *
+     * Called every outer-loop tick while in PREFLIGHT or LANDED state to prevent
+     * I-term windup while the aircraft is idle on the ground before launch.
+     */
+    void resetIntegrals();
+
     // ─────────────────────────────────────────────────────────────────
     // Runtime Configuration Updates
     // ─────────────────────────────────────────────────────────────────
-    
+
     /**
      * @brief Set the PID configuration for a specific axis.
      * @param loop The control loop type (RATE_ROLL_LOOP, RATE_PITCH_LOOP, RATE_YAW_LOOP)

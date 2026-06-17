@@ -319,6 +319,9 @@ const COLUMN_META = {
     // System
     flight_state:  { group: 'System',         color: '#475569' },
     flight_mode:   { group: 'System',         color: '#334155' },
+    imu_snapshot_retries:          { group: 'System', color: '#0f766e' },
+    imu_snapshot_max_retries:      { group: 'System', color: '#7c3aed' },
+    imu_snapshot_retry_limit_hits: { group: 'System', color: '#dc2626' },
 };
 
 const PRESETS = {
@@ -627,7 +630,12 @@ function buildTable() {
     tableBody.innerHTML = sliced.map(r =>
         '<tr>' + cols.map(h => {
             const v = r[h];
-            const isInt = h === 'timestamp' || h === 'flight_state' || h === 'flight_mode';
+            const isInt = h === 'timestamp' ||
+                          h === 'flight_state' ||
+                          h === 'flight_mode' ||
+                          h === 'imu_snapshot_retries' ||
+                          h === 'imu_snapshot_max_retries' ||
+                          h === 'imu_snapshot_retry_limit_hits';
             const disp  = isNaN(v) ? '—' : isInt ? Math.round(v) : v.toFixed(3);
             return `<td>${disp}</td>`;
         }).join('') + '</tr>'

@@ -2,7 +2,7 @@
  * CLICommands.h
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 08 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
@@ -23,5 +23,19 @@ struct CLICommand {
     const char* description;     // A short description of the command.
     CLICommandFunction execute;  // The function to execute when this command is invoked.
 };
+
+extern const CLICommand cliCommands[];
+extern const size_t numCLICommands;
+
+void cmdHelp(const String &args);
+void cmdReset(const String &args);
+void cmdStats(const String &args);
+void cmdTasks(const String &args);
+void cmdSetMode(const String &args);
+void cmdCalibrateIMU(const String &args);
+void cmdFlash(const String &args);
+void cmdConfig(const String &args);
+void cmdStream(const String &args);
+void cmdTest(const String &args);
 
 #endif // CLI_COMMANDS_H

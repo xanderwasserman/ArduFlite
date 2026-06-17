@@ -50,6 +50,11 @@ struct TelemetryData
     bool            armed;              // true if controller is armed
     bool            in_failsafe;        // true if in RC failsafe
 
+    // IMU snapshot read health
+    uint32_t        imu_snapshot_retries;          // cumulative retries since boot
+    uint32_t        imu_snapshot_max_retries;      // max retries for one snapshot read
+    uint32_t        imu_snapshot_retry_limit_hits; // stale fallback returns since boot
+
     // Link statistics (populated by CRSFReceiver)
     int8_t               link_rssi1;
     int8_t               link_rssi2;
@@ -66,10 +71,11 @@ struct TelemetryData
     void update(const ArduFliteIMU &myIMU, const ArduFliteController &myController, const ArdufliteCRSFReceiver &crsfReceiver) 
     {
         // Update data from ArduFlite IMU
-        accel               = myIMU.getAcceleration();
-        gyro                = myIMU.getGyro();
-        quat                = myIMU.getQuaternion();
-        orientation         = myIMU.getOrientation();
+        ImuSnapshot imuSnapshot = myIMU.getSnapshot();
+        accel               = imuSnapshot.accel;
+        gyro                = imuSnapshot.gyro;
+        quat                = imuSnapshot.quat;
+        orientation         = imuSnapshot.orientation;
 
         // Update data from ArduFlite Controller
         attitudeSetpoint    = myController.getAttitudeSetpoint();
@@ -78,11 +84,11 @@ struct TelemetryData
         rateCmd             = myController.getRateCmd();
 
         // Update flight state and mode
-        flight_state        = static_cast<int>(myIMU.getFlightState());
+        flight_state        = static_cast<int>(imuSnapshot.flightState);
         flight_mode         = static_cast<int>( myController.getMode());
 
         // Update additional flight data
-        altitude            = myIMU.getAltitude();
+        altitude            = imuSnapshot.altitude;
         battery_voltage     = 0.0f; //TODO
         battery_current     = 0.0f; //TODO
         battery_consumed    = 0;    //TODO
@@ -97,11 +103,16 @@ struct TelemetryData
         gps_sats            = 0;    //TODO
 
         // vario
-        climb_rate          = myIMU.getClimbRate();
+        climb_rate          = imuSnapshot.climbRate;
 
         // System status
         armed               = myController.isArmed();
         in_failsafe         = crsfReceiver.isInFailsafe();
+
+        ImuSnapshotHealth imuSnapshotHealth = myIMU.getSnapshotHealth();
+        imu_snapshot_retries          = imuSnapshotHealth.totalReadRetries;
+        imu_snapshot_max_retries      = imuSnapshotHealth.maxReadRetries;
+        imu_snapshot_retry_limit_hits = imuSnapshotHealth.retryLimitHits;
 
         // Update link statistics
         crsfLinkStatistics_t stats{};

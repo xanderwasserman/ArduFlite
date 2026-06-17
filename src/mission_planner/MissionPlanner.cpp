@@ -54,6 +54,7 @@ void MissionPlanner::loadMission(const Step *steps, size_t count)
 {
     {
         SemaphoreLock lock(_mutex);
+        if (!lock.acquired()) return;
         _steps.clear();
         _steps.insert(_steps.end(), steps, steps + count);
         _running = false;
@@ -64,6 +65,7 @@ void MissionPlanner::start()
 {
     {
         SemaphoreLock lock(_mutex);
+        if (!lock.acquired()) return;
         if (!_steps.empty() && !_running) 
         {
             _running      = true;
@@ -90,6 +92,7 @@ void MissionPlanner::stop()
 {
     {
         SemaphoreLock lock(_mutex);
+        if (!lock.acquired()) return;
         _running = false;
     }
 }
@@ -100,6 +103,7 @@ bool MissionPlanner::isRunning()
 
     {
         SemaphoreLock lock(_mutex);
+        if (!lock.acquired()) return r;
         r = _running;
     }
 
@@ -117,6 +121,11 @@ void MissionPlanner::run()
     {
         {
             SemaphoreLock lock(_mutex);
+            if (!lock.acquired())
+            {
+                vTaskDelay(pdMS_TO_TICKS(10));
+                continue;
+            }
             if (_running && !_steps.empty()) 
             {
                 uint32_t now = millis();
@@ -156,4 +165,3 @@ void MissionPlanner::run()
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
-

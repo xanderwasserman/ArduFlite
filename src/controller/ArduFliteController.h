@@ -17,6 +17,7 @@
 #include "include/ControllerTypes.h"
 
 #include <Arduino.h>
+#include <atomic>
 
 // Forward declaration
 class ArdufliteCRSFReceiver;
@@ -39,7 +40,7 @@ struct LoopStats {
  * - ATTITUDE_MODE: The pilot provides a desired attitude setpoint (SAFE-like).
  * - RATE_MODE: The pilot directly provides angular rate setpoints.
  */
-enum ArduFliteMode 
+enum ArduFliteMode
 {
     ATTITUDE_MODE   = 0,     // Pilot controls the attitude setpoint.
     RATE_MODE,              // Pilot directly controls the rate setpoints.
@@ -61,7 +62,7 @@ enum ArduFliteMode
  *
  * Shared state (operating mode and pilot setpoints) is protected by a mutex.
  */
-class ArduFliteController 
+class ArduFliteController
 {
 public:
     /**
@@ -98,7 +99,7 @@ public:
 
     /**
      * @brief Sets the desired attitude for a specified axis (in Euler angles, degrees) for ATTITUDE_MODE.
-     * 
+     *
      * In ATTITUDE_MODE mode, the attitude controller will use this values to compute the
      * desired angular roll rate.
      *
@@ -178,14 +179,14 @@ public:
 
     /**
      * @brief Arm the controller after passing preflight checks.
-     * 
+     *
      * Runs preflight validation before arming. Will reject arm request if:
      * - IMU is unhealthy
      * - Gyro bias exceeds threshold
      * - Accelerometer not reading ~1g
      * - Receiver link quality too low
      * - Throttle not at minimum
-     * 
+     *
      * @param receiver Pointer to CRSF receiver for link quality check (may be nullptr)
      * @return true if arm succeeded, false if preflight check failed
      */
@@ -226,7 +227,7 @@ public:
     // ─────────────────────────────────────────────────────────────────
     // Runtime Configuration Updates
     // ─────────────────────────────────────────────────────────────────
-    
+
     /**
      * @brief Set the PID configuration for a rate (inner loop) axis.
      * @param loop The control loop type (RATE_ROLL_LOOP, RATE_PITCH_LOOP, RATE_YAW_LOOP)
@@ -286,6 +287,11 @@ private:
     // IMU failure recovery state
     ArduFliteMode savedModeBeforeImuFailure = ATTITUDE_MODE; //< Mode to restore when IMU recovers
     bool imuFailureActive = false;                          //< True when in IMU failure MANUAL_MODE
+    // WDT re-registration flags: set by resumeTasks(), cleared by each task on its
+    // first tick after resume. Atomic because resumeTasks() and the control tasks
+    // run in different FreeRTOS contexts.
+    std::atomic<bool> outerWdtReregister{false};
+    std::atomic<bool> innerWdtReregister{false};
     static constexpr TickType_t outerLoopMs = 10;
     static constexpr TickType_t innerLoopMs = 2;
 

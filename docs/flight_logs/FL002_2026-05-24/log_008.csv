@@ -1,0 +1,2 @@
+timestamp,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,quat_w,quat_x,quat_y,quat_z,roll,pitch,yaw,att_sp_roll,att_sp_pitch,att_sp_yaw,rate_sp_roll,rate_sp_pitch,rate_sp_yaw,att_cmd_roll,att_cmd_pitch,att_cmd_yaw,rate_cmd_roll,rate_cmd_pitch,rate_cmd_yaw,altitude,climb_rate,flight_state,flight_mode
+59540,-0.082,-0.070,0.986,-2.039,-0.092,-0.099,0.9984,-0.0347,0.0420,-0.0162,-4.068,4.749,177.973,0.215,-1.564,2.111,0.352,-1.877,0.704,24.058,-21.986,2.111,1.000,-1.000,0.120,0.34,0.55,1,0

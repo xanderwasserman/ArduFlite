@@ -2,7 +2,7 @@
  * CommandSystem.h
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 16 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 16 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
@@ -87,19 +87,34 @@ public:
     static CommandSystem& instance();
 
     /**
-     * @brief Pushes a command onto the queue.
+     * @brief Pushes a command onto the queue (best-effort, non-blocking).
+     *
+     * Producers are never blocked: if the queue is full the command is dropped and a
+     * rate-limited warning is logged. This applies to ALL command types, including
+     * safety-critical ones (CMD_SET_ARM, CMD_SET_THROTTLE_CUT, failsafe mode/setpoint),
+     * so delivery is best-effort. In practice the queue only saturates if the single
+     * consumer (the main loop) stalls — and note that failsafe coincides with the RC
+     * setpoint stream stopping, so the queue is draining when failsafe commands arrive.
+     *
+     * Task context only: uses xQueueSend(), not the FromISR variant — do not call from
+     * an ISR.
      *
      * @param cmd The SystemCommand to push.
-     * @return true if the command was successfully enqueued, false otherwise.
+     * @return true if the command was enqueued, false if it was dropped.
      */
     bool pushCommand(const SystemCommand &cmd);
 
     /**
-     * @brief Processes all queued commands.
+     * @brief Processes up to MAX_COMMANDS_PER_TICK (10) pending commands per call.
      *
-     * This method dequeues pending commands (non-blocking) and executes them.
-     * It accepts pointers to an ArduFliteController and ArduFliteIMU instance so that
-     * command processing may invoke methods on these objects.
+     * Dequeues pending commands (non-blocking) and executes them, draining at most
+     * MAX_COMMANDS_PER_TICK per call to bound per-tick latency; any remainder is handled
+     * on subsequent calls. Accepts pointers to an ArduFliteController and ArduFliteIMU so
+     * that command processing may invoke methods on these objects.
+     *
+     * @note Single-consumer only: must be called from exactly one task (the main loop).
+     *       The command handlers mutate shared controller state assuming no concurrent
+     *       processCommands() call.
      *
      * @param controller Pointer to the ArduFliteController instance.
      * @param imu Pointer to the ArduFliteIMU instance.

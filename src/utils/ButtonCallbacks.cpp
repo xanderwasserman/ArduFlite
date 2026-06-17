@@ -18,41 +18,36 @@ extern ArduFliteController      controller;
 extern ArduFliteIMU             myIMU;
 
  // Callback for calibrate button.
-void onCalibrateHold(void) 
+void onCalibrateHold(void)
 {
 #if BOARD_TYPE == BOARD_TYPE_WEMOS
     statusLED.setPattern({0,0,255, 100,100});// fast blue blink
 #endif
-    LOG_INF("Calibrating IMU...");
-    controller.pauseTasks();     // Pause control loop tasks
-    
-    // selfCalibrate() internally handles IMU task pause/resume
-    if (!myIMU.selfCalibrate()) 
-    {
-        LOG_ERR("IMU calibration failed!");
-    }
-    
-    controller.resumeTasks();    // Resume control loop tasks
-#if BOARD_TYPE == BOARD_TYPE_WEMOS
-    statusLED.setPattern({0,255,0, 500,150});// slow green blink
-#endif
+    LOG_INF("Calibrating IMU (via CommandSystem)...");
+    // Route through CommandSystem so the handler also pauses CRSF telemetry,
+    // matching the full pause/resume sequence used by the CLI calibrate command.
+    // Direct calls to controller.pauseTasks() / myIMU.selfCalibrate() here would
+    // bypass that step and violate the CommandSystem contract (AGENTS.md §1).
+    SystemCommand cmd;
+    cmd.type = CMD_CALIBRATE;
+    CommandSystem::instance().pushCommand(cmd);
 }
 
 // Callback for telemetry reset button.
-void onModeDoubleTap(void) 
+void onModeDoubleTap(void)
 {
     LOG_INF("Toggling Controller Mode...");
 
     SystemCommand cmd;
     cmd.type = CMD_SET_MODE;
 
-    if (controller.getMode() == ATTITUDE_MODE) 
+    if (controller.getMode() == ATTITUDE_MODE)
     {
         LOG_INF("Changing Flight Control mode to: RATE_MODE.");
         cmd.mode = RATE_MODE;
         CommandSystem::instance().pushCommand(cmd);
-    } 
-    else 
+    }
+    else
     {
         LOG_INF("Changing Flight Control mode to: ATTITUDE_MODE.");
         cmd.mode = ATTITUDE_MODE;
@@ -61,7 +56,7 @@ void onModeDoubleTap(void)
 }
 
 // Callback for triple-tap action.
-void onResetTripleTap(void) 
+void onResetTripleTap(void)
 {
     // TODO: Implement triple-tap action (e.g., toggle debug mode, reset flash telemetry)
     LOG_INF("Triple-tap detected - no action configured");

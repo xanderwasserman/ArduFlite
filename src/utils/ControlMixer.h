@@ -30,12 +30,12 @@ struct MixerConfig {
     float maxAttRoll;
     float maxAttPitch;
     float maxAttYaw;
-    
+
     // Rate limits (deg/s)
     float maxRateRoll;
     float maxRatePitch;
     float maxRateYaw;
-    
+
     // Mixing coefficients
     float mixRollFromYaw;
     float mixPitchFromRoll;
@@ -57,20 +57,25 @@ public:
     /// Reload config values from ConfigRegistry (called by observer)
     static void reloadConfig();
 
-    /// Called on each channel update
+    /// Called on each channel update.
+    /// @note Single-producer only: must be called from one task (the CRSF receiver
+    ///       task). s_raw is updated lock-free under that assumption.
     static void handleChannelInput(uint8_t ch, float v);
 
-    /// mix raw RC [-1..1] into an attitude setpoint (degrees) with optional mixing
-    static EulerAngles mixAttitude(const EulerAngles &raw);
+    /// mix raw RC [-1..1] into an attitude setpoint (degrees) with optional mixing.
+    /// @param ok if non-null, set false when the config snapshot could not be taken
+    ///           (reload in progress) and the result is not usable; true otherwise.
+    static EulerAngles mixAttitude(const EulerAngles &raw, bool* ok = nullptr);
 
-    /// mix raw RC [-1..1] into a rate setpoint (deg/s)
-    static EulerAngles mixRate(const EulerAngles &raw);
+    /// mix raw RC [-1..1] into a rate setpoint (deg/s). @param ok see mixAttitude().
+    static EulerAngles mixRate(const EulerAngles &raw, bool* ok = nullptr);
 
     /// direct passthrough, raw → servo commands
     static EulerAngles mixManual(const EulerAngles &raw);
 
-    /// general dispatcher: chooses Attitude/Rate/Manual based on mode
-    static EulerAngles mix(const EulerAngles &raw, ArduFliteMode mode);
+    /// general dispatcher: chooses Attitude/Rate/Manual based on mode.
+    /// @param ok see mixAttitude(); always true for Manual/default modes.
+    static EulerAngles mix(const EulerAngles &raw, ArduFliteMode mode, bool* ok = nullptr);
 
     /// actually send that setpoint into the controller/command bus
     static void sendSetpoint(const EulerAngles &sp);
@@ -78,7 +83,8 @@ public:
 private:
     static EulerAngles            s_raw;    ///< latest raw sticks
     static ArduFliteController*   s_ctrl;   ///< your controller pointer
-    static MixerConfig            s_config; ///< cached config values
+    static MixerConfig            s_config; ///< cached config values (protected by s_configMutex)
+    static SemaphoreHandle_t      s_configMutex; ///< protects s_config from concurrent reads/writes
 };
 
 

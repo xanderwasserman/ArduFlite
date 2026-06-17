@@ -11,6 +11,7 @@
 #if ENABLE_WEB_SERVER
 
 #include "src/web/ArduFliteWebServer.h"
+#include "src/web/WiFiManager.h"
 #include "src/web/WebUI.h"
 #include "src/utils/ConfigRegistry.h"
 #include "src/utils/ConfigPersistence.h"
@@ -23,6 +24,26 @@
 
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <esp_system.h>
+
+namespace
+{
+const char* WEB_HEADER_KEYS[] = { "X-ArduFlite-Token" };
+constexpr size_t WEB_HEADER_KEY_COUNT = sizeof(WEB_HEADER_KEYS) / sizeof(WEB_HEADER_KEYS[0]);
+
+bool isLogFilename(const String& name)
+{
+    if (name.length() != 11) return false;
+    if (!name.startsWith("log_") || !name.endsWith(".csv")) return false;
+
+    for (int i = 4; i <= 6; ++i)
+    {
+        if (name[i] < '0' || name[i] > '9') return false;
+    }
+
+    return true;
+}
+}
 
 ArduFliteWebServer& ArduFliteWebServer::instance()
 {
@@ -47,6 +68,9 @@ bool ArduFliteWebServer::begin(ArduFliteController* controller,
     _controller = controller;
     _imu = imu;
     _flashTelemetry = flashTelemetry;
+    snprintf(_csrfToken, sizeof(_csrfToken), "%08lX%08lX",
+             static_cast<unsigned long>(esp_random()),
+             static_cast<unsigned long>(esp_random()));
 
     // Create server on heap
     _server = new WebServer(HTTP_PORT);
@@ -55,6 +79,8 @@ bool ArduFliteWebServer::begin(ArduFliteController* controller,
         LOG_ERR("Failed to allocate WebServer");
         return false;
     }
+
+    _server->collectHeaders(WEB_HEADER_KEYS, WEB_HEADER_KEY_COUNT);
 
     setupRoutes();
 
@@ -115,8 +141,9 @@ void ArduFliteWebServer::run()
 
     while (_running)
     {
+        WiFiManager::instance().processDns();
         _server->handleClient();
-        vTaskDelay(pdMS_TO_TICKS(1));  // 1ms polling for responsive connections
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 
     vTaskDelete(nullptr);
@@ -126,10 +153,19 @@ void ArduFliteWebServer::setupRoutes()
 {
     // Web UI (root and static assets)
     _server->on("/", HTTP_GET, std::bind(&ArduFliteWebServer::handleWebUI, this));
-    _server->on("/styles.css", HTTP_GET, std::bind(&ArduFliteWebServer::handleCSS, this));
-    _server->on("/app.js", HTTP_GET, std::bind(&ArduFliteWebServer::handleJS, this));
+    _server->on("/index.html", HTTP_GET, std::bind(&ArduFliteWebServer::handleWebUI, this));
+
+    // Captive portal probes used by phones/laptops when joining an AP with no internet.
+    _server->on("/generate_204", HTTP_ANY, std::bind(&ArduFliteWebServer::handleCaptivePortalProbe, this));
+    _server->on("/gen_204", HTTP_ANY, std::bind(&ArduFliteWebServer::handleCaptivePortalProbe, this));
+    _server->on("/hotspot-detect.html", HTTP_ANY, std::bind(&ArduFliteWebServer::handleCaptivePortalProbe, this));
+    _server->on("/library/test/success.html", HTTP_ANY, std::bind(&ArduFliteWebServer::handleCaptivePortalProbe, this));
+    _server->on("/success.txt", HTTP_ANY, std::bind(&ArduFliteWebServer::handleCaptivePortalProbe, this));
+    _server->on("/connecttest.txt", HTTP_ANY, std::bind(&ArduFliteWebServer::handleCaptivePortalProbe, this));
+    _server->on("/ncsi.txt", HTTP_ANY, std::bind(&ArduFliteWebServer::handleCaptivePortalProbe, this));
 
     // Config API
+    _server->on("/api/session", HTTP_GET, std::bind(&ArduFliteWebServer::handleSession, this));
     _server->on("/api/config", HTTP_GET, std::bind(&ArduFliteWebServer::handleConfigList, this));
     _server->on("/api/config/export", HTTP_GET, std::bind(&ArduFliteWebServer::handleConfigExport, this));
     _server->on("/api/config/import", HTTP_POST, std::bind(&ArduFliteWebServer::handleConfigImport, this));
@@ -154,29 +190,29 @@ void ArduFliteWebServer::setupRoutes()
 
 void ArduFliteWebServer::handleWebUI()
 {
-    // Content is gzip-compressed in PROGMEM
+    _server->sendHeader("Cache-Control", "no-store");
     _server->sendHeader("Content-Encoding", "gzip");
-    _server->setContentLength(WEB_UI_HTML_GZ_LEN);
-    _server->send(200, "text/html", "");
-    _server->sendContent_P(reinterpret_cast<const char*>(WEB_UI_HTML_GZ), WEB_UI_HTML_GZ_LEN);
+    _server->send_P(200, PSTR("text/html"), reinterpret_cast<const char*>(WEB_UI_HTML_GZ), WEB_UI_HTML_GZ_LEN);
 }
 
-void ArduFliteWebServer::handleCSS()
+void ArduFliteWebServer::handleCaptivePortalProbe()
 {
-    _server->sendHeader("Cache-Control", "max-age=86400");
-    _server->sendHeader("Content-Encoding", "gzip");
-    _server->setContentLength(WEB_UI_CSS_GZ_LEN);
-    _server->send(200, "text/css", "");
-    _server->sendContent_P(reinterpret_cast<const char*>(WEB_UI_CSS_GZ), WEB_UI_CSS_GZ_LEN);
+    String target = "http://" + WiFiManager::instance().getIP().toString() + "/";
+    _server->sendHeader("Location", target, true);
+    _server->sendHeader("Cache-Control", "no-store");
+    _server->send(302, "text/plain", "Redirecting to ArduFlite");
 }
 
-void ArduFliteWebServer::handleJS()
+void ArduFliteWebServer::handleSession()
 {
-    _server->sendHeader("Cache-Control", "max-age=86400");
-    _server->sendHeader("Content-Encoding", "gzip");
-    _server->setContentLength(WEB_UI_JS_GZ_LEN);
-    _server->send(200, "application/javascript", "");
-    _server->sendContent_P(reinterpret_cast<const char*>(WEB_UI_JS_GZ), WEB_UI_JS_GZ_LEN);
+    JsonDocument doc;
+    doc["token"] = _csrfToken;
+
+    String response;
+    serializeJson(doc, response);
+
+    _server->sendHeader("Cache-Control", "no-store");
+    sendJson(200, response);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -201,9 +237,8 @@ void ArduFliteWebServer::handleConfigList()
 
     // Use chunked transfer encoding for large responses to avoid memory issues
     _server->setContentLength(CONTENT_LENGTH_UNKNOWN);
-    _server->sendHeader("Access-Control-Allow-Origin", "*");
     _server->send(200, "application/json", "");
-    
+
     // Stream JSON array directly to avoid large String allocation
     _server->sendContent("[");
     bool first = true;
@@ -211,7 +246,7 @@ void ArduFliteWebServer::handleConfigList()
     for (const auto& key : keys)
     {
         const auto& p = params[key];
-        
+
         // Simple pattern matching
         bool match = (pattern == "*");
         if (!match && pattern.endsWith("*"))
@@ -226,6 +261,9 @@ void ArduFliteWebServer::handleConfigList()
 
         if (match)
         {
+            // Redact sensitive credential keys — never expose them over the REST API.
+            if (std::string(p.key) == CONFIG_KEY_WEB_AP_PASS) continue;
+
             // Build single item JSON (small, fits in memory)
             JsonDocument doc;
             JsonObject obj = doc.to<JsonObject>();
@@ -295,6 +333,13 @@ void ArduFliteWebServer::handleConfigGet()
         return;
     }
 
+    // Redact sensitive credential keys — return 403 rather than expose the value.
+    if (key == CONFIG_KEY_WEB_AP_PASS)
+    {
+        sendError(403, "Forbidden: sensitive key");
+        return;
+    }
+
     auto& reg = ConfigRegistry::instance();
     auto optParam = reg.getParam(key.c_str());
 
@@ -349,11 +394,20 @@ void ArduFliteWebServer::handleConfigGet()
 
 void ArduFliteWebServer::handleConfigSet()
 {
+    if (!isMutationAuthorized()) return;
+
     // Extract key from URI: PUT /api/config/rate.roll.kp
     String uri = _server->uri();
     if (!uri.startsWith("/api/config/"))
     {
         sendError(400, "Invalid path");
+        return;
+    }
+
+    // Block configuration changes while armed — modifying PID gains in flight is unsafe.
+    if (_controller && _controller->isArmed())
+    {
+        sendError(423, "Locked: disarm before changing configuration");
         return;
     }
 
@@ -368,6 +422,13 @@ void ArduFliteWebServer::handleConfigSet()
     if (!_server->hasArg("plain"))
     {
         sendError(400, "Body required");
+        return;
+    }
+
+    // Reject oversized payloads to prevent heap exhaustion on ESP32-C3.
+    if (_server->arg("plain").length() > 512)
+    {
+        sendError(413, "Payload too large");
         return;
     }
 
@@ -430,6 +491,13 @@ void ArduFliteWebServer::handleConfigSet()
 
 void ArduFliteWebServer::handleConfigReset()
 {
+    if (!isMutationAuthorized()) return;
+
+    if (_controller && _controller->isArmed())
+    {
+        sendError(423, "Locked: disarm before resetting configuration");
+        return;
+    }
     LOG_INF("Web: Resetting all config to defaults");
     ConfigRegistry::instance().resetAll();
     ConfigPersistence::saveIfDirty();
@@ -438,12 +506,34 @@ void ArduFliteWebServer::handleConfigReset()
 
 void ArduFliteWebServer::handleConfigExport()
 {
+    // Export config, then strip sensitive credential keys before sending.
     String json = ConfigPersistence::exportJson();
-    sendJson(200, json);
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, json);
+    if (err || !doc["params"].is<JsonObject>())
+    {
+        sendError(500, "Config export failed");
+        return;
+    }
+
+    doc["params"].as<JsonObject>().remove(CONFIG_KEY_WEB_AP_PASS);
+
+    String filtered;
+    serializeJson(doc, filtered);
+    sendJson(200, filtered);
 }
 
 void ArduFliteWebServer::handleConfigImport()
 {
+    if (!isMutationAuthorized()) return;
+
+    if (_controller && _controller->isArmed())
+    {
+        sendError(423, "Locked: disarm before importing configuration");
+        return;
+    }
+
     if (!_server->hasArg("plain"))
     {
         sendError(400, "Body required");
@@ -451,8 +541,16 @@ void ArduFliteWebServer::handleConfigImport()
     }
 
     String json = _server->arg("plain");
+
+    // Reject oversized payloads to prevent heap exhaustion on ESP32-C3.
+    if (json.length() > 16384)
+    {
+        sendError(413, "Payload too large");
+        return;
+    }
+
     size_t imported = ConfigPersistence::importJson(json);
-    
+
     JsonDocument doc;
     doc["ok"] = true;
     doc["imported"] = imported;
@@ -464,9 +562,16 @@ void ArduFliteWebServer::handleConfigImport()
 
 void ArduFliteWebServer::handleConfigReboot()
 {
+    if (!isMutationAuthorized()) return;
+
+    if (_controller && _controller->isArmed())
+    {
+        sendError(423, "Locked: disarm before rebooting");
+        return;
+    }
     LOG_INF("Web: Reboot requested");
     sendJson(200, "{\"ok\":true,\"message\":\"Rebooting...\"}");
-    
+
     // Delay to allow response to be sent
     vTaskDelay(pdMS_TO_TICKS(500));
     ESP.restart();
@@ -498,8 +603,13 @@ void ArduFliteWebServer::handleSystemStatus()
     // IMU state (if available)
     if (_imu)
     {
+        ImuSnapshot snapshot = _imu->getSnapshot();
+        ImuSnapshotHealth snapshotHealth = _imu->getSnapshotHealth();
         doc["imu_healthy"] = _imu->isHealthy();
-        doc["flight_state"] = static_cast<int>(_imu->getFlightState());
+        doc["flight_state"] = static_cast<int>(snapshot.flightState);
+        doc["imu_snapshot_retries"] = snapshotHealth.totalReadRetries;
+        doc["imu_snapshot_max_retries"] = snapshotHealth.maxReadRetries;
+        doc["imu_snapshot_retry_limit_hits"] = snapshotHealth.retryLimitHits;
     }
 
     String response;
@@ -521,20 +631,26 @@ void ArduFliteWebServer::handleTelemetry()
     // IMU orientation and state
     if (_imu)
     {
-        auto euler = _imu->getOrientation();
+        ImuSnapshot snapshot = _imu->getSnapshot();
+        ImuSnapshotHealth snapshotHealth = _imu->getSnapshotHealth();
+
+        auto euler = snapshot.orientation;
         doc["roll"] = euler.roll;
         doc["pitch"] = euler.pitch;
         doc["yaw"] = euler.yaw;
 
-        auto gyro = _imu->getGyro();
+        auto gyro = snapshot.gyro;
         doc["roll_rate"] = gyro.x;
         doc["pitch_rate"] = gyro.y;
         doc["yaw_rate"] = gyro.z;
 
-        doc["altitude"] = _imu->getAltitude();
-        doc["climb_rate"] = _imu->getClimbRate();
+        doc["altitude"] = snapshot.altitude;
+        doc["climb_rate"] = snapshot.climbRate;
         doc["imu_healthy"] = _imu->isHealthy();
-        doc["flight_state"] = static_cast<int>(_imu->getFlightState());
+        doc["flight_state"] = static_cast<int>(snapshot.flightState);
+        doc["imu_snapshot_retries"] = snapshotHealth.totalReadRetries;
+        doc["imu_snapshot_max_retries"] = snapshotHealth.maxReadRetries;
+        doc["imu_snapshot_retry_limit_hits"] = snapshotHealth.retryLimitHits;
     }
 
     // Controller state
@@ -555,6 +671,13 @@ void ArduFliteWebServer::handleTelemetry()
 
 void ArduFliteWebServer::handleCalibrate()
 {
+    if (!isMutationAuthorized()) return;
+
+    if (_controller && _controller->isArmed())
+    {
+        sendError(423, "Locked: disarm before calibrating");
+        return;
+    }
     LOG_INF("Web: IMU calibration requested");
 
     // Push calibration command through CommandSystem (thread-safe)
@@ -571,6 +694,17 @@ void ArduFliteWebServer::handleCalibrate()
 
 void ArduFliteWebServer::handleFlashList()
 {
+    if (_controller && _controller->isArmed())
+    {
+        sendError(423, "Locked: disarm before accessing flash logs");
+        return;
+    }
+    if (_flashTelemetry && _flashTelemetry->isLogging())
+    {
+        sendError(423, "Locked: stop logging before accessing flash logs");
+        return;
+    }
+
     // List files in LittleFS
     if (!LittleFS.begin(false))
     {
@@ -597,7 +731,7 @@ void ArduFliteWebServer::handleFlashList()
             String name = String(file.name());
             if (name.startsWith("/")) name = name.substring(1);
 
-            if (name.startsWith("log_"))
+            if (isLogFilename(name))
             {
                 JsonObject obj = arr.add<JsonObject>();
                 obj["name"] = name;
@@ -619,6 +753,17 @@ void ArduFliteWebServer::handleFlashList()
 
 void ArduFliteWebServer::handleFlashGet()
 {
+    if (_controller && _controller->isArmed())
+    {
+        sendError(423, "Locked: disarm before downloading flash logs");
+        return;
+    }
+    if (_flashTelemetry && _flashTelemetry->isLogging())
+    {
+        sendError(423, "Locked: stop logging before downloading flash logs");
+        return;
+    }
+
     // Extract filename from URI: /api/flash/log_001.csv
     String uri = _server->uri();
     if (!uri.startsWith("/api/flash/"))
@@ -627,7 +772,16 @@ void ArduFliteWebServer::handleFlashGet()
         return;
     }
 
-    String filename = "/" + uri.substring(11);  // Add leading /
+    String name = uri.substring(11);  // bare filename, no leading /
+
+    // Guard against path traversal: reject any name containing '/' or "..".
+    if (name.isEmpty() || name.indexOf('/') >= 0 || name.indexOf("..") >= 0 || !isLogFilename(name))
+    {
+        sendError(400, "Invalid filename");
+        return;
+    }
+
+    String filename = "/" + name;  // Add leading / for LittleFS
 
     if (!LittleFS.exists(filename))
     {
@@ -648,10 +802,11 @@ void ArduFliteWebServer::handleFlashGet()
 
     // Stream file in chunks
     uint8_t buf[512];
-    while (file.available())
+    while (file.available() && _server->client().connected())
     {
         size_t len = file.read(buf, sizeof(buf));
         _server->client().write(buf, len);
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 
     file.close();
@@ -659,6 +814,19 @@ void ArduFliteWebServer::handleFlashGet()
 
 void ArduFliteWebServer::handleFlashDelete()
 {
+    if (!isMutationAuthorized()) return;
+
+    if (_controller && _controller->isArmed())
+    {
+        sendError(423, "Locked: disarm before deleting flash logs");
+        return;
+    }
+    if (_flashTelemetry && _flashTelemetry->isLogging())
+    {
+        sendError(423, "Locked: stop logging before deleting flash logs");
+        return;
+    }
+
     // Extract filename from URI: DELETE /api/flash/log_001.csv
     String uri = _server->uri();
     if (!uri.startsWith("/api/flash/"))
@@ -667,7 +835,16 @@ void ArduFliteWebServer::handleFlashDelete()
         return;
     }
 
-    String filename = "/" + uri.substring(11);
+    String name = uri.substring(11);  // bare filename, no leading /
+
+    // Guard against path traversal: reject any name containing '/' or "..".
+    if (name.isEmpty() || name.indexOf('/') >= 0 || name.indexOf("..") >= 0 || !isLogFilename(name))
+    {
+        sendError(400, "Invalid filename");
+        return;
+    }
+
+    String filename = "/" + name;
 
     if (!LittleFS.exists(filename))
     {
@@ -724,6 +901,18 @@ void ArduFliteWebServer::handleNotFound()
         }
     }
 
+    if (uri.startsWith("/api/"))
+    {
+        sendError(404, "Not found");
+        return;
+    }
+
+    if (method == HTTP_GET || method == HTTP_HEAD)
+    {
+        handleCaptivePortalProbe();
+        return;
+    }
+
     sendError(404, "Not found");
 }
 
@@ -733,14 +922,31 @@ void ArduFliteWebServer::handleNotFound()
 
 void ArduFliteWebServer::sendJson(int code, const String& json)
 {
-    _server->sendHeader("Access-Control-Allow-Origin", "*");
+    // No CORS wildcard — the embedded web UI is same-origin (served from this same server)
+    // and does not need cross-origin headers. Wildcard CORS would allow any page loaded
+    // on a device connected to the AP to call mutating endpoints cross-origin.
     _server->send(code, "application/json", json);
 }
 
 void ArduFliteWebServer::sendError(int code, const char* message)
 {
-    String json = "{\"error\":\"" + String(message) + "\"}";
-    sendJson(code, json);
+    // Use snprintf with a fixed buffer to avoid Arduino String heap allocations.
+    char buf[128];
+    snprintf(buf, sizeof(buf), "{\"error\":\"%s\"}", message);
+    sendJson(code, buf);
+}
+
+bool ArduFliteWebServer::isMutationAuthorized()
+{
+    String token = _server->header("X-ArduFlite-Token");
+    if (token.length() == 0 || token != _csrfToken)
+    {
+        LOG_WARN("Web: rejected mutating request without a valid session token");
+        sendError(403, "Forbidden");
+        return false;
+    }
+
+    return true;
 }
 
 #endif // ENABLE_WEB_SERVER

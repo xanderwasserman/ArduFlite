@@ -80,6 +80,8 @@ private:
     // API handlers
     void handleRoot();
     void handleNotFound();
+    void handleCaptivePortalProbe();
+    void handleSession();
     
     // Config API
     void handleConfigList();
@@ -103,12 +105,11 @@ private:
 
     // Web UI (served from PROGMEM)
     void handleWebUI();
-    void handleCSS();
-    void handleJS();
 
     // Helpers
     void sendJson(int code, const String& json);
     void sendError(int code, const char* message);
+    bool isMutationAuthorized();
     String getContentType(const String& filename);
 
     // State
@@ -120,6 +121,7 @@ private:
     ArduFliteController*    _controller = nullptr;
     ArduFliteIMU*           _imu = nullptr;
     ArduFliteFlashTelemetry* _flashTelemetry = nullptr;
+    char                    _csrfToken[17]{};
 
     static constexpr uint16_t HTTP_PORT = 80;
     static constexpr size_t TASK_STACK_SIZE = 12288;  // 12KB for JSON + HTTP handling

@@ -2,7 +2,7 @@
  * ArduFliteDebugSerialTelemetry.h
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 April 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 25 May 2026
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
@@ -13,19 +13,28 @@
 #include "src/telemetry/ArduFliteTelemetry.h"
 #include "src/telemetry/TelemetryData.h"
 
+/**
+ * @brief Full-data debug serial telemetry backend.
+ *
+ * Publishes all TelemetryData fields to Serial at a configurable rate from a
+ * dedicated FreeRTOS task. Intended for ground-connected development sessions;
+ * not for in-flight use where a Serial connection is unavailable.
+ */
 class ArduFliteDebugSerialTelemetry : public ArduFliteTelemetry {
     public:
         ArduFliteDebugSerialTelemetry(float frequencyHz = 1.0f);
-    
+        ~ArduFliteDebugSerialTelemetry();
+
         void begin() override;
         void publish(const TelemetryData& telemData) override;
-    
+
     private:
         static void telemetryTask(void* pvParameters);
-    
-        float             intervalMs;
-        TelemetryData     pendingData;
-        SemaphoreHandle_t telemetryMutex;
+
+        float             _intervalMs;
+        TaskHandle_t      _taskHandle = nullptr;   ///< Handle for telemetryTask; stored to allow clean teardown
+        TelemetryData     _pendingData{};
+        SemaphoreHandle_t _mutex = nullptr;        ///< Protects _pendingData; nullptr until begin() succeeds
     };
-    
+
 #endif //ARDUFLITE_DEBUG_SERIAL_TELEMETRY_H

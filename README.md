@@ -73,13 +73,17 @@ ArduFlite is a highly modular and real-time flight control framework designed fo
 
 ### 7. Web Configuration Interface
 
-- **WiFi Access Point**  
-  - ArduFlite can create its own WiFi hotspot for configuration.  
-  - Enable via `config set web.enabled true` (requires reboot).  
-  - Customizable SSID and password via `web.ap_ssid` and `web.ap_pass` keys.  
-- **Responsive Web UI**  
-  - Mobile-friendly interface accessible at `http://192.168.4.1`.  
-  - Tabbed navigation: Rate, Attitude, Mixer, Servo, IMU, Failsafe, All.  
+- **WiFi Access Point**
+  - ArduFlite can create its own WiFi hotspot for configuration.
+  - Enable via `config set web.enabled true` (requires reboot).
+  - Customizable SSID and WPA2 password via `web.ap_ssid` and `web.ap_pass` keys (`web.ap_pass` must be at least 8 characters).
+  - If `web.ap_pass` is still unset/default, firmware uses the unique AP SSID as a temporary password and logs a warning.
+- **Responsive Web UI**
+  - Mobile-friendly interface accessible at `http://192.168.4.1`.
+  - Full builds run captive DNS so phones can also open the UI from their
+    WiFi sign-in prompt or by visiting `http://arduflite.local` / any HTTP hostname.
+  - Mutating WebUI actions use a per-boot same-origin session token to reject drive-by POST/PUT/DELETE requests.
+  - Tabbed navigation: Rate, Attitude, Mixer, Servo, IMU, Failsafe, All.
   - Real-time display of controller status (mode, armed state, heap usage).  
 - **REST API Endpoints**  
   - `GET /api/config` — List all parameters with optional pattern filter.  
@@ -167,6 +171,7 @@ ArduFlite employs a cascade control structure:
     Available compile-time flags:
     ```
     BOARD_TYPE   - BOARD_TYPE_FIREBEETLE (0) or BOARD_TYPE_WEMOS (1)
+    AIRCRAFT_TYPE - AIRCRAFT_TYPE_POWERED (0) or AIRCRAFT_TYPE_GLIDER (1)
     IMU_TYPE     - IMU_TYPE_MPU6500 or IMU_TYPE_MPU9250
     BARO_TYPE    - BARO_TYPE_BMP280
     ```
@@ -176,6 +181,11 @@ ArduFlite employs a cascade control structure:
     ./build.sh lolin
     ./upload.sh lolin
     ```
+    Build outputs are separated by board and variant, for example `build/lolin-full`
+    and `build/lolin-lite`. The build script performs a clean compile inside
+    the selected output directory to avoid stale generated Arduino files.
+    Pass the same optional variant to upload:
+    `./upload.sh lolin lite`.
 
 ### Usage
 Once the system is running:
@@ -187,6 +197,8 @@ Once the system is running:
     - Flash Telemetry: For high-frequency on-board logging. Use `tools/flash_dump/` to extract flight logs after landing.
 
     - Debug Serial Telemetry: For low-frequency logging and debugging.
+
+    - IMU snapshot health counters are included in Flash logs, Debug Serial output, CLI `stream`, and web status/telemetry JSON so snapshot contention can be diagnosed after field tests.
 
     - Q Serial Telemetry: For high-frequency, detailed real-time quaternion data output, for use with the visualiser.
 

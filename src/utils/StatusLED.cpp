@@ -56,6 +56,7 @@ void StatusLED::setColor(uint8_t r, uint8_t g, uint8_t b)
 {
     {
         SemaphoreLock lock(_mutex);
+        if (!lock.acquired()) return;
         _usePattern = false;
         _r = r; _g = g; _b = b;
     }
@@ -65,6 +66,7 @@ void StatusLED::setPattern(const Pattern& p)
 {
     {
         SemaphoreLock lock(_mutex);
+        if (!lock.acquired()) return;
         _pattern = p;
         _usePattern = true;
     }
@@ -74,6 +76,7 @@ void StatusLED::disable()
 {
     {
         SemaphoreLock lock(_mutex);
+        if (!lock.acquired()) return;
         _usePattern = false;
         _r = _g = _b = 0;
     }
@@ -88,16 +91,19 @@ void StatusLED::run()
 {
     while (true) 
     {
-        bool        localUsePattern;
-        Pattern     localPattern;
-        uint8_t     localR, localG, localB;
+        bool        localUsePattern = false;
+        Pattern     localPattern{0, 0, 0, 0, 0};
+        uint8_t     localR = 0, localG = 0, localB = 0;
 
         // snapshot shared state under lock
         {
             SemaphoreLock lock(_mutex);
-            localUsePattern = _usePattern;
-            localPattern    = _pattern;
-            localR = _r; localG = _g; localB = _b;
+            if (lock.acquired())
+            {
+                localUsePattern = _usePattern;
+                localPattern    = _pattern;
+                localR = _r; localG = _g; localB = _b;
+            }
         }
 
         if (localUsePattern && (localPattern.on_ms + localPattern.off_ms > 0)) 

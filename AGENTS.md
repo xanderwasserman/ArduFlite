@@ -52,6 +52,7 @@ ArduFlite follows a strict layered architecture. Respect these boundaries:
    - **ServoManager**: Wing geometry abstraction (CONVENTIONAL, DELTA_WING, V_TAIL)
    - These classes **own** the hardware interfaces
    - Use FreeRTOS tasks for time-critical operations (e.g., IMU @ high Hz)
+   - BMP280 barometer sampling is decimated **inside** the IMU task (read every `BARO_DECIMATION_FACTOR` ticks ≈ 50 Hz) and feeds altitude/climb rate into the IMU snapshot. The IMU task is the **sole owner of the I2C bus**; do not add a second task that shares `imuMutex`/`Wire`, as that reintroduces priority inversion and "sensor mutex busy" update skips.
 
 4. **Communication Layer** (`src/receiver/`, `src/telemetry/`)
    - **Receiver**: Input from pilot (CRSF/PWM) with failsafe callbacks
@@ -75,17 +76,28 @@ ArduFlite follows a strict layered architecture. Respect these boundaries:
    - Command-line interface for runtime diagnostics and tuning
    - Uses `CommandSystem` to send thread-safe commands to other modules
    - **Never** directly modify controller state — always go through the command queue
+   - Command implementations are split by concern:
+     - `CLICommands.cpp`: command table and help output
+     - `CLICommandsSystem.cpp`: reset/stats/tasks/setmode/calibrate
+     - `CLICommandsConfig.cpp`: configuration registry commands only
+     - `CLICommandsFlash.cpp`: flash log commands
+     - `CLICommandsTelemetry.cpp`: serial telemetry streaming
+     - `CLICommandsTests.cpp`: field-safe integration tests
+   - Shared CLI parsing belongs in `CLICommandUtils.*`; shared CLI dependencies and ground-safety checks belong in `CLICommandContext.*`
 
 7. **Web Layer** (`src/web/`)
    - **WiFiManager**: Singleton for WiFi Access Point management
    - **ArduFliteWebServer**: REST API for configuration (GET/PUT params, export/import JSON)
    - **WebUI.h**: Embedded responsive HTML/CSS/JS frontend in PROGMEM
-   - Enabled via `web.enabled` config key; creates AP with configurable SSID/password
+   - Enabled via `web.enabled` config key; creates AP with configurable SSID and WPA2 password (`web.ap_pass` must be 8+ characters)
+   - Full builds run captive DNS so phone/laptop captive-portal probes resolve to the Web UI
+   - Mutating REST requests require the per-boot same-origin token from `/api/session`
    - REST endpoints: `/api/config`, `/api/system/status`, `/api/flash`
    - Runs in its own FreeRTOS task at priority 1 (lowest, non-blocking)
    - **Compile-time toggle**: `ENABLE_WEB_SERVER` in `include/WebConfiguration.h`
      - Full build: `./build.sh lolin` (~1.3MB, includes WiFi/HTTP stack)
-     - Lite build: `./build.sh lolin lite` (~800KB, flight-only, no WiFi)
+     - Lite build: `./build.sh lolin lite` (~620KB, flight-only, no WiFi)
+     - Builds use per-board/per-variant output directories (`build/lolin-full`, `build/lolin-lite`)
      - WiFi/TCP/HTTP libraries add ~500KB; lite build excludes them entirely
 
 ### Dependency Rules
@@ -100,7 +112,7 @@ ArduFlite follows a strict layered architecture. Respect these boundaries:
 - Use `SemaphoreLock` RAII wrapper (defined in `ArduFlite.h`) for automatic mutex management
 - Take snapshots of data structures (like `TelemetryData`) to avoid holding locks too long
 - **Never** block in ISRs or high-priority tasks
-- `ArduFliteIMU` uses a **triple-buffer** for lock-free reads: the IMU task writes sensor data to one buffer while control loops read from another, with a third buffer ensuring readers are never caught mid-copy
+- `ArduFliteIMU` uses a **versioned snapshot** for lock-free reads: the IMU task marks the snapshot version odd while writing and even when complete, while readers retry if the version changes mid-copy
 
 ## Folder Structure Overview
 
@@ -111,6 +123,7 @@ ArduFlite/
 │   ├── ConfigKeys.h                  # Config key #defines (hierarchical dot notation)
 │   ├── ConfigSchema.h                # Parameter registration with defaults/ranges
 │   ├── ControllerTypes.h             # Shared enums (ControlLoopType)
+│   ├── AircraftConfiguration.h       # Compile-time aircraft type (powered vs glider)
 │   ├── CSRFConfiguration.h           # CRSF receiver pin/channel mapping
 │   ├── PinConfiguration.h            # Pin assignments (compile-time)
 │   ├── ReceiverConfiguration.h       # Receiver type and failsafe config
@@ -144,7 +157,10 @@ ArduFlite/
 │   │
 │   ├── cli/                          # Command-line interface
 │   │   ├── ArduFliteCLI.*            # CLI task and command router
-│   │   └── CLICommands*.*            # Command implementations
+│   │   ├── CLICommands.*             # Command table and command declarations
+│   │   ├── CLICommandContext.*       # Shared CLI dependencies and safety checks
+│   │   ├── CLICommandUtils.*         # Generic CLI parsing helpers
+│   │   └── CLICommands*.*            # Concern-specific command implementations
 │   │
 │   ├── web/                          # Web configuration interface
 │   │   ├── WiFiManager.*             # WiFi Access Point singleton
@@ -225,7 +241,7 @@ ArduFlite/
 
 1. **Configuration Changes**
    - **Runtime-tunable parameters**: Add to `ConfigKeys.h` and `ConfigSchema.h`
-   - **Compile-time constants** (hardware pins, sensor types): Add to appropriate `*Configuration.h`
+   - **Compile-time constants** (hardware pins, sensor types, aircraft type): Add to appropriate `*Configuration.h`
    - Use `ConfigHelpers::buildPIDConfig()` for PID-related configs
    - Document units and ranges in comments and schema description
    - Register observers in `ConfigObservers.cpp` if hot-reload is needed

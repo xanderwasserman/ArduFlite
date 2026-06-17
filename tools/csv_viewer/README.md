@@ -64,6 +64,9 @@ ArduFlite logs are comma-separated with a header row. Expected columns:
 | `climb_rate` | m/s | Vertical speed |
 | `flight_state` | 0–3 | UNKNOWN/PREFLIGHT/INFLIGHT/LANDED |
 | `flight_mode` | int | Active flight mode |
+| `imu_snapshot_retries` | count | Cumulative versioned snapshot read retries |
+| `imu_snapshot_max_retries` | count | Highest retries needed for one snapshot read |
+| `imu_snapshot_retry_limit_hits` | count | Reads that used the stale coherent fallback |
 
 Missing or extra columns are handled gracefully — only columns present in the file are shown.
 

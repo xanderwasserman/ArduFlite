@@ -26,6 +26,24 @@ def read_file(name: str) -> bytes:
     with open(path, "r", encoding="utf-8") as f:
         return f.read().encode("utf-8")
 
+def inline_assets(html: bytes, css: bytes, js: bytes) -> bytes:
+    """Inline CSS and JS into the HTML used by firmware builds."""
+    html_text = html.decode("utf-8")
+    css_text = css.decode("utf-8")
+    js_text = js.decode("utf-8")
+
+    css_tag = '<link rel="stylesheet" href="/styles.css">'
+    js_tag = '<script src="/app.js"></script>'
+
+    if css_tag not in html_text:
+        raise RuntimeError(f"Missing CSS tag in index.html: {css_tag}")
+    if js_tag not in html_text:
+        raise RuntimeError(f"Missing JS tag in index.html: {js_tag}")
+
+    html_text = html_text.replace(css_tag, f"<style>\n{css_text}\n</style>", 1)
+    html_text = html_text.replace(js_tag, f"<script>\n{js_text}\n</script>", 1)
+    return html_text.encode("utf-8")
+
 def compress(data: bytes) -> bytes:
     """Gzip compress data with maximum compression."""
     return gzip.compress(data, compresslevel=9)
@@ -48,22 +66,21 @@ static const size_t {name}_LEN = {len(data)};
 
 def main():
     # Read source files
-    html = read_file("index.html")
+    html_shell = read_file("index.html")
     css = read_file("styles.css")
     js = read_file("app.js")
-    
+    html = inline_assets(html_shell, css, js)
+
     # Compress
     html_gz = compress(html)
-    css_gz = compress(css)
-    js_gz = compress(js)
-    
+
     # Report compression stats
     import sys
     print(f"// Compression stats:", file=sys.stderr)
-    print(f"//   HTML: {len(html)} -> {len(html_gz)} bytes ({100*len(html_gz)/len(html):.1f}%)", file=sys.stderr)
-    print(f"//   CSS:  {len(css)} -> {len(css_gz)} bytes ({100*len(css_gz)/len(css):.1f}%)", file=sys.stderr)
-    print(f"//   JS:   {len(js)} -> {len(js_gz)} bytes ({100*len(js_gz)/len(js):.1f}%)", file=sys.stderr)
-    print(f"//   Total: {len(html)+len(css)+len(js)} -> {len(html_gz)+len(css_gz)+len(js_gz)} bytes", file=sys.stderr)
+    print(f"//   HTML shell: {len(html_shell)} bytes", file=sys.stderr)
+    print(f"//   CSS:        {len(css)} bytes", file=sys.stderr)
+    print(f"//   JS:         {len(js)} bytes", file=sys.stderr)
+    print(f"//   Inlined:    {len(html)} -> {len(html_gz)} bytes ({100*len(html_gz)/len(html):.1f}%)", file=sys.stderr)
     
     # Generate header
     header = f'''/**
@@ -82,10 +99,10 @@ def main():
  * For development, raw assets are in tools/web_ui/src/
  *
  * Compression stats:
- *   HTML: {len(html)} -> {len(html_gz)} bytes ({100*len(html_gz)/len(html):.1f}%)
- *   CSS:  {len(css)} -> {len(css_gz)} bytes ({100*len(css_gz)/len(css):.1f}%)
- *   JS:   {len(js)} -> {len(js_gz)} bytes ({100*len(js_gz)/len(js):.1f}%)
- *   Total: {len(html)+len(css)+len(js)} -> {len(html_gz)+len(css_gz)+len(js_gz)} bytes
+ *   HTML shell: {len(html_shell)} bytes
+ *   CSS:        {len(css)} bytes
+ *   JS:         {len(js)} bytes
+ *   Inlined:    {len(html)} -> {len(html_gz)} bytes ({100*len(html_gz)/len(html):.1f}%)
  */
 #ifndef WEB_UI_H
 #define WEB_UI_H
@@ -97,18 +114,6 @@ def main():
 // ═══════════════════════════════════════════════════════════════════════════
 
 {to_c_array(html_gz, "WEB_UI_HTML_GZ")}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CSS (gzip compressed)
-// ═══════════════════════════════════════════════════════════════════════════
-
-{to_c_array(css_gz, "WEB_UI_CSS_GZ")}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// JavaScript (gzip compressed)
-// ═══════════════════════════════════════════════════════════════════════════
-
-{to_c_array(js_gz, "WEB_UI_JS_GZ")}
 
 #endif // WEB_UI_H
 '''

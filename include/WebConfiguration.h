@@ -13,7 +13,10 @@
  *
  * Build variants:
  *   ./build.sh lolin        # Full build with web server (default)
- *   ./build.sh lolin lite   # Minimal build without web server (~800KB)
+ *   ./build.sh lolin lite   # Minimal build without web server (~620KB)
+ *
+ * Build outputs are separated by board and variant, e.g. build/lolin-full
+ * and build/lolin-lite, so full/lite object caches cannot contaminate each other.
  */
 #ifndef WEB_CONFIGURATION_H
 #define WEB_CONFIGURATION_H

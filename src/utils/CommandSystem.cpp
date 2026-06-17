@@ -2,7 +2,7 @@
  * CommandSystem.cpp
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 16 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 16 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
@@ -12,43 +12,61 @@
 #include "src/utils/ConfigHelpers.h"
 #include "src/utils/ControlMixer.h"
 #include "include/ConfigKeys.h"
+#include "include/AircraftConfiguration.h"
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
 
 extern MissionPlanner           mission;
 extern ArduFliteFlashTelemetry  flashTelemetry;
 
-CommandSystem& CommandSystem::instance() 
+CommandSystem& CommandSystem::instance()
 {
     static CommandSystem _inst;
     return _inst;
 }
 
-CommandSystem::CommandSystem() 
+CommandSystem::CommandSystem()
 {
     // Create a queue that can hold 100 SystemCommand items.
     commandQueue_ = xQueueCreate(100, sizeof(SystemCommand));
-    if (!commandQueue_) 
+    if (!commandQueue_)
     {
-        LOG_ERR("Failed to create CommandSystem queue!");
+        LOG_ERR("FATAL: Failed to create CommandSystem queue — system will restart.");
+        ESP.restart();
     }
 }
 
-CommandSystem::~CommandSystem() 
+CommandSystem::~CommandSystem()
 {
     if (commandQueue_) {
         vQueueDelete(commandQueue_);
     }
 }
 
-bool CommandSystem::pushCommand(const SystemCommand& cmd) 
+bool CommandSystem::pushCommand(const SystemCommand& cmd)
 {
-    // wait up to 10 ms to enqueue
-    if (!commandQueue_) return false;
-    return xQueueSend(commandQueue_, &cmd, pdMS_TO_TICKS(10)) == pdPASS;
+    if (!commandQueue_)
+    {
+        LOG_ERR("CommandSystem: no queue — command dropped!");
+        return false;
+    }
+    // Never block producers such as RC callbacks; stale setpoints are worse than
+    // dropped setpoints under queue pressure.
+    if (xQueueSend(commandQueue_, &cmd, 0) != pdPASS)
+    {
+        static unsigned long lastWarnMs = 0;
+        unsigned long nowMs = millis();
+        if (nowMs - lastWarnMs > 1000)
+        {
+            LOG_WARN("CommandSystem: queue full — command dropped");
+            lastWarnMs = nowMs;
+        }
+        return false;
+    }
+    return true;
 }
 
-void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIMU* imu, 
-                                     ArdufliteCRSFReceiver* receiver, ArdufliteCRSFTelemetry* crsfTelemetry) 
+void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIMU* imu,
+                                     ArdufliteCRSFReceiver* receiver, ArdufliteCRSFTelemetry* crsfTelemetry)
 {
     if (!commandQueue_) return;
     SystemCommand cmd;
@@ -57,13 +75,13 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
     // This prevents queue backup during rapid command sequences
     static constexpr int MAX_COMMANDS_PER_TICK = 10;
     int processed = 0;
-    
-    while (processed < MAX_COMMANDS_PER_TICK && 
-           xQueueReceive(commandQueue_, &cmd, 0) == pdTRUE) 
+
+    while (processed < MAX_COMMANDS_PER_TICK &&
+           xQueueReceive(commandQueue_, &cmd, 0) == pdTRUE)
     {
         processed++;
-        
-        switch (cmd.type) 
+
+        switch (cmd.type)
         {
             case CMD_RESET:
             {
@@ -75,30 +93,30 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
             case CMD_CALIBRATE:
             {
                 LOG_DBG("Processing CALIBRATE command...");
-                if (imu != nullptr && controller != nullptr && crsfTelemetry != nullptr) 
+                if (imu != nullptr && controller != nullptr && crsfTelemetry != nullptr)
                 {
                     // Pause controller tasks during calibration to avoid servo glitches
                     controller->pauseTasks();
-                    
+
                     // Pause CRSF telemetry to prevent WDT timeout during long calibration
                     crsfTelemetry->pauseTask();
-                    
+
                     // selfCalibrate() internally handles IMU task pause/resume
                     // and resets filter state after new offsets are applied
                     if (!imu->selfCalibrate())
                     {
                         LOG_ERR("IMU calibration failed!");
                     }
-                    
+
                     // Resume CRSF telemetry
                     crsfTelemetry->resumeTask();
-                    
+
                     // Resume controller tasks
                     controller->resumeTasks();
-                } 
-                else 
+                }
+                else
                 {
-                    LOG_ERR("IMU or Controller pointer not provided.");
+                    LOG_ERR("CMD_CALIBRATE: requires non-null IMU, Controller, and CRSF telemetry pointers — one is missing.");
                 }
                 break;
             }
@@ -143,7 +161,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
             case CMD_SET_MISSION:
             {
                 LOG_DBG("Processing CMD_SET_MISSION: state=%s", cmd.x_value ? "START" : "STOP");
-                
+
                 if (cmd.x_value && !mission.isRunning())
                 {
                     mission.start();
@@ -170,24 +188,39 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
                         }
                         else
                         {
-                            // Start flash logging immediately on arm so the
-                            // entire launch sequence is captured.
-                            // Guard against inflight re-arm: the log is already
-                            // active and must NOT be restarted (doing so would
-                            // truncate the ongoing flight record).
-                            if (!flashTelemetry.isLogging())
+#if AIRCRAFT_TYPE == AIRCRAFT_TYPE_POWERED
+                            // Start logging only when both armed AND throttle cut is off.
+                            // If throttle cut is still active, logging is deferred until
+                            // the pilot releases it (handled in CMD_SET_THROTTLE_CUT).
+                            if (!flashTelemetry.isLogging() && !controller->isThrottleCut())
                             {
-                                flashTelemetry.startLogging();
+                                if (!flashTelemetry.startLogging())
+                                {
+                                    LOG_ERR("Flight log FAILED to start on arm — flight will NOT be recorded!");
+                                }
                             }
-                            else
+                            else if (flashTelemetry.isLogging())
                             {
                                 LOG_INF("Flash log already active — not restarting on re-arm.");
                             }
+                            else
+                            {
+                                LOG_INF("Throttle cut active — logging deferred until throttle cut is released.");
+                            }
+#else
+                            // AIRCRAFT_TYPE_GLIDER: no logging action on arm — logging starts
+                            // on INFLIGHT transition in StateManagement.cpp instead.
+#endif
                         }
                     }
                     else
                     {
                         controller->disarm();
+                        if (flashTelemetry.isLogging() &&
+                            (imu == nullptr || imu->getFlightState() != INFLIGHT))
+                        {
+                            flashTelemetry.stopLogging();
+                        }
                     }
                 }
                 else
@@ -203,6 +236,17 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
                 if (controller != nullptr)
                 {
                     controller->cutThrottle(cmd.x_value);
+#if AIRCRAFT_TYPE == AIRCRAFT_TYPE_POWERED
+                    // Throttle cut released while armed — begin logging now.
+                    // Covers the case where the pilot arms first, then enables the motor.
+                    if (!cmd.x_value && controller->isArmed() && !flashTelemetry.isLogging())
+                    {
+                        if (!flashTelemetry.startLogging())
+                        {
+                            LOG_ERR("Flight log FAILED to start on throttle-cut release — flight will NOT be recorded!");
+                        }
+                    }
+#endif
                 }
                 else
                 {

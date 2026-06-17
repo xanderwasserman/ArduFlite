@@ -19,6 +19,14 @@
 #include <esp_wifi.h>
 #include <ESPmDNS.h>
 
+namespace
+{
+const IPAddress AP_IP(192, 168, 4, 1);
+const IPAddress AP_GATEWAY(192, 168, 4, 1);
+const IPAddress AP_SUBNET(255, 255, 255, 0);
+const IPAddress AP_DHCP_START(192, 168, 4, 2);
+}
+
 WiFiManager& WiFiManager::instance()
 {
     static WiFiManager _instance;
@@ -52,27 +60,28 @@ bool WiFiManager::begin()
     snprintf(suffix, sizeof(suffix), "-%04X", (uint16_t)(chipId & 0xFFFF));
     _ssid = baseSsid + String(suffix);
 
-    // Get password (empty = open network)
+    // Get password. WPA2 requires 8+ characters; fall back for older/default configs.
     _password = reg.get<String>(CONFIG_KEY_WEB_AP_PASS);
+    if (_password.length() < 8 || _password == "arduflite")
+    {
+        LOG_WARN("WiFi AP password is unset/default; using unique SSID as temporary password. Set web.ap_pass before field use.");
+        _password = _ssid;
+    }
 
     LOG_INF("Starting WiFi AP: %s", _ssid.c_str());
 
     // Disconnect from any existing WiFi and set to AP mode
     WiFi.disconnect(true);
     WiFi.mode(WIFI_AP);
+    WiFi.softAPsetHostname("arduflite");
 
-    // Start AP (open or with password)
-    bool success;
-    if (_password.isEmpty())
+    if (!WiFi.softAPConfig(AP_IP, AP_GATEWAY, AP_SUBNET, AP_DHCP_START, AP_IP))
     {
-        success = WiFi.softAP(_ssid.c_str());
-        LOG_INF("WiFi AP mode: Open (no password)");
+        LOG_WARN("WiFi AP static config failed; continuing with core defaults");
     }
-    else
-    {
-        success = WiFi.softAP(_ssid.c_str(), _password.c_str());
-        LOG_INF("WiFi AP mode: WPA2 protected");
-    }
+
+    bool success = WiFi.softAP(_ssid.c_str(), _password.c_str());
+    LOG_INF("WiFi AP mode: WPA2 protected");
 
     if (!success)
     {
@@ -80,8 +89,21 @@ bool WiFiManager::begin()
         return false;
     }
 
+    vTaskDelay(pdMS_TO_TICKS(100));
+
     // Set power save mode off for better responsiveness
     esp_wifi_set_ps(WIFI_PS_NONE);
+
+    _dnsServer.setTTL(60);
+    _dnsActive = _dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
+    if (_dnsActive)
+    {
+        LOG_INF("Captive DNS started: all hostnames -> %s", WiFi.softAPIP().toString().c_str());
+    }
+    else
+    {
+        LOG_WARN("Captive DNS failed to start");
+    }
 
     // Start mDNS responder for arduflite.local
     if (MDNS.begin("arduflite"))
@@ -106,6 +128,11 @@ void WiFiManager::stop()
     if (!_active) return;
 
     LOG_INF("Stopping WiFi AP");
+    if (_dnsActive)
+    {
+        _dnsServer.stop();
+        _dnsActive = false;
+    }
     MDNS.end();
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_OFF);
@@ -120,6 +147,14 @@ IPAddress WiFiManager::getIP() const
 uint8_t WiFiManager::getClientCount() const
 {
     return WiFi.softAPgetStationNum();
+}
+
+void WiFiManager::processDns()
+{
+    if (_dnsActive)
+    {
+        _dnsServer.processNextRequest();
+    }
 }
 
 #endif // ENABLE_WEB_SERVER

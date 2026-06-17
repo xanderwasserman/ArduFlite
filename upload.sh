@@ -1,13 +1,15 @@
 #!/bin/bash
 
-# Usage: ./upload.sh [firebeetle2|lolin_c3]
+# Usage: ./upload.sh [fire|lolin] [lite]
 
 set -e
 
-BOARD="$1"
+BOARD="${1:-}"
+VARIANT="${2:-}"
+BUILD_VARIANT="full"
 
 if [[ -z "$BOARD" ]]; then
-    echo "Usage: $0 [firebeetle2|lolin_c3]"
+    echo "Usage: $0 [fire|lolin] [lite]"
     exit 1
 fi
 
@@ -18,6 +20,14 @@ elif [[ "$BOARD" == "lolin" ]]; then
 else
     echo "Invalid board: $BOARD"
     echo "Valid options: fire, lolin"
+    exit 1
+fi
+
+if [[ "$VARIANT" == "lite" ]]; then
+    BUILD_VARIANT="lite"
+elif [[ -n "$VARIANT" ]]; then
+    echo "Unknown variant: $VARIANT"
+    echo "Usage: $0 [fire|lolin] [lite]"
     exit 1
 fi
 
@@ -45,6 +55,6 @@ fi
 
 echo "Detected port: $PORT"
 
-BUILD_PATH="./build"
+BUILD_PATH="./build/${BOARD}-${BUILD_VARIANT}"
 
 arduino-cli upload -p "$PORT" -b "$FQBN" --input-dir "$BUILD_PATH"

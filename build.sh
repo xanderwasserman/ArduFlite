@@ -14,10 +14,11 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BOARD="$1"
-VARIANT="$2"
-BUILD_PATH="./build"
+BOARD="${1:-}"
+VARIANT="${2:-}"
+BUILD_VARIANT="full"
 OPT_FLAGS="-Os"  # Optimize for size
+EXTRA_FLAGS="-DESP32"  # Compatibility for libraries that still key on ESP32
 
 # Parse board (using no_ota partition: 2MB app + 1.9MB LittleFS for flight logs)
 if [[ "$BOARD" == "fire" ]]; then
@@ -39,10 +40,15 @@ fi
 
 # Parse variant
 if [[ "$VARIANT" == "lite" ]]; then
+    BUILD_VARIANT="lite"
     echo "╔══════════════════════════════════════════════════════════════════╗"
     echo "║  Building LITE variant (web server disabled)                      ║"
     echo "╚══════════════════════════════════════════════════════════════════╝"
-    EXTRA_FLAGS="-DENABLE_WEB_SERVER=0"
+    EXTRA_FLAGS="$EXTRA_FLAGS -DENABLE_WEB_SERVER=0"
+elif [[ -n "$VARIANT" ]]; then
+    echo "Unknown variant: $VARIANT"
+    echo "Usage: $0 [fire|lolin] [lite]"
+    exit 1
 else
     echo "╔══════════════════════════════════════════════════════════════════╗"
     echo "║  Building FULL variant (web server enabled)                       ║"
@@ -61,8 +67,11 @@ else
     fi
 fi
 
+BUILD_PATH="./build/${BOARD}-${BUILD_VARIANT}"
+
 echo ""
 echo "Board: $FQBN"
+echo "Build path: $BUILD_PATH"
 [[ -n "$EXTRA_FLAGS" ]] && echo "Extra flags: $EXTRA_FLAGS"
 echo ""
 
@@ -74,6 +83,7 @@ BUILD_PROPS=(
 arduino-cli compile \
     -b "$FQBN" \
     --warnings default \
+    --clean \
     --build-path "$BUILD_PATH" \
     "${BUILD_PROPS[@]}" \
     --verbose

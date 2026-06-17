@@ -17,6 +17,7 @@
 #if ENABLE_WEB_SERVER
 
 #include <Arduino.h>
+#include <DNSServer.h>
 #include <WiFi.h>
 
 /**
@@ -38,7 +39,7 @@ public:
      * 
      * Reads configuration from ConfigRegistry:
      * - web.ap_ssid: Base SSID (chip ID suffix appended for uniqueness)
-     * - web.ap_pass: Password (empty = open network)
+     * - web.ap_pass: WPA2 password (8+ chars; unset/default uses SSID fallback)
      * 
      * @return true if AP started successfully
      */
@@ -70,14 +71,30 @@ public:
      */
     uint8_t getClientCount() const;
 
+    /**
+     * @brief Check if captive DNS redirection is active.
+     */
+    bool isCaptiveDnsActive() const { return _dnsActive; }
+
+    /**
+     * @brief Service captive DNS requests.
+     *
+     * Called from the low-priority web task while the AP is active.
+     */
+    void processDns();
+
 private:
     WiFiManager() = default;
     WiFiManager(const WiFiManager&) = delete;
     WiFiManager& operator=(const WiFiManager&) = delete;
 
     bool    _active = false;
+    bool    _dnsActive = false;
     String  _ssid;
     String  _password;
+    DNSServer _dnsServer;
+
+    static constexpr uint16_t DNS_PORT = 53;
 };
 
 #endif // ENABLE_WEB_SERVER

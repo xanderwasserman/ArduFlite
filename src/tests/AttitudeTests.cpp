@@ -2,7 +2,7 @@
  * AttitudeTests.cpp
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 08 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
@@ -15,13 +15,14 @@ void runAttitudeTest_wiggle(ArduFliteController &arduflite, float angle, float t
 {
     static unsigned long    lastSetpointUpdate  = millis();
     unsigned long           currentTime         = millis();
+    unsigned long           intervalMs          = (unsigned long)(time * 1000.0f);
     EulerAngles             setpoint            {0.0f};
-    
-    if (currentTime - lastSetpointUpdate > time) 
+
+    if (currentTime - lastSetpointUpdate >= intervalMs)
     {
         static int state = 0;
 
-        switch (state) 
+        switch (state)
         {
             case 0:
                 arduflite.setAttitudeSetpoint(setpoint);

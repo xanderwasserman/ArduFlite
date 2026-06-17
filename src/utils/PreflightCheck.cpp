@@ -5,7 +5,7 @@
  * Author: Alexander Wasserman | Version: 1.0 | 01 February 2026
  *
  * Licensed under the MIT License. See LICENSE file for details.
- * 
+ *
  * @file PreflightCheck.cpp
  * @brief Implementation of preflight validation system.
  */
@@ -45,6 +45,7 @@ PreflightResult runAllChecks(
         result.gyroStable     = true;   // SKIP: gyro rotating in flight
         result.accelValid     = true;   // SKIP: accel != 1g when banked
         result.throttleMinimum = true;  // SKIP: throttle cut not required mid-flight
+        LOG_WARN("INFLIGHT_REARM: throttle minimum check bypassed — ensure this path is not reachable on the ground.");
     }
     else
     {
@@ -69,13 +70,13 @@ bool checkIMUHealth(ArduFliteIMU* imu)
         LOG_ERR("Preflight: IMU pointer is null!");
         return false;
     }
-    
+
     bool healthy = imu->isHealthy();
     if (!healthy)
     {
         LOG_ERR("Preflight: IMU is reporting unhealthy status");
     }
-    
+
     return healthy;
 }
 
@@ -85,38 +86,38 @@ bool checkGyroStability(ArduFliteIMU* imu)
     {
         return false;
     }
-    
+
     // Average multiple gyro samples to filter out noise/vibration
     // Aircraft should be stationary during preflight check
     constexpr int NUM_SAMPLES = 10;
     constexpr int SAMPLE_DELAY_MS = 10;
-    
+
     float sumX = 0.0f, sumY = 0.0f, sumZ = 0.0f;
-    
+
     for (int i = 0; i < NUM_SAMPLES; i++)
     {
         Vector3 gyro = imu->getGyro();
         sumX += gyro.x;
         sumY += gyro.y;
         sumZ += gyro.z;
-        
+
         if (i < NUM_SAMPLES - 1)
         {
             delay(SAMPLE_DELAY_MS);  // Brief delay between samples
         }
     }
-    
+
     // Compute average
     float avgX = sumX / NUM_SAMPLES;
     float avgY = sumY / NUM_SAMPLES;
     float avgZ = sumZ / NUM_SAMPLES;
-    
+
     // Check if average gyro values are within acceptable bias threshold
     float gyroBiasMax = ConfigRegistry::instance().get<float>(CONFIG_KEY_IMU_GYRO_BIAS_MAX);
     bool stable = (fabsf(avgX) < gyroBiasMax) &&
                   (fabsf(avgY) < gyroBiasMax) &&
                   (fabsf(avgZ) < gyroBiasMax);
-    
+
     if (!stable)
     {
         LOG_ERR("Preflight: Gyro bias too high! Avg X=%.2f Y=%.2f Z=%.2f (max=%.2f)",
@@ -126,7 +127,7 @@ bool checkGyroStability(ArduFliteIMU* imu)
     {
         LOG_INF("Preflight: Gyro bias OK (avg X=%.2f Y=%.2f Z=%.2f)", avgX, avgY, avgZ);
     }
-    
+
     return stable;
 }
 
@@ -136,28 +137,28 @@ bool checkAccelerometer(ArduFliteIMU* imu)
     {
         return false;
     }
-    
+
     Vector3 accel = imu->getAcceleration();
-    
+
     // Calculate total acceleration magnitude
-    float magnitude = sqrtf(accel.x * accel.x + 
-                            accel.y * accel.y + 
+    float magnitude = sqrtf(accel.x * accel.x +
+                            accel.y * accel.y +
                             accel.z * accel.z);
-    
+
     // Check if magnitude is close to 1g (with tolerance)
     auto& config = ConfigRegistry::instance();
     float expectedG = config.get<float>(CONFIG_KEY_IMU_EXPECTED_G);
     float toleranceG = config.get<float>(CONFIG_KEY_IMU_GRAVITY_TOL);
-    
+
     float deviation = fabsf(magnitude - expectedG);
     bool valid = (deviation < toleranceG);
-    
+
     if (!valid)
     {
         LOG_ERR("Preflight: Accelerometer reading invalid! Magnitude=%.3fg (expected=%.2f±%.2f)",
                 magnitude, expectedG, toleranceG);
     }
-    
+
     return valid;
 }
 
@@ -170,25 +171,25 @@ bool checkReceiverLink(ArdufliteCRSFReceiver* receiver)
         LOG_WARN("Preflight: No CRSF receiver configured, skipping link check");
         return true;
     }
-    
+
     crsfLinkStatistics_t stats;
     bool hasStats = receiver->getLinkStats(stats);
-    
+
     if (!hasStats)
     {
         LOG_ERR("Preflight: No receiver link statistics available");
         return false;
     }
-    
+
     uint8_t minLQ = ConfigRegistry::instance().get<uint8_t>(CONFIG_KEY_FS_MIN_LQ_ARM);
     bool linkOk = (stats.uplink_Link_quality >= minLQ);
-    
+
     if (!linkOk)
     {
         LOG_ERR("Preflight: Link quality too low! LQ=%u%% (min=%u%%)",
                 stats.uplink_Link_quality, minLQ);
     }
-    
+
     return linkOk;
 }
 
@@ -199,17 +200,17 @@ bool checkThrottleMinimum(ArduFliteController* controller)
         LOG_ERR("Preflight: Controller pointer is null!");
         return false;
     }
-    
+
     // Require throttle cut to be enabled before arming.
     // This prevents accidental motor spin-up when arming.
     bool throttleCut = controller->isThrottleCut();
-    
+
     if (!throttleCut)
     {
         LOG_ERR("Preflight: Throttle is not cut! Cannot arm with throttle enabled.");
         return false;
     }
-    
+
     return true;
 }
 

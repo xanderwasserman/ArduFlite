@@ -2,7 +2,7 @@
  * ArduFliteQSerialTelemetry.h
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 25 May 2026
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
@@ -13,19 +13,31 @@
 #include "src/telemetry/ArduFliteTelemetry.h"
 #include "src/telemetry/TelemetryData.h"
 
+/**
+ * @brief Quaternion-only serial telemetry backend ("Q" = quaternion).
+ *
+ * Streams the attitude quaternion (w, x, y, z) as a compact CSV line at a
+ * configurable rate over Serial. Designed for consumption by real-time 3-D
+ * visualisation tools (e.g. tools/visualisation/ in this repository).
+ *
+ * For full-fidelity CSV flight logging to on-board flash, use
+ * ArduFliteFlashTelemetry instead.
+ */
 class ArduFliteQSerialTelemetry : public ArduFliteTelemetry {
     public:
         ArduFliteQSerialTelemetry(float frequencyHz = 10.0f);
-    
+        ~ArduFliteQSerialTelemetry();
+
         void begin() override;
         void publish(const TelemetryData& telemData) override;
-    
+
     private:
         static void telemetryTask(void* pvParameters);
-    
-        float             intervalMs;
-        TelemetryData     pendingData;
-        SemaphoreHandle_t telemetryMutex;
+
+        float             _intervalMs;
+        TaskHandle_t      _taskHandle  = nullptr;   ///< Handle for telemetryTask; stored to allow clean teardown
+        TelemetryData     _pendingData{};
+        SemaphoreHandle_t _mutex = nullptr; ///< Protects _pendingData; nullptr until begin() succeeds
     };
-    
+
 #endif //ARDUFLITE_Q_SERIAL_TELEMETRY_H

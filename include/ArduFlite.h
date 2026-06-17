@@ -21,10 +21,11 @@
 
 /**
  * @brief RAII wrapper for FreeRTOS mutex with configurable timeout.
- * 
+ *
  * Provides automatic mutex release on scope exit. Unlike portMAX_DELAY,
  * this uses a bounded timeout to prevent indefinite blocking in control loops.
- * 
+ * A null handle is treated as a failed acquisition.
+ *
  * Usage:
  *   {
  *       SemaphoreLock lock(myMutex);
@@ -34,15 +35,15 @@
  *       }
  *       // Safe to access protected data
  *   } // Automatically releases mutex
- * 
+ *
  * For indefinite wait (blocking operations), use portMAX_DELAY:
  *   SemaphoreLock lock(myMutex, portMAX_DELAY);
  */
-struct SemaphoreLock 
+struct SemaphoreLock
 {
     SemaphoreHandle_t h;
     bool _acquired;
-    
+
     /**
      * @brief Construct and attempt to acquire mutex with timeout.
      * @param h_ Mutex handle
@@ -51,27 +52,30 @@ struct SemaphoreLock
      *                Otherwise the value is treated as milliseconds and converted.
      */
     SemaphoreLock(SemaphoreHandle_t h_, TickType_t timeout = MUTEX_TIMEOUT_MS)
-        : h(h_), _acquired(false) 
-    { 
+        : h(h_), _acquired(false)
+    {
+        if (h == nullptr) {
+            return;
+        }
         // Special handling: portMAX_DELAY is passed directly as ticks (infinite wait)
         // Other values are treated as milliseconds and converted to ticks
         TickType_t ticks = (timeout == portMAX_DELAY) ? portMAX_DELAY : pdMS_TO_TICKS(timeout);
         _acquired = (xSemaphoreTake(h, ticks) == pdTRUE);
     }
-    
-    ~SemaphoreLock() 
-    { 
+
+    ~SemaphoreLock()
+    {
         if (_acquired) {
-            xSemaphoreGive(h); 
+            xSemaphoreGive(h);
         }
     }
-    
+
     /**
      * @brief Check if the mutex was successfully acquired.
      * @return true if lock was acquired, false if timeout occurred
      */
     bool acquired() const { return _acquired; }
-    
+
     // Prevent copying
     SemaphoreLock(const SemaphoreLock&) = delete;
     SemaphoreLock& operator=(const SemaphoreLock&) = delete;

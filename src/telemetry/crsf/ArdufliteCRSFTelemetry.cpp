@@ -120,6 +120,7 @@ void ArdufliteCRSFTelemetry::publish(const TelemetryData& telem)
 
     {
         SemaphoreLock lock(_lock);
+        if (!lock.acquired()) return;
         _pendingData = telem;
     }
 }
@@ -151,6 +152,7 @@ void ArdufliteCRSFTelemetry::run()
 
     // Rate tiering: track last send time
     uint32_t lastMediumTime = millis();
+    TelemetryData td{};
 
     while (true) 
     {
@@ -168,11 +170,13 @@ void ArdufliteCRSFTelemetry::run()
         uint32_t now = millis();
 
         // 1) grab a snapshot
-        TelemetryData td;
         if (_lock) 
         {
             SemaphoreLock lock(_lock);
-            td = _pendingData;
+            if (lock.acquired())
+            {
+                td = _pendingData;
+            }
         }
 
         // 2) FAST frames: send every loop (~10 Hz)

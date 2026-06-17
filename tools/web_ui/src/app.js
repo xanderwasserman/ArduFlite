@@ -3,6 +3,7 @@
     'use strict';
     
     const API = {
+        session: '/api/session',
         config: '/api/config',
         telemetry: '/api/telemetry',
         status: '/api/system/status',
@@ -22,6 +23,8 @@
     let currentPattern = 'rate.*';
     let currentTab = 'rate';
     let telemetryInterval = null;
+    let configLoadInFlight = false;
+    let sessionToken = '';
     
     // DOM elements
     const container = document.getElementById('config-container');
@@ -52,10 +55,10 @@
     
     // --- Telemetry ---
     async function pollTelemetry() {
+        if (configLoadInFlight) return;
+
         try {
-            const res = await fetch(API.telemetry);
-            if (!res.ok) return;
-            const data = await res.json();
+            const data = await fetchJson(API.telemetry, {}, 1, 2500);
             
             dashRoll.textContent = data.roll.toFixed(1) + '°';
             dashPitch.textContent = data.pitch.toFixed(1) + '°';
@@ -89,10 +92,11 @@
     
     // --- Configuration ---
     async function loadConfig(pattern = '*') {
+        configLoadInFlight = true;
+
         try {
             container.innerHTML = '<div id="loading">Loading...</div>';
-            const res = await fetch(`${API.config}?pattern=${encodeURIComponent(pattern)}`);
-            let data = await res.json();
+            let data = await fetchJson(`${API.config}?pattern=${encodeURIComponent(pattern)}`, {}, 3, 5000);
             
             // For "Other" tab, filter out known prefixes
             if (currentTab === 'other') {
@@ -105,7 +109,11 @@
             updateRebootButton();
         } catch (err) {
             console.error('Failed to load config:', err);
-            container.innerHTML = '<div id="loading">Error loading configuration</div>';
+            container.innerHTML = '<div id="loading">Error loading configuration<br><button id="btn-retry-config" class="btn-secondary">Retry</button></div>';
+            const retry = document.getElementById('btn-retry-config');
+            if (retry) retry.addEventListener('click', () => loadConfig(pattern));
+        } finally {
+            configLoadInFlight = false;
         }
     }
     
@@ -255,11 +263,11 @@
         btn.textContent = '...';
         
         try {
-            const res = await fetch(`${API.config}/${encodeURIComponent(key)}`, {
+            const res = await fetchWithTimeout(`${API.config}/${encodeURIComponent(key)}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ value })
-            });
+            }, 5000);
             
             if (!res.ok) {
                 const err = await res.json();
@@ -296,8 +304,7 @@
     // --- Flash Logs ---
     async function loadFlashLogs() {
         try {
-            const res = await fetch(API.flash);
-            const data = await res.json();
+            const data = await fetchJson(API.flash, {}, 2, 5000);
             
             if (data.files && data.files.length > 0) {
                 const usedKB = Math.round(data.used / 1024);
@@ -333,7 +340,10 @@
         if (!confirm(`Delete ${name}?`)) return;
         
         try {
-            await fetch(`${API.flash}/${name}`, { method: 'DELETE' });
+            await fetchOk(`${API.flash}/${name}`, {
+                method: 'DELETE',
+                headers: authHeaders()
+            }, 5000);
             showToast('Log deleted', 'success');
             loadFlashLogs();
         } catch (err) {
@@ -385,7 +395,10 @@
         btnCalibrate.textContent = 'Calibrating...';
         
         try {
-            const res = await fetch(API.calibrate, { method: 'POST' });
+            const res = await fetchOk(API.calibrate, {
+                method: 'POST',
+                headers: authHeaders()
+            }, 5000);
             const data = await res.json();
             
             if (data.ok) {
@@ -408,7 +421,10 @@
             'Reset to Defaults',
             'Reset ALL parameters to factory defaults? This cannot be undone.',
             async () => {
-                await fetch(API.reset, { method: 'POST' });
+                await fetchOk(API.reset, {
+                    method: 'POST',
+                    headers: authHeaders()
+                }, 5000);
                 showToast('Configuration reset to defaults', 'success');
                 loadConfig(currentPattern);
             }
@@ -420,7 +436,10 @@
             'Reboot ESP32',
             'Reboot the flight controller now?',
             async () => {
-                await fetch(API.reboot, { method: 'POST' });
+                await fetchOk(API.reboot, {
+                    method: 'POST',
+                    headers: authHeaders()
+                }, 5000);
                 showToast('Rebooting...', 'success');
             }
         );
@@ -431,7 +450,10 @@
             'Reboot Required',
             'Some changes require a reboot. Reboot now?',
             async () => {
-                await fetch(API.reboot, { method: 'POST' });
+                await fetchOk(API.reboot, {
+                    method: 'POST',
+                    headers: authHeaders()
+                }, 5000);
                 showToast('Rebooting...', 'success');
             }
         );
@@ -439,7 +461,7 @@
     
     btnExport.addEventListener('click', async () => {
         try {
-            const res = await fetch(API.export);
+            const res = await fetchOk(API.export, {}, 10000);
             const data = await res.text();
             
             const blob = new Blob([data], { type: 'application/json' });
@@ -468,11 +490,11 @@
         
         try {
             const text = await file.text();
-            const res = await fetch(API.import, {
+            const res = await fetchWithTimeout(API.import, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
                 body: text
-            });
+            }, 10000);
             
             if (res.ok) {
                 showToast('Configuration imported', 'success');
@@ -507,7 +529,12 @@
         
         confirmBtn.onclick = async () => {
             cleanup();
-            if (onConfirm) await onConfirm();
+            if (!onConfirm) return;
+            try {
+                await onConfirm();
+            } catch (err) {
+                showToast('Action failed', 'error');
+            }
         };
         
         cancelBtn.onclick = cleanup;
@@ -527,6 +554,60 @@
     }
     
     // --- Helpers ---
+    function delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+        if (typeof AbortController === 'undefined') {
+            return fetch(url, options);
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+        try {
+            return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    function authHeaders(headers = {}) {
+        return { ...headers, 'X-ArduFlite-Token': sessionToken };
+    }
+
+    async function fetchOk(url, options = {}, timeoutMs = 5000) {
+        const res = await fetchWithTimeout(url, options, timeoutMs);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res;
+    }
+
+    async function fetchJson(url, options = {}, attempts = 2, timeoutMs = 5000) {
+        let lastError;
+
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            try {
+                const res = await fetchWithTimeout(url, options, timeoutMs);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return await res.json();
+            } catch (err) {
+                lastError = err;
+                if (attempt < attempts - 1) {
+                    await delay(300 * (attempt + 1));
+                }
+            }
+        }
+
+        throw lastError;
+    }
+
+    async function loadSession() {
+        const data = await fetchJson(API.session, {}, 3, 5000);
+        if (!data.token) throw new Error('Missing session token');
+        sessionToken = data.token;
+    }
+
     function escapeHtml(str) {
         const div = document.createElement('div');
         div.textContent = str;
@@ -540,7 +621,19 @@
     }
     
     // --- Initialize ---
-    loadConfig(currentPattern);
-    startTelemetry();
+    async function init() {
+        try {
+            await loadSession();
+            await loadConfig(currentPattern);
+            startTelemetry();
+        } catch (err) {
+            console.error('Failed to initialize:', err);
+            container.innerHTML = '<div id="loading">Error connecting to ArduFlite<br><button id="btn-retry-config" class="btn-secondary">Retry</button></div>';
+            const retry = document.getElementById('btn-retry-config');
+            if (retry) retry.addEventListener('click', init);
+        }
+    }
+
+    init();
     
 })();

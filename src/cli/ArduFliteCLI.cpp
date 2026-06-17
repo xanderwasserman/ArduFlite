@@ -2,19 +2,20 @@
  * ArduFliteCLI.cpp
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 08 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "src/cli/ArduFliteCLI.h"
+#include "src/cli/CLICommandContext.h"
+#include "src/cli/CLICommandUtils.h"
 #include "src/cli/CLICommands.h"
-#include "src/cli/CLICommandsConfig.h"
 #include "src/utils/Logging.h"
 
 ArduFliteCLI::ArduFliteCLI(ArduFliteController* controller, ArduFliteIMU* imu, ArduFliteFlashTelemetry* flashTelemetry)
     : controller(controller), imu(imu), flashTelemetry(flashTelemetry)
 {
-    // Set the global controller pointer for CLI commands.
+    // Set the global pointers for CLI commands.
     setCliController(controller);
     setCliIMU(imu);
     setFlashTelemetry(flashTelemetry);
@@ -26,11 +27,11 @@ void ArduFliteCLI::startTask() {
 }
 
 void ArduFliteCLI::cliTask(void* parameters) {
-    ArduFliteCLI* cli = static_cast<ArduFliteCLI*>(parameters);
+    (void)parameters;
     String inputLine = "";
-    
+
     LOG("CLI Task started. Type 'help' for available commands.");
-    
+
     while (true) {
         // Read input from Serial.
         while (Serial.available() > 0) {
@@ -38,23 +39,13 @@ void ArduFliteCLI::cliTask(void* parameters) {
             if (c == '\n' || c == '\r') {
                 // Process the command line if non-empty.
                 if (inputLine.length() > 0) {
-                    inputLine.trim();
-                    // Extract the first token (the command) and the remainder (arguments).
-                    int spaceIdx = inputLine.indexOf(' ');
-                    String cmd, args;
-                    if (spaceIdx == -1) {
-                        cmd = inputLine;
-                        args = "";
-                    } else {
-                        cmd = inputLine.substring(0, spaceIdx);
-                        args = inputLine.substring(spaceIdx + 1);
-                    }
+                    ParsedCommand parsed = parseCommandArgs(inputLine);
                     bool found = false;
                     // Iterate over the registered commands.
                     for (size_t i = 0; i < numCLICommands; i++) {
-                        if (cmd.equalsIgnoreCase(cliCommands[i].command)) {
+                        if (parsed.command == cliCommands[i].command) {
                             // Command found; execute its function.
-                            cliCommands[i].execute(args);
+                            cliCommands[i].execute(parsed.remainder);
                             found = true;
                             break;
                         }

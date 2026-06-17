@@ -4,12 +4,12 @@
  * ----------------------------------------------------------------------------
  *
  * Project: ArduFlite
- * Description: 
- *   ArduFlite is a highly modular and real-time flight control framework for 
+ * Description:
+ *   ArduFlite is a highly modular and real-time flight control framework for
  *   unmanned aerial vehicles (UAVs) and gliders. Built on the ESP32 and FreeRTOS,
  *   it integrates IMU sensor fusion, cascade PID control (attitude and rate loops),
  *   servo management for multiple wing designs, and telemetry (via CRSF and Flash)
- *   along with a flexible command-line interface (CLI) for live diagnostics 
+ *   along with a flexible command-line interface (CLI) for live diagnostics
  *   and configuration.
  *
  * Author: Alexander Wasserman
@@ -65,8 +65,6 @@
 #include "src/web/WiFiManager.h"
 #include "src/web/ArduFliteWebServer.h"
 #endif
-
-#include "src/tests/AttitudeTests.h"
 
 #include <Arduino.h>
 
@@ -130,7 +128,7 @@ MultiTapButton modeButton(ButtonInputConfig::USER_BUTTON_PIN, 1000, 2, onModeDou
 StatusLED statusLED(7, 1);
 #endif
 
-void arduflite_init() 
+void arduflite_init()
 {
     // ─────────────────────────────────────────────────────────────────
     // Watchdog Recovery Detection
@@ -162,9 +160,20 @@ void arduflite_init()
         .idle_core_mask = 0,  // Don't watch idle tasks
         .trigger_panic = true
     };
-    esp_task_wdt_init(&wdt_config);
-    if (!watchdogRecovery) {
-        LOG_INF("Hardware watchdog initialized (1s timeout).");
+    esp_err_t wdtResult = esp_task_wdt_init(&wdt_config);
+    if (wdtResult == ESP_ERR_INVALID_STATE)
+    {
+        wdtResult = esp_task_wdt_reconfigure(&wdt_config);
+    }
+    if (wdtResult == ESP_OK)
+    {
+        if (!watchdogRecovery) {
+            LOG_INF("Hardware watchdog configured (1s timeout).");
+        }
+    }
+    else
+    {
+        LOG_ERR("Hardware watchdog configuration failed: %s", esp_err_to_name(wdtResult));
     }
     // ─────────────────────────────────────────────────────────────────
 
@@ -191,7 +200,7 @@ void arduflite_init()
         if (WiFiManager::instance().begin()) {
             LOG_INF("WiFi AP started: %s", WiFiManager::instance().getSSID().c_str());
             ArduFliteWebServer::instance().begin(&controller, &myIMU, &flashTelemetry);
-            LOG_INF("Web server started at http://%s", 
+            LOG_INF("Web server started at http://%s",
                     WiFiManager::instance().getIP().toString().c_str());
         } else {
             LOG_ERR("WiFi AP failed to start!");
@@ -213,7 +222,7 @@ void arduflite_init()
     // debugTelemetry.begin();
 
     // Initialize the IMU.
-    if (!myIMU.begin()) 
+    if (!myIMU.begin())
     {
         LOG_ERR("IMU failed to init!");
 #if BOARD_TYPE == BOARD_TYPE_WEMOS
@@ -304,18 +313,18 @@ void arduflite_init()
     }
 }
 
-void arduflite_loop() 
+void arduflite_loop()
 {
     // Process any pending commands (pass receiver for preflight checks, telemetry for calibration pause).
     CommandSystem::instance().processCommands(&controller, &myIMU, &crsfRx, &crsfTx);
-    
+
     // Update buttons.
     HoldButtonManager::updateAll();
     MultiTapButtonManager::updateAll();
 
     handleModeState();
     handleFlightState();
-        
+
     // Update telemetry with the latest sensor and control information.
     telemetryData.update(myIMU, controller, crsfRx);
 

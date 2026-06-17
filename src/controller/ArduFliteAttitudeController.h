@@ -2,7 +2,7 @@
  * ArduFliteAttitudeController.h
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 08 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
@@ -17,38 +17,6 @@
 #include <Arduino.h>
 
 /**
- * @brief Extracts the yaw angle (rotation about the Z-axis) from a quaternion.
- *
- * This function uses the standard conversion formula:
- * @f[
- * yaw = \arctan\left(\frac{2(wz + xy)}{1 - 2(y^2 + z^2)}\right)
- * @f]
- *
- * @param q The input quaternion.
- * @return float The yaw angle in radians.
- */
-static float extractYaw(const FliteQuaternion &q);
-
-/**
- * @brief Wraps an angle to the interval [-π, π].
- *
- * @param angle The input angle in radians.
- * @return float The angle wrapped to [-π, π].
- */
-static float wrapAngle(float angle);
-
-/**
- * @brief Removes the yaw component from a quaternion.
- *
- * This function constructs a quaternion that represents the inverse of the yaw rotation
- * and multiplies it with the input quaternion, effectively removing the yaw component.
- *
- * @param q The input quaternion.
- * @return FliteQuaternion The quaternion with the yaw removed.
- */
-static FliteQuaternion removeYaw(const FliteQuaternion &q);
-
-/**
  * @brief ArduFliteAttitudeController class.
  *
  * This class implements the outer (attitude) control loop for the ArduFlite project.
@@ -57,7 +25,7 @@ static FliteQuaternion removeYaw(const FliteQuaternion &q);
  * and pitch errors and using PID controllers to compute the necessary corrections.
  * A mutex is used to protect access to the desired orientation for thread safety.
  */
-class ArduFliteAttitudeController 
+class ArduFliteAttitudeController
 {
 public:
     /**
@@ -126,10 +94,18 @@ public:
      */
     void reset();
 
+    /**
+     * @brief Resets only the integral accumulators for all attitude PIDs.
+     *
+     * Called every outer-loop tick while in PREFLIGHT or LANDED state to prevent
+     * I-term windup while the aircraft is idle on the ground before launch.
+     */
+    void resetIntegrals();
+
     // ─────────────────────────────────────────────────────────────────
     // Runtime Configuration Updates
     // ─────────────────────────────────────────────────────────────────
-    
+
     /**
      * @brief Set the PID configuration for a specific axis.
      * @param loop The control loop type (ATTITUDE_ROLL_LOOP, ATTITUDE_PITCH_LOOP, ATTITUDE_YAW_LOOP)

@@ -2,314 +2,247 @@
  * CLICommandsConfig.cpp
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 08 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
-#include "CLICommandsConfig.h"
-#include "src/utils/Logging.h"
-#include "src/utils/CommandSystem.h"
-#include "src/utils/ConfigRegistry.h"
+#include "src/cli/CLICommands.h"
+#include "src/cli/CLICommandContext.h"
+#include "src/cli/CLICommandUtils.h"
 #include "src/utils/ConfigPersistence.h"
+#include "src/utils/ConfigRegistry.h"
+#include "src/utils/Logging.h"
 #include "include/ConfigKeys.h"
-#include <vector>
+
 #include <algorithm>
-
-// Global pointer for the controller (accessible in command functions).
-ArduFliteController* globalController = nullptr;
-ArduFliteIMU* globalIMU = nullptr;
-ArduFliteFlashTelemetry* globalFlashTelemetry = nullptr;
-
-void setCliController(ArduFliteController* controller) 
-{
-    globalController = controller;
-}
-
-void setCliIMU(ArduFliteIMU* imu) 
-{
-    globalIMU = imu;
-}
-
-void setFlashTelemetry(ArduFliteFlashTelemetry* flashTelemetry) 
-{
-    globalFlashTelemetry = flashTelemetry;
-}
-
-// Command functions:
-void cmdHelp(const String &args) 
-{
-    LOG("Available commands:");
-    for (size_t i = 0; i < numCLICommands; i++)
-     {
-        LOG_N("  ");
-        LOG_N("%s", cliCommands[i].command);
-        LOG_N(" - ");
-        LOG("%s", cliCommands[i].description);
-    }
-}
-
-void cmdReset(const String &args) 
-{
-    LOG("Resetting system...");
-    ESP.restart();
-}
-
-void cmdStats(const String &args) 
-{
-    if (!globalController) 
-    {
-        LOG_ERR("Controller not set!");
-        return;
-    }
-    // Retrieve and print stats.
-    LoopStats outerStats = globalController->getOuterLoopStats();
-    LoopStats innerStats = globalController->getInnerLoopStats();
-
-    LOG("Outer Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu",
-                  outerStats.avgDt, outerStats.maxDt, outerStats.overrunCount, (outerStats.overrunCount/outerStats.sampleCount)*100);
-    LOG("Inner Loop: avg dt: %.2f ms, max dt: %.2f ms, overruns: %lu, percentage: %lu",
-                  innerStats.avgDt, innerStats.maxDt, innerStats.overrunCount, (innerStats.overrunCount/innerStats.sampleCount)*100);
-}
-
-void cmdTasks(const String &args) 
-{
-    // Buffer sized for ~30 tasks * 64 chars each = ~2KB
-    static char taskListBuffer[2048];
-    vTaskList(taskListBuffer);
-    LOG("Task List:");
-    LOG("%s", taskListBuffer);
-}
-
-void cmdSetMode(const String &args) 
-{
-    if (!globalController) {
-        LOG_ERR("Controller not set!");
-        return;
-    }
-    String argLower = args;
-    argLower.toLowerCase();
-
-    SystemCommand cmd;
-    cmd.type = CMD_SET_MODE;
-
-    if (argLower.indexOf("assist") >= 0) 
-    {
-        LOG_INF("Changing Flight Control mode to: ATTITUDE_MODE.");
-        cmd.mode = ATTITUDE_MODE;
-        CommandSystem::instance().pushCommand(cmd);
-    } 
-    else if (argLower.indexOf("stabilized") >= 0) 
-    {
-        LOG_INF("Changing Flight Control mode to: RATE_MODE.");
-        cmd.mode = RATE_MODE;
-        CommandSystem::instance().pushCommand(cmd);
-    } 
-    else 
-    {
-        LOG("Unknown mode. Use 'assist' or 'stabilized'.");
-    }
-}
-
-void cmdCalibrateIMU(const String &args) 
-{
-    // Accept either no arguments or "imu" as the argument.
-    String trimmed = args;
-    trimmed.trim();
-    trimmed.toLowerCase();
-
-    if (trimmed.length() == 0 || trimmed.equals("imu")) {
-        // Route through CommandSystem to ensure proper task pause/resume.
-        // The CMD_CALIBRATE handler in CommandSystem pauses tasks, calibrates, 
-        // then resumes — avoiding mutex contention with the running IMU task.
-        SystemCommand cmd;
-        cmd.type = CMD_CALIBRATE;
-        CommandSystem::instance().pushCommand(cmd);
-        
-        LOG("IMU calibration queued. Tasks will pause during calibration.");
-    } 
-    else 
-    {
-        LOG("Unknown calibration target. Use 'calibrate imu'.");
-    }
-}
-
-void cmdFlash(const String &args) 
-{
-    if (!globalFlashTelemetry) 
-    {
-        LOG("Flash telemetry not initialized!");
-        return;
-    }
-
-    // Trim & lowercase for simple parsing
-    String in = args;
-    in.trim();
-    in.toLowerCase();
-
-    // Split first word (sub-command) from the rest (parameter)
-    int spacePos = in.indexOf(' ');
-    String cmd = (spacePos < 0) ? in : in.substring(0, spacePos);
-    String param = (spacePos < 0) ? "" : in.substring(spacePos + 1);
-    param.trim();
-
-    if (cmd == "start") 
-    {
-        globalFlashTelemetry->startLogging();
-        LOG("Flash logging STARTED");
-    }
-    else if (cmd == "stop") 
-    {
-        globalFlashTelemetry->stopLogging();
-        LOG("Flash logging STOPPED");
-    }
-    else if (cmd == "list") 
-    {
-        LOG("Listing flash logs:");
-        globalFlashTelemetry->listLogs();
-    }
-    else if (cmd == "dump") 
-    {
-        if (param.length() == 0) 
-        {
-            LOG("Usage: flash dump <index>");
-        } 
-        else 
-        {
-            int idx = param.toInt();
-            LOG("Dumping log %d:\n", idx);
-            globalFlashTelemetry->dumpLog(idx);
-        }
-    }
-    else if (cmd == "delete" || cmd == "del" || cmd == "rm") 
-    {
-        if (param.length() == 0) 
-        {
-            LOG("Usage: flash delete <index>");
-        } 
-        else 
-        {
-            int idx = param.toInt();
-            LOG("Deleting log %d: ", idx);
-            globalFlashTelemetry->deleteLog(idx);
-        }
-    }
-    else if (cmd == "reset") 
-    {
-        LOG("Formatting LittleFS (erasing all logs)...");
-        globalFlashTelemetry->reset();
-        LOG("Done.");
-    }
-    else 
-    {
-        LOG("Unknown flash command. Available:");
-        LOG("  flash start       → begin a new flight log");
-        LOG("  flash stop        → end current flight log");
-        LOG("  flash list        → list existing logs");
-        LOG("  flash dump <idx>  → stream log #<idx> over serial");
-        LOG("  flash delete <idx>→ remove log #<idx>");
-        LOG("  flash reset       → erase entire LittleFS");
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Config Commands (using ConfigRegistry)
-// ─────────────────────────────────────────────────────────────────────────────
+#include <cstring>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 /**
  * @brief Glob-style pattern matching for config keys.
- * 
+ *
+ * Iterative O(N+M) algorithm — avoids the exponential recursion of a naive
+ * recursive implementation on pathological patterns like "a*a*a*b".
+ *
  * Supports:
- *   "*"         - matches everything
- *   "rate.*"    - matches rate.roll.kp, rate.pitch.ti, etc.
- *   "rate.*.kp" - matches rate.roll.kp, rate.pitch.kp, etc.
+ *   "*"           - matches everything
+ *   "rate.*"      - matches rate.roll.kp, rate.pitch.ti, etc.
+ *   "rate.*.kp"   - matches rate.roll.kp, rate.pitch.kp, etc.
  *   "rate.roll.*" - matches rate.roll.kp, rate.roll.ti, etc.
  */
 static bool matchGlob(const char* pattern, const char* key)
 {
-    while (*pattern && *key)
+    const char* starP  = nullptr; // position of the last '*' in pattern
+    const char* starK  = key;     // position in key when the last '*' was matched
+
+    while (*key)
     {
         if (*pattern == '*')
         {
-            pattern++;
-            if (*pattern == '\0') return true;  // trailing * matches rest
-            
-            // Try matching rest of pattern at each position
-            while (*key)
-            {
-                if (matchGlob(pattern, key)) return true;
-                key++;
-            }
-            return matchGlob(pattern, key);  // Check if pattern also exhausted
+            starP = pattern++;
+            starK = key;
         }
         else if (*pattern == *key)
         {
             pattern++;
             key++;
         }
+        else if (starP)
+        {
+            // Backtrack: advance past one more key char and retry after last '*'
+            pattern = starP + 1;
+            key     = ++starK;
+        }
         else
         {
             return false;
         }
     }
-    
-    // Handle trailing wildcards
+
+    // Consume any trailing wildcards
     while (*pattern == '*') pattern++;
-    
-    return (*pattern == '\0' && *key == '\0');
+
+    return *pattern == '\0';
+}
+
+static std::vector<std::string> matchingConfigKeys(
+    const std::unordered_map<std::string, ConfigParam>& params,
+    const String& pattern)
+{
+    std::vector<std::string> keys;
+    for (const auto& kv : params)
+    {
+        if (matchGlob(pattern.c_str(), kv.first.c_str()))
+        {
+            keys.push_back(kv.first);
+        }
+    }
+    std::sort(keys.begin(), keys.end());
+    return keys;
+}
+
+static void logConfigListValue(const ConfigParam& param)
+{
+    switch (param.type)
+    {
+        case ConfigType::FLOAT:
+            LOG("  %s = %.4f", param.key, param.currentVal.f);
+            break;
+        case ConfigType::INT32:
+            LOG("  %s = %d", param.key, param.currentVal.i);
+            break;
+        case ConfigType::UINT8:
+            LOG("  %s = %u", param.key, param.currentVal.u8);
+            break;
+        case ConfigType::BOOL:
+            LOG("  %s = %s", param.key, param.currentVal.b ? "true" : "false");
+            break;
+        case ConfigType::STRING:
+            LOG("  %s = \"%s\"", param.key, param.currentVal.s);
+            break;
+    }
+}
+
+static void logConfigDetailValue(const ConfigParam& param)
+{
+    switch (param.type)
+    {
+        case ConfigType::FLOAT:
+            LOG("%s = %.4f (default: %.4f, range: %.4f - %.4f)",
+                param.key, param.currentVal.f, param.defaultVal.f, param.minVal.f, param.maxVal.f);
+            break;
+        case ConfigType::INT32:
+            LOG("%s = %d (default: %d, range: %d - %d)",
+                param.key, param.currentVal.i, param.defaultVal.i, param.minVal.i, param.maxVal.i);
+            break;
+        case ConfigType::UINT8:
+            LOG("%s = %u (default: %u, range: %u - %u)",
+                param.key, param.currentVal.u8, param.defaultVal.u8, param.minVal.u8, param.maxVal.u8);
+            break;
+        case ConfigType::BOOL:
+            LOG("%s = %s (default: %s)",
+                param.key, param.currentVal.b ? "true" : "false", param.defaultVal.b ? "true" : "false");
+            break;
+        case ConfigType::STRING:
+            LOG("%s = \"%s\" (default: \"%s\")",
+                param.key, param.currentVal.s, param.defaultVal.s);
+            break;
+    }
+    LOG("  Description: %s", param.description);
+}
+
+static void logConfigRangeValue(const ConfigParam& param)
+{
+    switch (param.type)
+    {
+        case ConfigType::FLOAT:
+            LOG("%s = %.4f (range: %.4f - %.4f)",
+                param.key, param.currentVal.f, param.minVal.f, param.maxVal.f);
+            break;
+        case ConfigType::INT32:
+            LOG("%s = %d (range: %d - %d)",
+                param.key, param.currentVal.i, param.minVal.i, param.maxVal.i);
+            break;
+        case ConfigType::UINT8:
+            LOG("%s = %u (range: %u - %u)",
+                param.key, param.currentVal.u8, param.minVal.u8, param.maxVal.u8);
+            break;
+        case ConfigType::BOOL:
+            LOG("%s = %s", param.key, param.currentVal.b ? "true" : "false");
+            break;
+        case ConfigType::STRING:
+            LOG("%s = \"%s\"", param.key, param.currentVal.s);
+            break;
+    }
+}
+
+static void logConfigHelp()
+{
+    LOG("Unknown config command. Available:");
+    LOG("  config list [pattern] → list params (e.g., 'rate.*')");
+    LOG("  config get <key>      → show param details");
+    LOG("  config set <key> <val>→ set param value");
+    LOG("  config save           → save dirty params to NVS");
+    LOG("  config load           → reload from NVS");
+    LOG("  config defaults       → reset to factory defaults");
+}
+
+static bool setConfigValueFromString(
+    ConfigRegistry& reg,
+    const ConfigParam& param,
+    const String& key,
+    const String& valueText)
+{
+    switch (param.type)
+    {
+        case ConfigType::FLOAT:
+        {
+            float value = 0.0f;
+            if (!parseFloatStrict(valueText, value))
+            {
+                LOG_ERR("Invalid float value for %s: %s", key.c_str(), valueText.c_str());
+                return false;
+            }
+            return reg.set<float>(key.c_str(), value);
+        }
+        case ConfigType::INT32:
+        {
+            int32_t value = 0;
+            if (!parseIntStrict(valueText, value))
+            {
+                LOG_ERR("Invalid integer value for %s: %s", key.c_str(), valueText.c_str());
+                return false;
+            }
+            return reg.set<int32_t>(key.c_str(), value);
+        }
+        case ConfigType::UINT8:
+        {
+            uint8_t value = 0;
+            if (!parseUInt8Strict(valueText, value))
+            {
+                LOG_ERR("Invalid uint8 value for %s: %s", key.c_str(), valueText.c_str());
+                return false;
+            }
+            return reg.set<uint8_t>(key.c_str(), value);
+        }
+        case ConfigType::BOOL:
+        {
+            bool value = false;
+            if (!parseBoolStrict(valueText, value))
+            {
+                LOG_ERR("Invalid bool value for %s: use true/false, yes/no, on/off, or 1/0", key.c_str());
+                return false;
+            }
+            return reg.set<bool>(key.c_str(), value);
+        }
+        case ConfigType::STRING:
+            return reg.set<String>(key.c_str(), valueText);
+    }
+
+    return false;
 }
 
 void cmdConfig(const String &args)
 {
     auto& reg = ConfigRegistry::instance();
-    
-    // Parse subcommand and arguments
-    int spaceIdx = args.indexOf(' ');
-    String cmd = (spaceIdx > 0) ? args.substring(0, spaceIdx) : args;
-    String remainder = (spaceIdx > 0) ? args.substring(spaceIdx + 1) : "";
-    cmd.trim();
-    remainder.trim();
-    
+
+    ParsedCommand parsed = parseCommandArgs(args);
+    const String& cmd = parsed.command;
+    const String& remainder = parsed.remainder;
+
     if (cmd == "list" || cmd.isEmpty())
     {
-        // List all params or params matching a pattern
         String pattern = remainder.isEmpty() ? "*" : remainder;
         auto params = reg.getAllParams();
-        
-        // Collect matching keys and sort alphabetically
-        std::vector<std::string> matchingKeys;
-        for (const auto& kv : params)
+        std::vector<std::string> keys = matchingConfigKeys(params, pattern);
+
+        for (const auto& key : keys)
         {
-            if (matchGlob(pattern.c_str(), kv.first.c_str()))
-            {
-                matchingKeys.push_back(kv.first);
-            }
+            logConfigListValue(params[key]);
         }
-        std::sort(matchingKeys.begin(), matchingKeys.end());
-        
-        // Display sorted params
-        for (const auto& key : matchingKeys)
-        {
-            const auto& param = params[key];
-            switch (param.type)
-            {
-                case ConfigType::FLOAT:
-                    LOG("  %s = %.4f", key.c_str(), param.currentVal.f);
-                    break;
-                case ConfigType::INT32:
-                    LOG("  %s = %d", key.c_str(), param.currentVal.i);
-                    break;
-                case ConfigType::UINT8:
-                    LOG("  %s = %u", key.c_str(), param.currentVal.u8);
-                    break;
-                case ConfigType::BOOL:
-                    LOG("  %s = %s", key.c_str(), param.currentVal.b ? "true" : "false");
-                    break;
-                case ConfigType::STRING:
-                    LOG("  %s = \"%s\"", key.c_str(), param.currentVal.s);
-                    break;
-            }
-        }
-        LOG("(%d parameter%s)", matchingKeys.size(), matchingKeys.size() == 1 ? "" : "s");
+        LOG("(%u parameter%s)", (unsigned)keys.size(), keys.size() == 1 ? "" : "s");
     }
     else if (cmd == "get")
     {
@@ -318,145 +251,61 @@ void cmdConfig(const String &args)
             LOG_ERR("Usage: config get <key|pattern>");
             return;
         }
-        
-        // Check if it's a pattern (contains *)
-        bool isPattern = remainder.indexOf('*') >= 0;
-        
+
+        const bool isPattern = remainder.indexOf('*') >= 0;
         if (!isPattern)
         {
-            // Exact key lookup
             auto optParam = reg.getParam(remainder.c_str());
             if (!optParam)
             {
                 LOG_ERR("Unknown key: %s", remainder.c_str());
                 return;
             }
-            
-            const auto& p = *optParam;
-            switch (p.type)
-            {
-                case ConfigType::FLOAT:
-                    LOG("%s = %.4f (default: %.4f, range: %.4f - %.4f)", 
-                        p.key, p.currentVal.f, p.defaultVal.f, p.minVal.f, p.maxVal.f);
-                    break;
-                case ConfigType::INT32:
-                    LOG("%s = %d (default: %d, range: %d - %d)", 
-                        p.key, p.currentVal.i, p.defaultVal.i, p.minVal.i, p.maxVal.i);
-                    break;
-                case ConfigType::UINT8:
-                    LOG("%s = %u (default: %u, range: %u - %u)", 
-                        p.key, p.currentVal.u8, p.defaultVal.u8, p.minVal.u8, p.maxVal.u8);
-                    break;
-                case ConfigType::BOOL:
-                    LOG("%s = %s (default: %s)", 
-                        p.key, p.currentVal.b ? "true" : "false", p.defaultVal.b ? "true" : "false");
-                    break;
-                case ConfigType::STRING:
-                    LOG("%s = \"%s\" (default: \"%s\")", 
-                        p.key, p.currentVal.s, p.defaultVal.s);
-                    break;
-            }
-            LOG("  Description: %s", p.description);
+
+            logConfigDetailValue(*optParam);
         }
         else
         {
-            // Pattern matching - show all matching params with details
             auto params = reg.getAllParams();
-            
-            // Collect and sort matching keys
-            std::vector<std::string> matchingKeys;
-            for (const auto& kv : params)
-            {
-                if (matchGlob(remainder.c_str(), kv.first.c_str()))
-                {
-                    matchingKeys.push_back(kv.first);
-                }
-            }
-            std::sort(matchingKeys.begin(), matchingKeys.end());
-            
-            if (matchingKeys.empty())
+            std::vector<std::string> keys = matchingConfigKeys(params, remainder);
+
+            if (keys.empty())
             {
                 LOG_ERR("No keys matching: %s", remainder.c_str());
                 return;
             }
-            
-            for (const auto& key : matchingKeys)
+
+            for (const auto& key : keys)
             {
-                const auto& p = params[key];
-                switch (p.type)
-                {
-                    case ConfigType::FLOAT:
-                        LOG("%s = %.4f (range: %.4f - %.4f)", 
-                            key.c_str(), p.currentVal.f, p.minVal.f, p.maxVal.f);
-                        break;
-                    case ConfigType::INT32:
-                        LOG("%s = %d (range: %d - %d)", 
-                            key.c_str(), p.currentVal.i, p.minVal.i, p.maxVal.i);
-                        break;
-                    case ConfigType::UINT8:
-                        LOG("%s = %u (range: %u - %u)", 
-                            key.c_str(), p.currentVal.u8, p.minVal.u8, p.maxVal.u8);
-                        break;
-                    case ConfigType::BOOL:
-                        LOG("%s = %s", key.c_str(), p.currentVal.b ? "true" : "false");
-                        break;
-                    case ConfigType::STRING:
-                        LOG("%s = \"%s\"", key.c_str(), p.currentVal.s);
-                        break;
-                }
+                logConfigRangeValue(params[key]);
             }
-            LOG("(%d parameter%s)", matchingKeys.size(), matchingKeys.size() == 1 ? "" : "s");
+            LOG("(%u parameter%s)", (unsigned)keys.size(), keys.size() == 1 ? "" : "s");
         }
     }
     else if (cmd == "set")
     {
-        // Parse: key value
-        int valIdx = remainder.indexOf(' ');
+        if (rejectUnsafeGroundCommand("change configuration")) return;
+
+        const int valIdx = remainder.indexOf(' ');
         if (valIdx <= 0)
         {
             LOG_ERR("Usage: config set <key> <value>");
             return;
         }
-        
+
         String key = remainder.substring(0, valIdx);
         String valStr = remainder.substring(valIdx + 1);
         key.trim();
         valStr.trim();
-        
+
         auto optParam = reg.getParam(key.c_str());
         if (!optParam)
         {
             LOG_ERR("Unknown key: %s", key.c_str());
             return;
         }
-        
-        const auto& p = *optParam;
-        bool success = false;
-        
-        switch (p.type)
-        {
-            case ConfigType::FLOAT:
-                success = reg.set<float>(key.c_str(), valStr.toFloat());
-                break;
-            case ConfigType::INT32:
-                success = reg.set<int32_t>(key.c_str(), valStr.toInt());
-                break;
-            case ConfigType::UINT8:
-                success = reg.set<uint8_t>(key.c_str(), (uint8_t)valStr.toInt());
-                break;
-            case ConfigType::BOOL:
-            {
-                valStr.toLowerCase();
-                bool val = (valStr == "true" || valStr == "1" || valStr == "yes");
-                success = reg.set<bool>(key.c_str(), val);
-                break;
-            }
-            case ConfigType::STRING:
-                success = reg.set<String>(key.c_str(), valStr);
-                break;
-        }
-        
-        if (success)
+
+        if (setConfigValueFromString(reg, *optParam, key, valStr))
         {
             LOG("Set %s OK", key.c_str());
         }
@@ -472,118 +321,20 @@ void cmdConfig(const String &args)
     }
     else if (cmd == "load")
     {
+        if (rejectUnsafeGroundCommand("load configuration")) return;
+
         ConfigPersistence::load();
         LOG("Loaded configuration from NVS");
     }
     else if (cmd == "defaults")
     {
-        // Re-init registry to reset all params to schema defaults
-        reg.init();
+        if (rejectUnsafeGroundCommand("reset configuration")) return;
+
+        reg.resetAll();
         LOG("Reset all parameters to defaults (not saved yet)");
     }
     else
     {
-        LOG("Unknown config command. Available:");
-        LOG("  config list [pattern] → list params (e.g., 'rate.*')");
-        LOG("  config get <key>      → show param details");
-        LOG("  config set <key> <val>→ set param value");
-        LOG("  config save           → save dirty params to NVS");
-        LOG("  config load           → reload from NVS");
-        LOG("  config defaults       → reset to factory defaults");
+        logConfigHelp();
     }
 }
-
-/**
- * @brief Stream live IMU telemetry to the serial console.
- * 
- * Continuously prints sensor data until any key is pressed.
- * Uses screen clearing for a live dashboard view.
- */
-void cmdStream(const String &args) 
-{
-    if (!globalIMU) 
-    {
-        LOG_ERR("IMU not set!");
-        return;
-    }
-    
-    // Parse optional frequency argument (default 1 Hz)
-    float freqHz = 1.0f;
-    if (args.length() > 0) 
-    {
-        float parsed = args.toFloat();
-        if (parsed > 0.0f && parsed <= 100.0f) 
-        {
-            freqHz = parsed;
-        }
-    }
-    unsigned long intervalMs = (unsigned long)(1000.0f / freqHz);
-    
-    LOG("Streaming telemetry at %.1f Hz. Press any key to stop...\n", freqHz);
-    vTaskDelay(pdMS_TO_TICKS(500)); // Brief pause before clearing screen
-    
-    // Drain any pending input
-    while (Serial.available()) Serial.read();
-    
-    for (;;) 
-    {
-        unsigned long startMs = millis();
-        
-        // Get current IMU snapshot
-        ImuSnapshot snap = globalIMU->getSnapshot();
-        
-        // Clear screen and move cursor to home position
-        LOG_N("\033[2J\033[H");
-        
-        // Flight state
-        const char* stateStr = snap.flightState == UNKNOWN_STATE ? "UNKNOWN" :
-                               snap.flightState == PREFLIGHT     ? "PREFLIGHT" :
-                               snap.flightState == INFLIGHT      ? "INFLIGHT" : "LANDED";
-        LOG_N("Flight State: %s\n", stateStr);
-        
-        // Altitude & climb rate
-        LOG_N("Altitude: %.2f m | Climb Rate: %.2f m/s\n", snap.altitude, snap.climbRate);
-        
-        // Raw sensor data
-        LOG_N("Accel: %.3f, %.3f, %.3f g\n", snap.accel.x, snap.accel.y, snap.accel.z);
-        LOG_N("Gyro: %.3f, %.3f, %.3f deg/s\n", snap.gyro.x, snap.gyro.y, snap.gyro.z);
-        LOG_N("Quat: %.4f, %.4f, %.4f, %.4f\n", snap.quat.w, snap.quat.x, snap.quat.y, snap.quat.z);
-        
-        // Orientation (current)
-        LOG_N("Orientation (P/R/Y): %.2f, %.2f, %.2f deg\n", 
-              snap.orientation.pitch, snap.orientation.roll, snap.orientation.yaw);
-        
-        LOG_N("\nPress any key to stop...\n\n");
-        
-        // Check for any keypress to stop
-        if (Serial.available()) 
-        {
-            while (Serial.available()) Serial.read();  // Drain buffer
-            LOG_N("\033[2J\033[H");  // Clear screen
-            LOG("Streaming stopped.");
-            return;
-        }
-        
-        // Delay for the remainder of the interval
-        unsigned long elapsed = millis() - startMs;
-        if (elapsed < intervalMs) 
-        {
-            vTaskDelay(pdMS_TO_TICKS(intervalMs - elapsed));
-        }
-    }
-}
-
-// Define the command table.
-CLICommand cliCommands[] = {
-    { "help","      Show help message",                                                        cmdHelp         },
-    { "reset","     Resets the Flight Controller",                                             cmdReset        },
-    { "stats","     Show control loop statistics",                                             cmdStats        },
-    { "tasks","     Show FreeRTOS task stats",                                                 cmdTasks        },
-    { "setmode","   Set mode; usage: setmode assist|stabilized",                               cmdSetMode      },
-    { "calibrate"," Calibrate the IMU; usage: calibrate imu",                                  cmdCalibrateIMU },
-    { "flash","     Flash functionalities; usage: flash list|start|stop|dump|rm|reset",        cmdFlash        },
-    { "config","    Config commands; usage: config list|get|set|save|load|defaults",           cmdConfig       },
-    { "stream","    Stream live telemetry; usage: stream [freq_hz]",                           cmdStream       }
-};
-
-const size_t numCLICommands = sizeof(cliCommands) / sizeof(cliCommands[0]);

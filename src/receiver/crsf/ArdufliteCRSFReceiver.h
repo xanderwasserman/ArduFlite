@@ -132,7 +132,9 @@ public:
 
     /**
      * @brief Register a callback to run when RC failsafe is triggered.
-     * @param cb  function to call once upon timeout (and each poll while in failsafe)
+     * @param cb  function to call once, on the transition into failsafe. Edge-triggered:
+     *            it is NOT re-invoked on subsequent polls while the link stays down.
+     *            See setFailsafeExitCallback() for the recovery edge.
      */
     void setFailsafeCallback(void (*cb)());
 

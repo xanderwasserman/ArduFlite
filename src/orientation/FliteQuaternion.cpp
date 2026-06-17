@@ -2,7 +2,7 @@
  * FliteQuaternion.cpp
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 08 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
@@ -51,7 +51,7 @@ void FliteQuaternion::toAxisAngle(float &rx, float &ry, float &rz, float &outAng
     // First, ensure the quaternion is normalized.
     FliteQuaternion qnorm = *this;
     float n = sqrtf(normSq());
-    if (fabs(n - 1.0f) > 1e-3f) {
+    if (fabsf(n - 1.0f) > 1e-3f) {
         qnorm.w /= n;
         qnorm.x /= n;
         qnorm.y /= n;
@@ -75,7 +75,7 @@ void FliteQuaternion::toAxisAngle(float &rx, float &ry, float &rz, float &outAng
 
 // Normalize the quaternion in place.
 void FliteQuaternion::normalize() {
-    float norm = sqrt(w*w + x*x + y*y + z*z);
+    float norm = sqrtf(w*w + x*x + y*y + z*z);
     if (norm > 1e-6f) {
         w /= norm;
         x /= norm;

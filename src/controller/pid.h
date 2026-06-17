@@ -2,7 +2,7 @@
  * pid.h
  *
  * ArduFlite - Advanced Flight Controller Framework
- * Author: Alexander Wasserman | Version: 1.0 | 08 Aptil 2025
+ * Author: Alexander Wasserman | Version: 1.0 | 08 April 2025
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
@@ -33,14 +33,14 @@ public:
 
     /**
      * @brief Constructs a PID controller using the provided configuration.
-     * 
+     *
      * @param cfg The configuration structure containing all tunable PID parameters.
      */
     PID(const PIDConfig& cfg);
 
     /**
      * @brief Updates the PID controller.
-     * 
+     *
      * @param error The current error value.
      * @param dt Time step in seconds.
      * @return The computed control output.
@@ -52,6 +52,14 @@ public:
      */
     void reset();
 
+    /**
+     * @brief Resets only the integral accumulator.
+     *
+     * Lighter than reset() — leaves prevError and filtered derivative intact.
+     * Used to prevent I-term windup while the aircraft is on the ground.
+     */
+    void resetIntegral();
+
     // Setters to update the configuration at runtime.
     void setConfig(const PIDConfig &cfg) { config = cfg; }
     void setMaxIntegral(float max) { config.maxIntegral = max; }
@@ -59,7 +67,7 @@ public:
 
 private:
     PIDConfig config;   ///< Holds all the tunable PID configuration parameters.
-    
+
     float integral              = 0.0f; ///< Accumulated integral error.
     float prevError             = 0.0f; ///< Previous error (for derivative calculation).
     float filteredDerivative    = 0.0f; ///< Derivative term, low-pass filtered.

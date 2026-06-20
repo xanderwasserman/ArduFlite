@@ -146,10 +146,10 @@ CONFIG_INT(CONFIG_KEY_SERVO_THR_MAX,  2000, 1500, 2500, "Throttle max pulse (us)
 // IMU Configuration
 // ═══════════════════════════════════════════════════════════════════════════
 
-CONFIG_FLOAT(CONFIG_KEY_IMU_ACCEL_ALPHA,    0.02f,  0.01f, 1.0f,   "Accelerometer low-pass filter alpha");
-CONFIG_FLOAT(CONFIG_KEY_IMU_GYRO_ALPHA,     0.4f,   0.01f, 1.0f,   "Gyroscope low-pass filter alpha");
-CONFIG_FLOAT(CONFIG_KEY_IMU_MAG_ALPHA,      0.04f,  0.01f, 1.0f,   "Magnetometer low-pass filter alpha");
-CONFIG_FLOAT(CONFIG_KEY_IMU_ALTI_ALPHA,     0.10f,  0.01f, 0.50f, "Altimeter low-pass filter alpha (at 50 Hz baro rate; 0.10 → τ≈200ms)");
+CONFIG_FLOAT(CONFIG_KEY_IMU_ACCEL_ALPHA,    0.02f,  0.001f, 1.0f,   "Accelerometer low-pass filter alpha");
+CONFIG_FLOAT(CONFIG_KEY_IMU_GYRO_ALPHA,     0.4f,   0.001f, 1.0f,   "Gyroscope low-pass filter alpha");
+CONFIG_FLOAT(CONFIG_KEY_IMU_MAG_ALPHA,      0.04f,  0.001f, 1.0f,   "Magnetometer low-pass filter alpha");
+CONFIG_FLOAT(CONFIG_KEY_IMU_ALTI_ALPHA,     0.10f,  0.001f, 0.50f, "Altimeter low-pass filter alpha (at 50 Hz baro rate; 0.10 → τ≈200ms)");
 CONFIG_FLOAT(CONFIG_KEY_IMU_MADGWICK_BETA,  0.1f,   0.01f, 1.0f,   "Madgwick filter beta (gyro/accel trust)");
 CONFIG_FLOAT(CONFIG_KEY_IMU_MAX_ACCEL_G,    16.0f,  4.0f,  16.0f,  "Max valid accelerometer magnitude (g)");
 CONFIG_FLOAT(CONFIG_KEY_IMU_MAX_GYRO_DPS,   2000.0f, 250.0f, 2000.0f, "Max valid gyroscope rate (deg/s)");

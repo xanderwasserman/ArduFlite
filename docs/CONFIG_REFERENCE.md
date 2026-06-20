@@ -282,9 +282,9 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `imu.accel_alpha` | 0.02 | 0.01 - 1.0 | Accelerometer low-pass filter |
-| `imu.gyro_alpha` | 0.4 | 0.01 - 1.0 | Gyroscope low-pass filter |
-| `imu.mag_alpha` | 0.04 | 0.01 - 1.0 | Magnetometer low-pass filter |
+| `imu.accel_alpha` | 0.02 | 0.001 - 1.0 | Accelerometer low-pass filter |
+| `imu.gyro_alpha` | 0.4 | 0.001 - 1.0 | Gyroscope low-pass filter |
+| `imu.mag_alpha` | 0.04 | 0.001 - 1.0 | Magnetometer low-pass filter |
 | `imu.alti_alpha` | 0.005 | 0.001 - 0.1 | Altimeter low-pass filter |
 
 **Tuning Notes:**

@@ -38,45 +38,45 @@ void ServoManager::initFromConfig() {
     auto& config = ConfigRegistry::instance();
 
     // Load slew rate limits
-    maxServoDegPerSec = config.get<float>(CONFIG_KEY_SERVO_MAX_DEG_SEC);
-    maxThrottlePerSec = config.get<float>(CONFIG_KEY_SERVO_MAX_THR_SEC);
+    maxServoDegPerSec = config.get<float>(CONFIG_KEY_SERVO_MAX_SLEW_DPS);
+    maxThrottlePerSec = config.get<float>(CONFIG_KEY_SERVO_MAX_THR_SLEW_PER_S);
 
     // Load pitch servo config (pin from compile-time constant)
     pitchConfig.pin        = PwmOutputConfig::PITCH_PIN;
-    pitchConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_MIN);
-    pitchConfig.maxPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_MAX);
-    pitchConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_NEUTRAL);
-    pitchConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_DEFL);
+    pitchConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_MIN_US);
+    pitchConfig.maxPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_MAX_US);
+    pitchConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_NEUTRAL_DEG);
+    pitchConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_PITCH_DEFL_DEG);
     pitchConfig.invert     = config.get<bool>(CONFIG_KEY_SERVO_PITCH_INV);
 
     // Load yaw servo config (pin from compile-time constant)
     yawConfig.pin        = PwmOutputConfig::YAW_PIN;
-    yawConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_MIN);
-    yawConfig.maxPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_MAX);
-    yawConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_NEUTRAL);
-    yawConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_DEFL);
+    yawConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_MIN_US);
+    yawConfig.maxPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_MAX_US);
+    yawConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_NEUTRAL_DEG);
+    yawConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_YAW_DEFL_DEG);
     yawConfig.invert     = config.get<bool>(CONFIG_KEY_SERVO_YAW_INV);
 
     // Load left aileron servo config (pin from compile-time constant)
     leftAilConfig.pin        = PwmOutputConfig::LEFT_AIL_PIN;
-    leftAilConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_MIN);
-    leftAilConfig.maxPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_MAX);
-    leftAilConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_NEUTRAL);
-    leftAilConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_DEFL);
+    leftAilConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_MIN_US);
+    leftAilConfig.maxPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_MAX_US);
+    leftAilConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_NEUTRAL_DEG);
+    leftAilConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_LAIL_DEFL_DEG);
     leftAilConfig.invert     = config.get<bool>(CONFIG_KEY_SERVO_LAIL_INV);
 
     // Load right aileron servo config (pin from compile-time constant)
     rightAilConfig.pin        = PwmOutputConfig::RIGHT_AIL_PIN;
-    rightAilConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_MIN);
-    rightAilConfig.maxPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_MAX);
-    rightAilConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_NEUTRAL);
-    rightAilConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_DEFL);
+    rightAilConfig.minPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_MIN_US);
+    rightAilConfig.maxPulse   = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_MAX_US);
+    rightAilConfig.neutral    = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_NEUTRAL_DEG);
+    rightAilConfig.deflection = config.get<int32_t>(CONFIG_KEY_SERVO_RAIL_DEFL_DEG);
     rightAilConfig.invert     = config.get<bool>(CONFIG_KEY_SERVO_RAIL_INV);
 
     // Load throttle config (pin from compile-time constant)
     throttleConfig.pin      = PwmOutputConfig::THROTTLE_PIN;
-    throttleConfig.minPulse = config.get<int32_t>(CONFIG_KEY_SERVO_THR_MIN);
-    throttleConfig.maxPulse = config.get<int32_t>(CONFIG_KEY_SERVO_THR_MAX);
+    throttleConfig.minPulse = config.get<int32_t>(CONFIG_KEY_SERVO_THR_MIN_US);
+    throttleConfig.maxPulse = config.get<int32_t>(CONFIG_KEY_SERVO_THR_MAX_US);
     throttleConfig.neutral  = 0;
     throttleConfig.deflection = 0;
     throttleConfig.invert   = false;

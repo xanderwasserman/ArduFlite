@@ -39,12 +39,12 @@ void ControlMixer::reloadConfig()
 
     // Build new config outside the lock (ConfigRegistry has its own mutex).
     MixerConfig newCfg;
-    newCfg.maxAttRoll  = reg.get<float>(CONFIG_KEY_MIX_MAX_ATT_ROLL);
-    newCfg.maxAttPitch = reg.get<float>(CONFIG_KEY_MIX_MAX_ATT_PITCH);
-    newCfg.maxAttYaw   = reg.get<float>(CONFIG_KEY_MIX_MAX_ATT_YAW);
-    newCfg.maxRateRoll  = reg.get<float>(CONFIG_KEY_MIX_MAX_RATE_ROLL);
-    newCfg.maxRatePitch = reg.get<float>(CONFIG_KEY_MIX_MAX_RATE_PITCH);
-    newCfg.maxRateYaw   = reg.get<float>(CONFIG_KEY_MIX_MAX_RATE_YAW);
+    newCfg.maxAttRoll  = reg.get<float>(CONFIG_KEY_MIX_MAX_ATT_ROLL_DEG);
+    newCfg.maxAttPitch = reg.get<float>(CONFIG_KEY_MIX_MAX_ATT_PITCH_DEG);
+    newCfg.maxAttYaw   = reg.get<float>(CONFIG_KEY_MIX_MAX_ATT_YAW_DEG);
+    newCfg.maxRateRoll  = reg.get<float>(CONFIG_KEY_MIX_MAX_RATE_ROLL_DPS);
+    newCfg.maxRatePitch = reg.get<float>(CONFIG_KEY_MIX_MAX_RATE_PITCH_DPS);
+    newCfg.maxRateYaw   = reg.get<float>(CONFIG_KEY_MIX_MAX_RATE_YAW_DPS);
     newCfg.mixRollFromYaw   = reg.get<float>(CONFIG_KEY_MIX_ROLL_FROM_YAW);
     newCfg.mixPitchFromRoll = reg.get<float>(CONFIG_KEY_MIX_PITCH_FROM_ROLL);
     newCfg.mixYawFromRoll   = reg.get<float>(CONFIG_KEY_MIX_YAW_FROM_ROLL);

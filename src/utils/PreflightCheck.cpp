@@ -113,7 +113,7 @@ bool checkGyroStability(ArduFliteIMU* imu)
     float avgZ = sumZ / NUM_SAMPLES;
 
     // Check if average gyro values are within acceptable bias threshold
-    float gyroBiasMax = ConfigRegistry::instance().get<float>(CONFIG_KEY_IMU_GYRO_BIAS_MAX);
+    float gyroBiasMax = ConfigRegistry::instance().get<float>(CONFIG_KEY_IMU_GYRO_BIAS_MAX_DPS);
     bool stable = (fabsf(avgX) < gyroBiasMax) &&
                   (fabsf(avgY) < gyroBiasMax) &&
                   (fabsf(avgZ) < gyroBiasMax);
@@ -148,7 +148,7 @@ bool checkAccelerometer(ArduFliteIMU* imu)
     // Check if magnitude is close to 1g (with tolerance)
     auto& config = ConfigRegistry::instance();
     float expectedG = config.get<float>(CONFIG_KEY_IMU_EXPECTED_G);
-    float toleranceG = config.get<float>(CONFIG_KEY_IMU_GRAVITY_TOL);
+    float toleranceG = config.get<float>(CONFIG_KEY_IMU_GRAVITY_TOL_G);
 
     float deviation = fabsf(magnitude - expectedG);
     bool valid = (deviation < toleranceG);
@@ -181,7 +181,7 @@ bool checkReceiverLink(ArdufliteCRSFReceiver* receiver)
         return false;
     }
 
-    uint8_t minLQ = ConfigRegistry::instance().get<uint8_t>(CONFIG_KEY_FS_MIN_LQ_ARM);
+    uint8_t minLQ = ConfigRegistry::instance().get<uint8_t>(CONFIG_KEY_FS_MIN_LQ_ARM_PCT);
     bool linkOk = (stats.uplink_Link_quality >= minLQ);
 
     if (!linkOk)

@@ -146,9 +146,15 @@ Nothing is linked into the firmware.
   *The `FliteQuaternion` rename moved to Phase 6 — it touches flight code and Phase 0
   does not need it (review R21).*
 * `src/hal/platform/` and `src/hal/device/`: all interface headers, declarations only.
-* `tests/unit/hal_host/`: the host platform (§05 §3). **Not** `src/hal/host/` —
-  `arduino-cli` compiles `src/` recursively, so that would link `std::thread` into
-  the flight firmware (review R20).
+* ~~`tests/unit/hal_host/`: the host platform~~ — **deferred, each fake to its first
+  consumer.** Writing `FakeRegisterDevice` before there is a driver to drive it, or
+  `RecordingPwmOut` before `PwmActuatorBank` exists, means guessing at the shape of a
+  consumer that does not exist. Each fake now lands in the phase that first needs it:
+  `VirtualClock`/`StepScheduler` in Phase 2, `RecordingPwmOut` in Phase 3,
+  `LoopbackUart` in Phase 4, `FakeRegisterDevice` in Phase 5, `MemoryFileStore` in
+  Phase 7. When they do land it is under `tests/unit/hal_host/`, **not**
+  `src/hal/host/` — `arduino-cli` compiles `src/` recursively, so that would link
+  `std::thread` into the flight firmware (review R20).
 * `src/hal/board/`: `BoardDescriptor`, `BoardValidate`, descriptors for
   `lolin_c3_mini` (`Supported`) and `firebeetle_esp32e` (`Untested`) — not yet used.
 * **Host test suite moves to C++20** to match the firmware (§09). It is currently

@@ -396,7 +396,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
                 LOG_DBG("Processing CMD_UPDATE_ATT_DEADBAND");
                 if (controller != nullptr)
                 {
-                    float deadband = ConfigRegistry::instance().get<float>(CONFIG_KEY_ATT_DEADBAND);
+                    float deadband = ConfigRegistry::instance().get<float>(CONFIG_KEY_ATT_DEADBAND_RAD);
                     controller->setAttitudeDeadband(deadband);
                 }
                 break;

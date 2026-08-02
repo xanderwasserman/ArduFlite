@@ -20,8 +20,12 @@
 #include <vector>
 #include <atomic>
 
-// Current schema version - increment when making breaking changes
-#define CONFIG_SCHEMA_VERSION 1
+// Current schema version - increment when making breaking changes.
+//   v2: unit suffixes on every unit-bearing key (att.deadband -> att.deadband_rad,
+//       servo.*.min_pulse -> servo.*.min_pulse_us, ...). Renamed keys hash to new
+//       NVS entries, so v1 values are simply not found and defaults apply.
+//       WIPE NVS AFTER FLASHING - the code defaults are the current flying values.
+#define CONFIG_SCHEMA_VERSION 2
 
 // NVS namespace for configuration storage
 #define CONFIG_NVS_NAMESPACE "arduflite"

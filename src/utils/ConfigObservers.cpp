@@ -79,7 +79,7 @@ void registerAll()
     });
 
     // Attitude deadband
-    reg.subscribe(CONFIG_KEY_ATT_DEADBAND, [](const ConfigChange& change) {
+    reg.subscribe(CONFIG_KEY_ATT_DEADBAND_RAD, [](const ConfigChange& change) {
         SystemCommand cmd;
         cmd.type = CMD_UPDATE_ATT_DEADBAND;
         CommandSystem::instance().pushCommand(cmd);

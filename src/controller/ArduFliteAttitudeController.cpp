@@ -65,7 +65,7 @@ void ArduFliteAttitudeController::initFromConfig()
     // pidYaw is intentionally NOT configured here. Without a magnetometer there is no
     // fixed heading reference, so yaw is passed through from the pilot setpoint directly
     // in update(). pidYaw remains as a placeholder for future magnetometer integration.
-    deadbandRads = ConfigRegistry::instance().get<float>(CONFIG_KEY_ATT_DEADBAND);
+    deadbandRads = ConfigRegistry::instance().get<float>(CONFIG_KEY_ATT_DEADBAND_RAD);
 
     LOG_INF("AttitudeController: initialized from ConfigRegistry");
 }

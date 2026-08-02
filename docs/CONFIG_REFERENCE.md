@@ -12,6 +12,16 @@ config reset             # Reset to defaults
 
 ---
 
+
+> **Schema version 2 — unit suffixes.** Every key carrying a physical quantity now
+> names its unit: `att.deadband_rad`, `servo.pitch.min_pulse_us`,
+> `mix.max_rate_roll_dps`, `rate.roll.ti_s`. Dimensionless values (`*.kp`, `*.alpha`,
+> `*.headroom`, `rate.*.outlimit`, `servo.wing_design`) are unchanged — the absence of
+> a suffix is itself informative.
+>
+> **Wipe NVS after flashing.** Renamed keys hash to new NVS entries, so v1 values are
+> not found and the code defaults apply. Those defaults are the current flying values.
+
 ## Table of Contents
 
 - [Rate Controller (Inner Loop)](#rate-controller-inner-loop)
@@ -34,8 +44,8 @@ The rate controller runs at ~500 Hz and converts angular rate errors (deg/s) int
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
 | `rate.roll.kp` | 0.09 | 0.0 - 1.0 | Proportional gain |
-| `rate.roll.ti` | 1.40 | 0.0 - 10.0 | Integral time constant (seconds) |
-| `rate.roll.td` | 0.30 | 0.0 - 1.0 | Derivative time constant (seconds) |
+| `rate.roll.ti_s` | 1.40 | 0.0 - 10.0 | Integral time constant (seconds) |
+| `rate.roll.td_s` | 0.30 | 0.0 - 1.0 | Derivative time constant (seconds) |
 | `rate.roll.outlimit` | 1.00 | 0.1 - 1.0 | Output limit (normalized) |
 | `rate.roll.headroom` | 0.80 | 0.5 - 1.0 | Anti-windup headroom factor |
 | `rate.roll.alpha` | 0.10 | 0.01 - 1.0 | Derivative low-pass filter coefficient |
@@ -53,8 +63,8 @@ The rate controller runs at ~500 Hz and converts angular rate errors (deg/s) int
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
 | `rate.pitch.kp` | 0.04 | 0.0 - 1.0 | Proportional gain |
-| `rate.pitch.ti` | 5.00 | 0.0 - 10.0 | Integral time constant (seconds) |
-| `rate.pitch.td` | 0.45 | 0.0 - 1.0 | Derivative time constant (seconds) |
+| `rate.pitch.ti_s` | 5.00 | 0.0 - 10.0 | Integral time constant (seconds) |
+| `rate.pitch.td_s` | 0.45 | 0.0 - 1.0 | Derivative time constant (seconds) |
 | `rate.pitch.outlimit` | 1.00 | 0.1 - 1.0 | Output limit (normalized) |
 | `rate.pitch.headroom` | 0.80 | 0.5 - 1.0 | Anti-windup headroom factor |
 | `rate.pitch.alpha` | 0.10 | 0.01 - 1.0 | Derivative low-pass filter coefficient |
@@ -69,8 +79,8 @@ The rate controller runs at ~500 Hz and converts angular rate errors (deg/s) int
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
 | `rate.yaw.kp` | 0.05 | 0.0 - 1.0 | Proportional gain |
-| `rate.yaw.ti` | 0.00 | 0.0 - 10.0 | Integral time constant (seconds) - 0 disables, prevents drift without magnetometer |
-| `rate.yaw.td` | 0.30 | 0.0 - 1.0 | Derivative time constant (seconds) |
+| `rate.yaw.ti_s` | 0.00 | 0.0 - 10.0 | Integral time constant (seconds) - 0 disables, prevents drift without magnetometer |
+| `rate.yaw.td_s` | 0.30 | 0.0 - 1.0 | Derivative time constant (seconds) |
 | `rate.yaw.outlimit` | 1.00 | 0.1 - 1.0 | Output limit (normalized) |
 | `rate.yaw.headroom` | 0.80 | 0.5 - 1.0 | Anti-windup headroom factor |
 | `rate.yaw.alpha` | 0.10 | 0.01 - 1.0 | Derivative low-pass filter coefficient |
@@ -102,9 +112,9 @@ The attitude controller runs at ~100 Hz and converts attitude errors (degrees) i
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
 | `att.roll.kp` | 320.0 | 0.0 - 1000.0 | Proportional gain (deg/s per deg error) |
-| `att.roll.ti` | 0.00 | 0.0 - 10.0 | Integral time constant (seconds) |
-| `att.roll.td` | 0.00 | 0.0 - 1.0 | Derivative time constant (seconds) |
-| `att.roll.outlimit` | 90.0 | 10.0 - 180.0 | Max rate setpoint output (deg/s) |
+| `att.roll.ti_s` | 0.00 | 0.0 - 10.0 | Integral time constant (seconds) |
+| `att.roll.td_s` | 0.00 | 0.0 - 1.0 | Derivative time constant (seconds) |
+| `att.roll.outlimit_dps` | 90.0 | 10.0 - 180.0 | Max rate setpoint output (deg/s) |
 | `att.roll.headroom` | 0.80 | 0.5 - 1.0 | Anti-windup headroom factor |
 | `att.roll.alpha` | 0.10 | 0.01 - 1.0 | Derivative low-pass filter coefficient |
 
@@ -118,9 +128,9 @@ The attitude controller runs at ~100 Hz and converts attitude errors (degrees) i
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
 | `att.pitch.kp` | 200.0 | 0.0 - 1000.0 | Proportional gain (deg/s per deg error) |
-| `att.pitch.ti` | 0.00 | 0.0 - 10.0 | Integral time constant (seconds) |
-| `att.pitch.td` | 0.00 | 0.0 - 1.0 | Derivative time constant (seconds) |
-| `att.pitch.outlimit` | 60.0 | 10.0 - 180.0 | Max rate setpoint output (deg/s) |
+| `att.pitch.ti_s` | 0.00 | 0.0 - 10.0 | Integral time constant (seconds) |
+| `att.pitch.td_s` | 0.00 | 0.0 - 1.0 | Derivative time constant (seconds) |
+| `att.pitch.outlimit_dps` | 60.0 | 10.0 - 180.0 | Max rate setpoint output (deg/s) |
 | `att.pitch.headroom` | 0.80 | 0.5 - 1.0 | Anti-windup headroom factor |
 | `att.pitch.alpha` | 0.10 | 0.01 - 1.0 | Derivative low-pass filter coefficient |
 
@@ -133,9 +143,9 @@ The attitude controller runs at ~100 Hz and converts attitude errors (degrees) i
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
 | `att.yaw.kp` | 200.0 | 0.0 - 1000.0 | Proportional gain (deg/s per deg error) |
-| `att.yaw.ti` | 0.00 | 0.0 - 10.0 | Integral time constant (seconds) |
-| `att.yaw.td` | 0.00 | 0.0 - 1.0 | Derivative time constant (seconds) |
-| `att.yaw.outlimit` | 60.0 | 10.0 - 180.0 | Max rate setpoint output (deg/s) |
+| `att.yaw.ti_s` | 0.00 | 0.0 - 10.0 | Integral time constant (seconds) |
+| `att.yaw.td_s` | 0.00 | 0.0 - 1.0 | Derivative time constant (seconds) |
+| `att.yaw.outlimit_dps` | 60.0 | 10.0 - 180.0 | Max rate setpoint output (deg/s) |
 | `att.yaw.headroom` | 0.80 | 0.5 - 1.0 | Anti-windup headroom factor |
 | `att.yaw.alpha` | 0.10 | 0.01 - 1.0 | Derivative low-pass filter coefficient |
 
@@ -143,7 +153,7 @@ The attitude controller runs at ~100 Hz and converts attitude errors (degrees) i
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `att.deadband` | 0.0001 | 0.0 - 0.01 | Error deadband (radians) |
+| `att.deadband_rad` | 0.0001 | 0.0 - 0.01 | Error deadband (radians) |
 
 **Tuning Notes:**
 - Prevents micro-corrections when nearly level
@@ -228,8 +238,8 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 |-----|---------|-------|-------------|
 | `servo.pitch.min` | 500 | 500 - 1000 | Min pulse width (µs) |
 | `servo.pitch.max` | 2500 | 2000 - 2500 | Max pulse width (µs) |
-| `servo.pitch.neutral` | 90 | 0 - 180 | Neutral position (degrees) |
-| `servo.pitch.deflection` | 80 | 10 - 90 | Max deflection from neutral (degrees) |
+| `servo.pitch.neutral_deg` | 90 | 0 - 180 | Neutral position (degrees) |
+| `servo.pitch.deflection_deg` | 80 | 10 - 90 | Max deflection from neutral (degrees) |
 | `servo.pitch.invert` | true | true/false | Invert servo direction |
 
 ### Yaw Servo
@@ -238,8 +248,8 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 |-----|---------|-------|-------------|
 | `servo.yaw.min` | 500 | 500 - 1000 | Min pulse width (µs) |
 | `servo.yaw.max` | 2500 | 2000 - 2500 | Max pulse width (µs) |
-| `servo.yaw.neutral` | 90 | 0 - 180 | Neutral position (degrees) |
-| `servo.yaw.deflection` | 80 | 10 - 90 | Max deflection from neutral (degrees) |
+| `servo.yaw.neutral_deg` | 90 | 0 - 180 | Neutral position (degrees) |
+| `servo.yaw.deflection_deg` | 80 | 10 - 90 | Max deflection from neutral (degrees) |
 | `servo.yaw.invert` | false | true/false | Invert servo direction |
 
 ### Left Aileron Servo
@@ -248,8 +258,8 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 |-----|---------|-------|-------------|
 | `servo.lail.min` | 500 | 500 - 1000 | Min pulse width (µs) |
 | `servo.lail.max` | 2500 | 2000 - 2500 | Max pulse width (µs) |
-| `servo.lail.neutral` | 90 | 0 - 180 | Neutral position (degrees) |
-| `servo.lail.deflection` | 80 | 10 - 90 | Max deflection from neutral (degrees) |
+| `servo.lail.neutral_deg` | 90 | 0 - 180 | Neutral position (degrees) |
+| `servo.lail.deflection_deg` | 80 | 10 - 90 | Max deflection from neutral (degrees) |
 | `servo.lail.invert` | true | true/false | Invert servo direction |
 
 ### Right Aileron Servo
@@ -258,8 +268,8 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 |-----|---------|-------|-------------|
 | `servo.rail.min` | 500 | 500 - 1000 | Min pulse width (µs) |
 | `servo.rail.max` | 2500 | 2000 - 2500 | Max pulse width (µs) |
-| `servo.rail.neutral` | 90 | 0 - 180 | Neutral position (degrees) |
-| `servo.rail.deflection` | 80 | 10 - 90 | Max deflection from neutral (degrees) |
+| `servo.rail.neutral_deg` | 90 | 0 - 180 | Neutral position (degrees) |
+| `servo.rail.deflection_deg` | 80 | 10 - 90 | Max deflection from neutral (degrees) |
 | `servo.rail.invert` | false | true/false | Invert servo direction |
 
 ### Throttle
@@ -321,9 +331,9 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `imu.gyro_bias_max` | 5.0 | 1.0 - 20.0 | Max acceptable gyro bias (deg/s) |
+| `imu.gyro_bias_max_dps` | 5.0 | 1.0 - 20.0 | Max acceptable gyro bias (deg/s) |
 | `imu.expected_g` | 1.0 | 0.9 - 1.1 | Expected gravity magnitude (g) |
-| `imu.gravity_tol` | 0.15 | 0.05 - 0.3 | Gravity reading tolerance (g) |
+| `imu.gravity_tol_g` | 0.15 | 0.05 - 0.3 | Gravity reading tolerance (g) |
 
 **Tuning Notes:**
 - If calibration fails, increase `gravity_tol` or ensure aircraft is perfectly still

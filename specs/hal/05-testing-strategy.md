@@ -92,7 +92,9 @@ New tests that were previously impossible:
 | `test_seqlock` | Concurrent reader/writer stress; torn reads always retry; the stale-fallback path returns coherent data; health counters are accurate |
 | `test_actuator_bank` | Endpoint mapping, inversion, trim, travel limits, `OutputRange`, NaN/Inf hold-last, slew limiting against `VirtualClock`; each `FailsafeAction` on `disable()`; `commit()` propagates a transport failure as `Status`; `state()` reports `Saturated` when clipped |
 | `test_actuator_disable_concurrency` | The R9 contract: `disable()` from a second thread during a `write`/`commit` loop leaves every output disabled and never interleaves destructively |
-| `test_composite_actuator_bank` | Flat index space across two banks; `commit()` returns the first failure but still commits the rest; `disable()` disables all banks unconditionally even if one errors |
+| `test_composite_actuator_bank` | Flat index space across two banks; a failing bank does **not** abort the others; `staleMask` maps sub-bank channels into composite indices correctly; `disable()` disables every bank even if one errors; `nativeRate_hz()` returns the slowest sub-bank |
+| `test_actuator_kinds` | `Binary` snaps to min/max and ignores slew; `Latching` is never moved by `write()` from the mixer path and is **not** actuated by `disable()`; `Proportional` behaves as before |
+| `test_commit_result` | `staleMask` bit N set exactly when channel N failed to update; `allOk()` false on a partial commit; `committedCount` accurate under injected transport failures |
 | `test_attitude_estimator` | Estimator contract independent of implementation: a level, static input converges to identity; a pure yaw rate integrates to the right heading; `reset()` clears state; `setGain()` changes convergence rate. Run against **both** implementations by parameterised test, so Phase 9 inherits the whole suite |
 | `test_airframe_mixer` | The *real* `AirframeMixer`, replacing the copied formulas in `test_servo_math.cpp` |
 | `test_motion_detector` | The *real* `MotionDetector`, replacing the harness in `test_motion_signals.cpp` |

@@ -185,7 +185,8 @@ classDiagram
         +count() uint8
         +begin(cfgs, n) Status
         +write(idx, value) void
-        +commit() Status
+        +commit() CommitResult
+        +nativeRate_hz() uint16
         +disable() Status
         +lastCommand(idx) float
         +state(idx) ActuatorState
@@ -196,6 +197,7 @@ classDiagram
 
     class ActuatorChannelConfig {
         +role string
+        +kind ActuatorKind
         +range OutputRange
         +invert bool
         +trim float
@@ -240,9 +242,17 @@ Reading the diagram:
   That was the bug in the first draft (ADR-020).
 * **`write()` stages, `commit()` pushes.** For CAN that is one PDO group plus SYNC,
   atomically. `commit()` returns `Status`; `write()` cannot fail.
-* **`disable()` is the only method safe from any task** — the failsafe path needs it.
+* **`disable()` is the only method safe from any task** — the failsafe path needs it,
+  and it disables every bank unconditionally.
+* **`commit()` returns `CommitResult`**, whose `staleMask` names the channels that
+  failed to update. "Something failed" is not actionable in flight; "the elevator is
+  stale" is.
+* **`ActuatorKind`** (Proportional / Binary / Latching) is *orthogonal* to transport
+  — a binary retract can hang off PWM or CAN. It lives in the channel config, not in
+  a separate interface (ADR-024).
 * **`CompositeActuatorBank`** flattens several banks into one index space, so four
-  PWM surfaces plus one CAN throttle needs no special case.
+  PWM surfaces plus one CAN throttle plus a retract needs no special case — but
+  `commit()` is atomic only *within* a bank. Keep primary flight surfaces on one.
 
 ---
 

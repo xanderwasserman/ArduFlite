@@ -834,6 +834,17 @@ that can fail; a commit step; and optional feedback.**
 namespace arduflite::device {
 
 enum class OutputRange    : uint8_t { Bipolar, Unipolar };   // [-1,1] vs [0,1]
+
+// What KIND of thing this output drives. Orthogonal to the transport: a binary
+// retract can hang off PWM or CAN. Affects slew, quantisation and failsafe.
+enum class ActuatorKind : uint8_t {
+    Proportional,  // control surface, throttle - continuous, slew-limited
+    Binary,        // retract, relay, cowl flap - snaps to min/max, slew ignored
+    Latching,      // parachute, payload release - one-shot; never driven by the
+                   // mixer, requires an explicit arm-then-fire from the flight
+                   // layer, and disable() must NOT actuate it
+};
+
 enum class FailsafeAction : uint8_t {
     Hold,       // freeze at the last commanded value
     Neutral,    // drive to the configured neutral
@@ -843,7 +854,8 @@ enum class FailsafeAction : uint8_t {
 // Transport-NEUTRAL. No microseconds, no node IDs, no frame rates.
 // Everything here is meaningful for PWM, CAN, DShot and serial servos alike.
 struct ActuatorChannelConfig {
-    const char*    role           = "";        // "elevator", "throttle"
+    const char*    role           = "";        // "elevator", "throttle", "retract"
+    ActuatorKind   kind           = ActuatorKind::Proportional;
     OutputRange    range          = OutputRange::Bipolar;
     bool           invert         = false;
     float          trim           = 0.0f;      // normalised offset
@@ -851,6 +863,15 @@ struct ActuatorChannelConfig {
     float          maxOutput      =  1.0f;
     float          maxSlew_perSec = 4.0f;      // full range/s; 0 = unlimited
     FailsafeAction onDisable      = FailsafeAction::Neutral;
+};
+
+// Returned by commit(). staleMask has bit N set when channel N is still holding a
+// previous command because its transport failed.
+struct CommitResult {
+    Status   status         = Status::Ok;   // Ok only if every channel committed
+    uint32_t staleMask      = 0;            // bit N = channel N did NOT update
+    uint8_t  committedCount = 0;
+    constexpr bool allOk() const { return status == Status::Ok && staleMask == 0; }
 };
 
 enum class ActuatorState : uint8_t {
@@ -885,11 +906,20 @@ public:
 
     // Push every staged command to the hardware.
     //   PWM:     writes the LEDC duty registers.
-    //   CANopen: transmits the mapped PDOs, then a SYNC — one atomic group.
+    //   CANopen: transmits the mapped PDOs, then a SYNC - atomic WITHIN this bank.
     //   DShot:   emits the frame burst.
     // The control loop does write() x N, then exactly one commit().
-    // THIS is where a transport failure surfaces.
-    virtual Status commit() = 0;
+    //
+    // Returns WHICH channels failed, not merely that something did. On a flying
+    // aircraft "ailerons stale" and "elevator stale" are different emergencies,
+    // and the flight layer cannot choose a response without knowing which.
+    virtual CommitResult commit() = 0;
+
+    // The rate this transport actually wants to be committed at. PWM 50-333 Hz,
+    // DShot up to 32 kHz, CANopen whatever the PDO budget allows. Symmetric with
+    // Sensor::nativeRate_hz(); lets the caller decimate rather than over-driving a
+    // 50 Hz servo bus from a 500 Hz loop.
+    virtual uint16_t nativeRate_hz() const = 0;
 
     // Applies each channel's FailsafeAction. Must be safe to call from a failsafe
     // path and from a task that is not the usual writer.
@@ -945,15 +975,55 @@ Four PWM control surfaces plus one CAN throttle is a realistic configuration, so
 must not require a special case:
 
 ```cpp
-// Aggregates several banks into one flat index space. commit() commits each,
-// returning the first failure; disable() disables all of them unconditionally.
+// Aggregates several banks into one flat index space, so the mixer still writes
+// indices 0..N-1 and calls one commit().
 class CompositeActuatorBank final : public device::ActuatorBank {
 public:
     CompositeActuatorBank(std::span<device::ActuatorBank* const> banks);
+
+    // Issues each sub-commit back to back with no work in between, then ORs the
+    // per-bank staleMasks into the composite index space. A failure in one bank
+    // does NOT abort the others - the remaining banks must still be driven.
+    CommitResult commit() override;
+
+    // Slowest sub-bank wins: committing faster than the slowest transport wants
+    // gains nothing and costs bus bandwidth.
+    uint16_t nativeRate_hz() const override;
+
+    // Disables EVERY bank unconditionally, even if an earlier one errors.
+    // A partial disarm is worse than a failed one.
+    Status disable() override;
 };
 ```
 
-The mixer still writes indices 0..N-1 and calls one `commit()`.
+#### Three things a composite bank cannot hide
+
+Mixing transports is supported, but it is not free, and the interface should not
+pretend otherwise.
+
+**1 — `commit()` is atomic *within* a bank, never *across* banks.** CANopen's SYNC
+makes every servo on that bus act on the same control cycle. It does nothing for the
+PWM surfaces, which moved microseconds earlier. At 1 Mbit a five-node PDO group plus
+SYNC is roughly 0.6 ms; a 500 Hz loop has a 2 ms budget, so the skew is real but
+small. It is bounded by the transports' own latency because the composite issues the
+sub-commits back to back.
+
+> **Design guidance, not a rule the code can enforce:** keep the *primary flight
+> surfaces on one bank*. Split roll across a PWM aileron and a CAN aileron and you
+> have built a rolling-moment asymmetry that appears only under bus load. Put
+> ailerons+elevator+rudder on one transport, and hang throttle, retracts and payload
+> on whatever else is convenient.
+
+**2 — Partial failure is a real flight state and needs a policy.** If the CAN bank
+drops and the PWM bank does not, some surfaces follow the controller and some are
+frozen. `CommitResult::staleMask` exists so the flight layer can tell *which*, and
+decide: a stale flap is a log line, a stale elevator is a failsafe. **That policy
+lives above the HAL** — the bank's job is to report accurately, not to choose.
+
+**3 — Rate mismatch is the caller's problem, and now it has the data.**
+`nativeRate_hz()` lets the controller decimate per bank exactly as the inertial task
+decimates the barometer. Committing a 50 Hz servo bus at 500 Hz wastes bandwidth;
+committing a DShot ESC at 50 Hz under-drives it.
 
 #### Honest assessment: is this enough for CANopen?
 

@@ -814,4 +814,72 @@ it is a collection — it is *more* obvious than the proposed name, not less.
   tempting and cheap, but it is ergonomics-only and adds a type. **Deferred** —
   revisit if call sites read badly in Phase 3.
 
-**Status:** Accepted. `SensorDevice` → `Sensor` applied across §01–§10.
+**Caveat added later (see ADR-024).** The claim "actuators have one kind of
+actuation" weakens once binary retracts and latching payload releases are in scope.
+It survives — because at the *transport* level the operation really is uniform
+("stage a normalised value, commit") — but the differing semantics are now carried
+by `ActuatorKind` in the per-channel config rather than being pretended away.
+
+**Status:** Accepted, with the ADR-024 caveat. `SensorDevice` → `Sensor` applied
+across §01–§10.
+
+
+---
+
+## ADR-024 — Heterogeneous actuators: composite banks, honest contracts
+
+**Context.** The maintainer asked what happens with a mix of CANopen servos, PWM
+servos and "some other type of actuator too". `CompositeActuatorBank` was already in
+the design, but auditing its contract found it underspecified in three
+safety-relevant ways. This ADR records the fixes.
+
+**Two orthogonal axes were being conflated:**
+
+| Axis | Question | Handled by |
+|---|---|---|
+| **Transport** | how does the command reach it? | which `ActuatorBank` implementation the channel lives in |
+| **Kind** | what does it physically do? | `ActuatorKind` in `ActuatorChannelConfig` |
+
+A binary retract on CAN and a binary retract on PWM are the same *kind* on different
+*transports*. Treating these as one axis is what made the original design feel
+adequate when it was not.
+
+**Decisions:**
+
+1. **`commit()` returns `CommitResult`, not `Status`.** The original "returns the
+   first failure" is not actionable: on a flying aircraft, "ailerons stale" and
+   "elevator stale" demand different responses, and the flight layer cannot choose
+   without knowing which. `staleMask` names the channels that did not update.
+
+2. **A failing bank must not abort the others.** `CompositeActuatorBank::commit()`
+   drives every sub-bank and ORs the results. The original wording — "returning the
+   first failure" — read as though it might short-circuit, which would leave surfaces
+   undriven because a *different* transport failed.
+
+3. **`disable()` disables every bank unconditionally**, even if an earlier one
+   errors. A partial disarm is worse than a failed one.
+
+4. **`ActuatorBank::nativeRate_hz()` added**, symmetric with `Sensor::nativeRate_hz()`.
+   Rate mismatch across transports (50 Hz PWM, 32 kHz DShot, PDO-budget CANopen) was
+   simply unaddressed; the caller now has the data to decimate per bank.
+
+5. **`ActuatorKind { Proportional, Binary, Latching }`** added to the channel config
+   rather than splitting `ActuatorBank` into per-kind interfaces. Rationale: the
+   transport-level operation stays uniform, so the differences are per-channel
+   *policy* (slew or snap; what failsafe means) not per-interface *shape*. `Latching`
+   carries the important constraint — a parachute or payload release is never driven
+   by the mixer and **must not be actuated by `disable()`**.
+
+**Rejected:** splitting into `ProportionalActuator` / `BinaryActuator` interfaces
+mirroring the sensor side. It would give three interfaces where config suffices, and
+every call site would still go through the bank for `commit()`.
+
+**Stated as a limit rather than solved:** `commit()` cannot be atomic *across*
+transports. The composite issues sub-commits back to back so the skew is bounded by
+the transports themselves (~0.6 ms for a five-node CAN PDO group at 1 Mbit, against a
+2 ms loop budget), but it is non-zero. §03 3.3 carries the design guidance that
+follows from this: **keep the primary flight surfaces on a single bank.** Splitting
+roll across a PWM aileron and a CAN aileron builds in a rolling-moment asymmetry that
+only appears under bus load.
+
+**Status:** Accepted.

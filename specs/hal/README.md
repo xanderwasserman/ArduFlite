@@ -116,6 +116,35 @@ No decisions are currently blocking. The only judgement call left is optional an
 standalone: whether to rename the `att.deadband` config key to `att.deadband_rad`,
 which needs an NVS schema migration (ADR-008, last paragraph).
 
+## Is the design complete?
+
+**No — and that is not the goal.** The design is *ready to implement*, which is a
+different and more useful property. Three things say so:
+
+1. **Nothing here has been compiled.** Every interface in §03 is plausible C++, not
+   verified C++. Phase 0 exists to find out which parts do not survive a compiler,
+   and it will find some.
+2. **The last three reviews each found something real** — heterogeneous actuators
+   (ADR-024), the `Actuator` / `ActuatorBank` split (ADR-025), and a stale board
+   descriptor that the split had invalidated. The rate of finding genuine problems
+   has not dropped off.
+3. **But they were found by *questions*, not by more prose.** At 5,400 lines the
+   spec is past the point where writing more of it helps. A compiler and a bench will
+   now find issues faster than another review pass.
+
+**Deliberately left unspecified**, to be settled when they are written against real
+call sites in Phases 3–6:
+
+| Component | Referenced | Why deferred |
+|---|---|---|
+| `actuators::AirframeMixer` | 15× | Flight layer. Shape is constrained by `ControlOutputs` (§03 3.3); the geometry maths already exists and ports verbatim |
+| `input::RcMapper` | 12× | Flight layer. Settled in Phase 4 against the real CRSF channel table |
+| `estimation::MotionDetector` | 8× | Ports verbatim from `updateMotionSignals()` |
+| `estimation::SensorSelector` | 7× | Phase 6 ships the trivial policy; the interesting version is blocked on R14 |
+
+These are all *above* the HAL boundary. Specifying them now would guess at call sites
+that do not exist yet.
+
 ## Known weak points
 
 From [08-review.md](08-review.md), carried forward rather than hidden:

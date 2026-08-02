@@ -42,7 +42,26 @@ struct McuProfile {
 struct I2cBusDesc  { Pin sda, scl; uint32_t clock_hz; };
 struct UartDesc    { uint8_t port; Pin rx, tx; uint32_t baud; bool invertRx; };
 struct GpioDesc    { Pin pin; hal::PinMode mode; const char* role; };
-struct PwmOutDesc  { Pin pin; const char* role; };
+// ── Actuator outputs ────────────────────────────────────────────────────────
+// Updated for ADR-024/025: outputs are grouped BY TRANSPORT (one group per
+// ActuatorBank), and each output carries its role and kind. The previous flat
+// `PwmOutDesc outputs[]` could not express a CAN throttle or a latching release.
+enum class ActuatorTransport : uint8_t { Pwm, CanOpen, DShot, Sim };
+
+struct ActuatorOutputDesc {
+    const char*  role;        // "elevator" — must be unique across the WHOLE board
+    ActuatorKind kind = ActuatorKind::Proportional;
+    Pin          pin    = kNoPin;   // PWM/DShot only
+    uint8_t      nodeId = 0;        // CANopen only
+};
+
+struct ActuatorBankDesc {
+    ActuatorTransport transport;
+    uint8_t           busIndex = 0;      // which CanBus, when transport == CanOpen
+    static constexpr uint8_t kMaxPerBank = 8;
+    ActuatorOutputDesc outputs[kMaxPerBank];
+    uint8_t            outputCount;
+};
 struct LedDesc     { Pin pin; uint16_t pixelCount; uint8_t brightness; };
 
 // ── Fitted parts ────────────────────────────────────────────────────────────
@@ -98,12 +117,11 @@ struct BoardDescriptor {
 
     RcPart            rcLink;
 
-    // Outputs are described per transport. Today only PWM is populated; a CAN
-    // group would add `canOutputs[]` alongside, and Board.cpp would wrap both in a
-    // CompositeActuatorBank (§03 3.3). The descriptor shape does not change.
-    static constexpr uint8_t kMaxOutputs = 8;
-    PwmOutDesc        outputs[kMaxOutputs];
-    uint8_t           outputCount;
+    // One entry per ActuatorBank. Board.cpp constructs one bank per entry and
+    // wraps them in a CompositeActuatorBank when bankCount > 1 (§03 3.3).
+    static constexpr uint8_t kMaxBanks = 3;
+    ActuatorBankDesc  actuatorBanks[kMaxBanks];
+    uint8_t           bankCount;
 
     GpioDesc          userButton;
     LedDesc           statusLed;
@@ -157,14 +175,18 @@ constexpr BoardDescriptor kBoard {
 
     .rcLink = RcPart::Crsf,
 
-    .outputs = {
-        { 1, "aileron_right" },
-        { 2, "aileron_left"  },
-        { 0, "elevator"      },
-        { 4, "rudder"        },
-        { 10, "throttle"     },
-    },
-    .outputCount = 5,
+    .actuatorBanks = {{
+        .transport = ActuatorTransport::Pwm,
+        .outputs = {
+            { .role = "aileron_right", .pin = 1  },
+            { .role = "aileron_left",  .pin = 2  },
+            { .role = "elevator",      .pin = 0  },
+            { .role = "rudder",        .pin = 4  },
+            { .role = "throttle",      .pin = 10 },
+        },
+        .outputCount = 5,
+    }},
+    .bankCount = 1,
 
     .userButton = { 9, hal::PinMode::InputPullUp, "user" },
     .statusLed  = { 7, 1, 50 },
@@ -197,14 +219,16 @@ constexpr bool canOutput(const McuProfile& m, Pin p)
 constexpr bool allPinsUnique(const BoardDescriptor& b);
 constexpr bool allPinsValid (const BoardDescriptor& b);
 constexpr bool allOutputPinsCanOutput(const BoardDescriptor& b);
-constexpr bool outputCountWithinMcu   (const BoardDescriptor& b);
+constexpr bool outputCountWithinMcu   (const BoardDescriptor& b);   // PWM banks vs LEDC channels
+constexpr bool allRolesUnique         (const BoardDescriptor& b);   // across ALL banks
 // "Every fitted part has a bus and pins." Skipped for Untested boards (R4) —
 // a port in progress must be able to compile before every pin is known.
 constexpr bool requiredPeripheralsPresent(const BoardDescriptor& b);
 
 constexpr bool isValid(const BoardDescriptor& b) {
     return allPinsValid(b) && allPinsUnique(b) && allOutputPinsCanOutput(b)
-        && outputCountWithinMcu(b) && requiredPeripheralsPresent(b);
+        && outputCountWithinMcu(b) && allRolesUnique(b)
+        && requiredPeripheralsPresent(b);
 }
 
 }   // namespace arduflite::board::validate
@@ -218,6 +242,8 @@ static_assert(arduflite::board::validate::allOutputPinsCanOutput(arduflite::boar
               "Board descriptor: an input-only GPIO is assigned to an output");
 static_assert(arduflite::board::validate::outputCountWithinMcu(arduflite::board::kBoard),
               "Board descriptor: more PWM outputs than the MCU has channels");
+static_assert(arduflite::board::validate::allRolesUnique(arduflite::board::kBoard),
+              "Board descriptor: two outputs claim the same role — byRole() would be ambiguous");
 static_assert(arduflite::board::validate::requiredPeripheralsPresent(arduflite::board::kBoard),
               "Board descriptor: a fitted part has no bus or pin assigned");
 ```
@@ -268,8 +294,11 @@ Status Board::begin()
     ARDUFLITE_TRY(_nvs.begin());
     ARDUFLITE_TRY(_fs.begin());
 
-    for (uint8_t i = 0; i < d.outputCount; ++i) {
-        ARDUFLITE_TRY(_pwm[i].bind(d.outputs[i].pin));
+    for (uint8_t b = 0; b < d.bankCount; ++b) {
+        const auto& bank = d.actuatorBanks[b];
+        for (uint8_t i = 0; i < bank.outputCount; ++i) {
+            if (bank.outputs[i].pin != kNoPin) ARDUFLITE_TRY(_pwm[i].bind(bank.outputs[i].pin));
+        }
     }
 
     // ── Tier 1: sensors ─────────────────────────────────────────────────────

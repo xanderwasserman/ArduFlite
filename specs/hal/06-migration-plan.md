@@ -17,10 +17,14 @@ mid-refactor. Each is one branch and one PR.
 
 ## Ground rules
 
-* **Baseline first.** Before Phase 2, record on hardware: `stats` output (inner/outer
-  `avgDt`, `maxDt`, `overrunCount` over 60 s), `tasks` stack high-water marks, and
-  the flash/RAM figures for `lolin-full` and `lolin-lite`. Commit as
-  `specs/hal/baseline.md`. Every later phase is measured against it.
+* **Baseline is A/B, not pre-recorded.** Build sizes are already captured in
+  [`baseline.md`](baseline.md) (`lolin-full` 1,418,832 B; `lolin-lite` 630,464 B) and
+  need no hardware. Loop timing and stack high-water marks are compared **within a
+  single Phase 2 bench session**: flash the tagged pre-HAL firmware, capture `stats`
+  over 60 s and `tasks`, flash the Phase 2 firmware, capture again, compare.
+  Same board, same session, same conditions — a better-controlled comparison than one
+  against a recording made weeks earlier, and it needs no flying: the board on USB
+  runs the IMU task and both control loops on the bench.
 * **Behaviour-preserving unless stated.** Where a phase changes behaviour it is
   called out under **Behaviour change** and gets a bench gate.
 * **Phase gate** = host tests green + the phase's bench checklist + one short flight.
@@ -169,7 +173,14 @@ here and again in Phase 3; all actuator work now happens once, in Phase 3.
 **Behaviour change:** none intended. Time becomes 64-bit `std::chrono`, fixing a
 latent 71-minute `micros()` wrap.
 
-**Done when:** `stats` and `tasks` match baseline within noise. **This phase
+**Stack sizes: carry over verbatim.** §06 previously said "audited once against the
+measured high-water marks". Without a pre-recorded baseline that audit moves into the
+A/B session — but **Phase 2 must ship the existing stack sizes unchanged**. Changing
+task stack sizes and the task-creation mechanism in the same phase would make an
+overflow impossible to attribute. Re-size in a later, separate change once `tasks`
+has been read on both firmwares.
+
+**Done when:** the A/B comparison shows `stats` and `tasks` within noise. **This phase
 validates the ADR-002 virtual-dispatch cost estimate** — if `maxDt` or
 `overrunCount` regress, stop and reconsider before going further.
 **Risk:** medium — touches every task's creation and timing.
@@ -266,8 +277,10 @@ which is exactly what the cross-check proves.
   `Adafruit_Madgwick` unchanged** (ADR-017), reproducing its quirks exactly —
   including `getYaw()`'s `+180.0f`. If the wrapper silently cleans them up, Phase 9
   has no valid baseline.
-* `MotionDetector`; `SensorSelector` with the trivial policy (first healthy, fall
-  back on `Failed`).
+* `MotionDetector`; `SensorSelector` implementing `SelectionPolicy::FirstHealthy`
+  (§03 3.8). The interface is fixed now so a future voting or crossfading policy is a
+  drop-in (ADR-026); `SelectionState` is published in `ImuState` so a switch reaches
+  the flash log.
 * `CalibrationService` — a state machine driven *inside* the sampling task, replacing
   the `pauseTask()`/`_taskPaused` spin-wait protocol entirely (review R6).
 * `ArduFliteIMU` becomes a thin façade so consumers compile unchanged, then is

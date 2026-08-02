@@ -954,3 +954,55 @@ adding a capability.
 
 **Status:** Accepted. Supersedes the single-interface actuator model in ADR-020 and
 the corresponding half of ADR-023.
+
+
+---
+
+## ADR-026 — Guarantee a path for sensor failover without implementing it
+
+**Requirement (maintainer):** failover need not exist now, but there must be a path to
+adding it that is not a redesign.
+
+**Decision:** implement nothing; add three interface hooks that make every known
+failover strategy an additive change, and specify `SensorSelector` now so the trivial
+and sophisticated implementations share a shape.
+
+**Why hooks and not the feature.** Failover's hard part is not choosing a sensor — it
+is the transient. Switching mid-flight hands the estimator a different bias and
+possibly a different mount, and Madgwick reconverges over seconds *while the aircraft
+is flying on a wrong attitude estimate, immediately after a sensor fault*. Getting
+that right needs hardware to test against, which does not exist yet. Guessing at it
+now would produce untested code on the most safety-critical path in the system.
+
+**What was actually missing.** The claim "the design admits failover later" was
+untested until it was audited. Three gaps would have made it a redesign:
+
+1. **No way to re-seed the estimator.** `AttitudeEstimator` had `reset()` (zero the
+   filter) but no `setOrientation()`. Re-seeding is one of the three transition
+   strategies, and the capability already exists in `Adafruit_Madgwick` — only the
+   interface was hiding it. Adding a method to an interface after several
+   implementations exist is exactly the retrofit this project is trying to escape.
+2. **A failover would have been invisible.** `ImuState` carried no record of which
+   instance was live, so a switch would not reach the flash log. For a redundant
+   system that is the *first* diagnostic question, and it would have been
+   unanswerable.
+3. **`SensorSelector` was vapour.** Referenced in four documents, specified nowhere.
+   The trivial Phase 6 version and a future voting version would have had different
+   shapes, which is how "we'll add it later" turns into "we'll rewrite it later".
+
+**Consequence — the three strategies are now all additive:**
+
+* **Crossfade** and **median-of-three** need every instance read each tick. Already
+  available: the sampling loop `sample()`s all devices and only `read()` is selective,
+  so this is a change inside `InertialSubsystem::tick()`.
+* **Re-seed** needs `setOrientation()`. Added.
+* All three need to know *when* a switch happened. `switchedThisTick()` provides it.
+
+Adding failover later is therefore: one new `SensorSelector` implementation, one
+branch in the tick, and a `SelectionPolicy` value. No interface change, nothing above
+the estimation layer, no board-descriptor change.
+
+**Cost of doing this now:** three method declarations and one struct. No runtime cost
+on a single-sensor aircraft — `FirstHealthy` with a one-element span is a bounds check.
+
+**Status:** Accepted. Path guaranteed; feature deferred with the R14 trigger intact.

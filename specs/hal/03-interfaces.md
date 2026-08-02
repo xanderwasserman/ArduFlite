@@ -1194,6 +1194,15 @@ public:
     virtual Status begin(uint16_t sampleRate_hz) = 0;
     virtual void   reset() = 0;
 
+    // Re-seed the filter state directly, skipping the warm-up. Required for sensor
+    // failover (a new instance must not make Madgwick reconverge from scratch
+    // mid-flight) and useful for initialising from the accelerometer at boot rather
+    // than running 2000 warm-up iterations.
+    // Adafruit_Madgwick::setQuaternion() already provides this underneath; the
+    // interface merely has to expose it, and retrofitting once several
+    // implementations exist is far more expensive than adding it now.
+    virtual void setOrientation(const Quaternion& q) = 0;
+
     // Gyro/accel only (no magnetometer) — the current MPU-6500 path.
     virtual void update(const Vec3f& gyro_dps,
                         const Vec3f& accel_g,
@@ -1258,6 +1267,7 @@ struct ImuState {
     float       altitude_m;      // above the calibrated ground reference
     float       climbRate_mps;
     MotionSignals motion;        // launchDetected / stableDetected
+    SelectionState selection;    // WHICH sensor instance produced this — see below
     bool        healthy;
     hal::Clock::time_point time;
 };
@@ -1309,6 +1319,71 @@ public:
 Step 4 happens **before** selection is meaningful: each instance is transformed with
 its own map, so a failover between differently-mounted sensors still yields body-frame
 data. (The transient this causes is review finding R14 — deferred, not solved.)
+
+#### Sensor selection — specified now, trivial until it is not
+
+Redundancy is a board-descriptor change (ADR-019), but *choosing between* instances
+is flight-layer policy. Phase 6 ships the trivial policy; the interface is pinned now
+so the sophisticated version is a drop-in rather than a redesign.
+
+```cpp
+namespace arduflite::estimation {
+
+enum class SelectionPolicy : uint8_t {
+    FirstHealthy,   // Phase 6 ships this: lowest index whose health() == Ok
+    Blended,        // future: crossfade over N ticks across a switch
+    Median,         // future: median-of-three, no switching at all
+};
+
+struct SelectionState {
+    uint8_t  activeAccel = 0;    // index into Board::accelerometers()
+    uint8_t  activeGyro  = 0;
+    uint8_t  activeBaro  = 0;
+    uint32_t switchCount = 0;    // cumulative since boot
+    hal::Clock::time_point lastSwitch{};
+};
+
+class SensorSelector {
+public:
+    virtual ~SensorSelector() = default;
+
+    // Called once per tick by InertialSubsystem, AFTER sample() and BEFORE read().
+    virtual void evaluate(hal::Clock::time_point now) = 0;
+
+    [[nodiscard]] virtual Accelerometer* primaryAccel() = 0;
+    [[nodiscard]] virtual Gyroscope*     primaryGyro()  = 0;
+    [[nodiscard]] virtual Barometer*     primaryBaro()  = 0;
+
+    [[nodiscard]] virtual SelectionState state() const = 0;
+
+    // True only on the tick a switch occurred, so the estimator can re-seed or
+    // begin a crossfade. This is the hook that makes R14 solvable later.
+    [[nodiscard]] virtual bool switchedThisTick() const = 0;
+};
+
+}   // namespace arduflite::estimation
+```
+
+**`SelectionState` is published in `ImuState`, so it lands in the flash log.**
+Without it, a post-flight investigation into odd handling cannot answer "did it
+switch, and when?" — the first question anyone would ask of a redundant system.
+
+##### The three future transition strategies, and whether this design admits them
+
+Review finding R14 is that switching instances mid-flight hands the estimator a step
+change — different bias, possibly a different mount — right after a sensor fault.
+Not solved here. But all three known fixes are **additive** against these interfaces:
+
+| Strategy | What it needs | Available? |
+|---|---|---|
+| **Crossfade** — blend old and new over N ticks | both instances read every tick | **Yes, already.** The sampling loop `sample()`s *every* device; only `read()` is selective. Reading both is a change inside `InertialSubsystem::tick()`, not an interface change |
+| **Re-seed** — inject the new sensor's attitude and continue | `AttitudeEstimator::setOrientation()` | **Yes** — added above, for exactly this reason |
+| **Median-of-three** — never switch, vote instead | all instances read every tick | **Yes, already.** Same as crossfade; `SelectionPolicy::Median` then means `primaryX()` returns a synthetic voter |
+
+So the path exists: adding failover later is a new `SensorSelector` implementation
+plus a branch in `InertialSubsystem::tick()`. **No interface changes, nothing above
+the estimation layer, no board-descriptor changes.** That is the requirement being
+met — not the feature.
 
 #### Calibration without a pause protocol
 

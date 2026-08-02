@@ -207,9 +207,25 @@ bad moment for a transient.
 
 **Deferred because** Phase 6 ships a single sensor and the trivial selector, so the
 path is unreachable. **Trigger:** the first time a board descriptor lists two
-instances of the same measurement, this needs a designed answer (blend over N ticks,
-re-seed the estimator from the new sensor, or require identical mounts). Do not add
-redundant hardware and assume failover is free.
+instances of the same measurement, this needs a designed answer.
+
+**Update — the *path* is now guaranteed, at the maintainer's request.** Failover need
+not be implemented now, but adding it later must not be a redesign. Auditing that
+claim found three things that would have made it one, all since closed:
+
+| Gap | Consequence had it stayed | Fixed by |
+|---|---|---|
+| `AttitudeEstimator` had `reset()` but no way to inject a state | re-seeding after a switch was impossible through the interface, though `Adafruit_Madgwick::setQuaternion()` provides it underneath | `setOrientation(Quaternion)` added |
+| `ImuState` did not record which instance was live | a failover would be invisible in the flash log — post-flight you could not answer "did it switch?" | `SelectionState` published in `ImuState` |
+| `SensorSelector` was named in four documents but never specified | the trivial and sophisticated versions would have been different shapes | interface specified in §03 3.8 |
+
+With those, all three known transition strategies (crossfade, re-seed, median-of-three)
+are **additive**: a new `SensorSelector` implementation plus a branch inside
+`InertialSubsystem::tick()`. No interface change, nothing above the estimation layer,
+no board-descriptor change. See ADR-026.
+
+**Still true:** the transient itself is unsolved. Do not add redundant hardware and
+assume failover is free.
 
 ### R15 — `openDevice()` lifetime and exhaustion unspecified
 

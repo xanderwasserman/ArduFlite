@@ -340,6 +340,40 @@ Host platform moves to **`tests/unit/hal_host/`**, which is honest: it is test
 infrastructure. Consequence for §02's directory layout, and a constraint on Phase 2 —
 any `.cpp` under `src/hal/` *is* firmware.
 
+### R22 — The GPIO masks were too narrow for the classic ESP32 — **FIXED**
+
+`McuProfile::inputOnlyMask` and `reservedMask` were `std::uint32_t`. The classic
+ESP32 has GPIO 0–39, so **bits 32–39 cannot be represented**, and
+`(mask >> 36)` on a `uint32_t` is undefined behaviour. Found by
+`test_board_descriptor`'s input-only-pin case, which failed on the first run.
+
+Widened to `std::uint64_t`, plus a `maskBitSet()` width guard so an out-of-range pin
+can never reach a UB shift. The FireBeetle descriptor's own masks were wrong under
+the old width too (`0xFC000000` for GPIO 34–39, and `0x0000F800` where GPIO 6–11 is
+`0xFC0`) — both corrected.
+
+### R23 — GPIO 9 on the FireBeetle is a flash pin, confirming the author's own TODO — **FIXED**
+
+Validating the FireBeetle descriptor failed on `allPinsValid`. The offending entry:
+
+```cpp
+// include/PinConfiguration.h:62
+constexpr int THROTTLE_PIN = 9;   //TODO: make sure this is correct!
+```
+
+GPIO 9 is inside the classic ESP32's SPI-flash range (GPIO 6–11), so it cannot drive
+a servo. **The validation caught precisely what the author's own comment suspected**,
+without anyone needing to remember the TODO existed. This is the fifth real defect the
+board descriptor has surfaced, and the first that was already known-suspect but
+unactioned.
+
+Set to `kNoPin` until the board is metered.
+
+**Design point confirmed:** `BoardMaturity::Untested` correctly does *not* relax
+`allPinsValid`. Pin validity is a hard fact about the silicon; "untested" only excuses
+*unknown* wiring, never *impossible* wiring. That distinction was a guess when it was
+written and this case validates it.
+
 ### R21 — `Quaternion` rename deferred out of Phase 0 — **spec corrected**
 
 §06 listed renaming `FliteQuaternion` → `arduflite::Quaternion` in Phase 0. But that

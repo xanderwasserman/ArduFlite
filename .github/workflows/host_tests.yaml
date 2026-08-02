@@ -1,0 +1,38 @@
+name: Host tests and static checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, 'hal/**' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  host-tests:
+    name: Host unit tests (C++20)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run the suite
+        run: ./tests/run_tests.sh
+
+  static-checks:
+    name: Layering and vendor-type checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No vendor types in portable headers
+        run: ./tools/ci/check_layering.sh
+
+  board-descriptors:
+    name: Every board descriptor validates
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        board: [ ARDUFLITE_BOARD_LOLIN_C3_MINI, ARDUFLITE_BOARD_FIREBEETLE_ESP32E ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: consteval-validate ${{ matrix.board }}
+        run: |
+          printf '#include "src/hal/board/BoardSelect.h"\nint main(){return 0;}\n' > /tmp/bs.cpp
+          g++ -std=c++20 -I. -D${{ matrix.board }} -c /tmp/bs.cpp -o /tmp/bs.o

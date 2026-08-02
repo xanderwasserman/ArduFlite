@@ -50,6 +50,7 @@ add_executable(unit_tests
     test_axis_transform.cpp
     test_seqlock.cpp
     test_result.cpp
+    test_board_descriptor.cpp
 )
 
 find_package(Threads REQUIRED)

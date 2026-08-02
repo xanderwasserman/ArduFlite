@@ -24,7 +24,9 @@ CI does not run the suite at all — `arduino_build.yaml` only compiles the sket
 ## 2. Test levels after the change
 
 ```
-L4  Hardware-in-the-loop      bench aircraft, servos, real RX      manual, per phase gate
+L4  Hardware-in-the-loop      bench aircraft, servos, real RX      manual, MANDATORY per phase gate
+                              (no test flights until the refactor is complete, so
+                               this and L3 are the only hardware/behaviour checks)
 L3  Log replay                real flight CSVs → estimator/control  host, automatic
 L2  Subsystem integration     host platform + fake devices          host, automatic
 L1  Driver / unit             fake RegisterDevice, virtual clock    host, automatic

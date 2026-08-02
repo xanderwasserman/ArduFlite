@@ -27,11 +27,55 @@ mid-refactor. Each is one branch and one PR.
   runs the IMU task and both control loops on the bench.
 * **Behaviour-preserving unless stated.** Where a phase changes behaviour it is
   called out under **Behaviour change** and gets a bench gate.
-* **Phase gate** = host tests green + the phase's bench checklist + one short flight.
-  Then tag `hal-phase-N`.
+* **Phase gate** = host tests green + the phase's bench checklist. Then tag
+  `hal-phase-N`. **No test flights until the whole refactor is complete** — see
+  "Flying is deferred" below for what that changes.
 * **Rollback** = revert the phase's merge commit. Nothing spans phases.
 * **One dominant risk per phase.** If a phase has two things that could ground the
   aircraft, it is two phases.
+
+## Flying is deferred to the end — what that changes
+
+The maintainer will not fly until the entire refactor is done. That is a legitimate
+call, and the plan adapts rather than pretends otherwise. But the consequences should
+be stated once, plainly:
+
+**What is lost.** The original design caught errors at each phase gate, so a problem
+was attributable to the twenty-odd files that phase touched. With flight deferred,
+**aerodynamic-level errors accumulate silently across all ten phases** and surface
+together on one flight. That is precisely the big-bang validation the phased plan
+existed to avoid. Nothing below fully recovers it.
+
+**What still works, and must therefore work harder:**
+
+| Substitute | Catches | Now more important because |
+|---|---|---|
+| **Bench verification** | wrong sign, wrong travel, dead output, failsafe not firing, arming logic | it is the only hardware check left. Every phase gate's bench list is now mandatory, not advisory |
+| **L3 log replay** | estimator divergence, command-chain changes | it is the **only** in-flight-behaviour oracle available. Promoted from a Phase 6 gate to a standing regression suite (below) |
+| **A/B on the bench** | loop timing, stack usage, CPU regressions | unchanged in value |
+| **Phase 5 cross-check harness** | sensor scaling and bias | unchanged in value |
+| **Six-orientation bench check** | axis map errors | unchanged in value |
+
+**What nothing substitutes for:** control authority and tuning, vibration coupling
+into the IMU, thermal drift, real failsafe behaviour in the air, and any aerodynamic
+consequence of the microsecond-resolution output change in Phase 3.
+
+### Three adaptations
+
+1. **Log replay is promoted to a standing gate.** It was a Phase 6 exit criterion.
+   It now runs in CI from Phase 6 onward, over *every* log in `docs/flight_logs/`, and
+   is a gate for Phases 6, 7, 8 and 9. It is the closest thing to a flight available.
+2. **Bench checklists become mandatory phase gates**, not "should". A phase does not
+   get tagged without them.
+3. **The first flight is a maiden flight, not a test flight** — see the checklist at
+   the end of this document. It carries the accumulated risk of ten phases, so it
+   should be flown like an unproven airframe: calm conditions, height, `MANUAL_MODE`
+   on a switch and a thumb on it.
+
+**One small silver lining:** with no flights between phases there is no
+"aircraft out of service" cost, so phases can be reordered or merged more freely than
+the dependency graph alone requires. Tagging still matters — it is what makes a
+regression bisectable once flying resumes.
 
 ## Sequencing rationale
 
@@ -417,3 +461,49 @@ one branch go stale against `main`.
 6. A third IMU, a host-sim board and a redundant sensor were each added in under a
    day.
 7. AGENTS.md and README describe the tier model accurately.
+
+
+---
+
+## Appendix — first flight after the refactor
+
+This flight carries the accumulated risk of every phase, because none of it has been
+airborne. Treat it as a maiden flight of an unproven aircraft, not as a routine sortie.
+
+**Before leaving for the field**
+
+- [ ] Host suite green, including full log replay over `FL001` and `FL002`.
+- [ ] All ten phase bench checklists re-run **on the final firmware**, not just on the
+      firmware of the phase that introduced them. Regressions between phases are the
+      specific thing flight testing would have caught.
+- [ ] Six-orientation IMU check: level, inverted, and on each side. Confirm accel and
+      gyro signs against the pre-refactor values recorded in Phase 6.
+- [ ] Servo travel and centre measured and compared against the Phase 3 numbers.
+- [ ] `stats` and `tasks` compared against the Phase 2 A/B baseline.
+- [ ] Boot inventory read and confirmed: every fitted part present, axis map as
+      expected, no `Untested` board warning.
+- [ ] Failsafe exercised on the bench: transmitter off, confirm configured bank,
+      pitch and throttle; transmitter on, confirm recovery.
+- [ ] Arming refused with the IMU unhealthy, throttle up, and link quality low.
+- [ ] Flash logging confirmed writing, and a log pulled and opened.
+
+**At the field**
+
+- [ ] Calm conditions. Not a windy day, not a busy slope.
+- [ ] Range check before launch.
+- [ ] Launch in `MANUAL_MODE` — passthrough, no controller in the loop. Confirm the
+      airframe flies and the surfaces move correctly before trusting any new code.
+- [ ] Gain height. Every subsequent step happens with altitude in hand.
+- [ ] Switch to `ATTITUDE_MODE` briefly, at height, with a thumb on the mode switch.
+      Confirm it holds level and does not diverge. Switch straight back.
+- [ ] Repeat for `RATE_MODE`.
+- [ ] Only then fly the modes normally.
+- [ ] Land, pull the flash log, and compare against a pre-refactor log for the same
+      manoeuvres.
+
+**Abort criteria — land immediately**
+
+- Any surface moving in the wrong direction or not centring.
+- Attitude estimate visibly disagreeing with reality on the telemetry.
+- Any unexpected mode change, or arming state changing on its own.
+- Anything at all that the pre-refactor aircraft did not do.

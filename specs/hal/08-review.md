@@ -272,6 +272,82 @@ correct in the first draft. Anything stated about the toolchain, the hardware or
 dependency should be checked, not recalled — §00 2.9b (the C3 has no FPU) is a third
 instance of the same class.
 
+## Found during Phase 0 implementation
+
+Phase 0's stated purpose was to find out which parts of §03 do not survive a
+compiler. It did, immediately.
+
+### R18 — The seqlock memory ordering is wrong, in the spec **and in flight code** — **FIXED in the new SeqLock; flight code unchanged**
+
+`SeqLock<T>`'s first implementation followed §03 exactly: `store(release)` on the
+version counter around a plain payload write, `load(acquire)` around a plain payload
+read. **The concurrency test failed immediately with torn reads.**
+
+The bug is a classic and the spec inherited it from the existing code:
+
+* `store(memory_order_release)` orders *prior* accesses before the store. It does
+  **not** stop the *following* payload write from being hoisted above it.
+* `load(memory_order_acquire)` orders *subsequent* accesses after the load. It does
+  **not** stop the *preceding* payload read from sinking below it.
+
+A seqlock needs standalone `std::atomic_thread_fence`s around the payload access, with
+the counter itself relaxed. Fixed in `src/hal/core/SeqLock.h`; the concurrency test
+now passes 3 readers against 1 writer with zero torn reads.
+
+**The same weakness is in `ArduFliteIMU.cpp:1214-1281` today**, which is flying:
+
+```cpp
+snapshotVersion.store(version + 1, std::memory_order_release);   // no fence after
+snapshotCurrent.accel.x = filteredAccelX;                        // can hoist above
+...
+uint32_t before = snapshotVersion.load(std::memory_order_acquire);
+snap = snapshotCurrent;                                          // can sink below
+uint32_t after  = snapshotVersion.load(std::memory_order_acquire);
+```
+
+**Why it has not bitten:** the ESP32-C3 is **single-core**. Torn reads there can only
+come from task preemption, and the version check does catch preemption. The failure
+mode needs true parallelism — which the host test has and the C3 does not.
+
+**Deliberately NOT fixed in Phase 0.** Phase 0's contract is that the firmware is
+untouched, and this is a flight-code change with no bench test behind it. It is fixed
+*for free* in Phase 6, when `InertialSubsystem` replaces the in-place snapshot with
+`SeqLock<ImuState>`.
+
+**But raise it immediately if a dual-core part is ever considered.** On an ESP32-S3 or
+classic ESP32 — or if a control loop is ever pinned to the second core — this stops
+being latent. Recorded here so the reasoning is not lost.
+
+*This is also the clearest vindication of the whole exercise so far: making the code
+host-testable found a real defect in flight code within minutes, and the current
+architecture could not have surfaced it at all.*
+
+### R19 — "Firmware binary byte-identical" is not achievable — **spec corrected**
+
+Phase 0's exit criterion was a byte-identical firmware. Testing that assumption:
+**two consecutive builds of unmodified source produce different MD5s** (Arduino embeds
+build metadata) while the size stays at exactly 630,464 bytes.
+
+The criterion is therefore replaced by **size-identical**, which still proves nothing
+new was linked in. Confirmed: 630,464 before and after Phase 0's core headers.
+
+### R20 — The host platform cannot live under `src/` — **spec corrected**
+
+`arduino-cli` compiles everything under the sketch's `src/` recursively. `src/hal/host/`
+would put `std::mutex`, `std::thread` and test doubles into the flight firmware.
+
+Host platform moves to **`tests/unit/hal_host/`**, which is honest: it is test
+infrastructure. Consequence for §02's directory layout, and a constraint on Phase 2 —
+any `.cpp` under `src/hal/` *is* firmware.
+
+### R21 — `Quaternion` rename deferred out of Phase 0 — **spec corrected**
+
+§06 listed renaming `FliteQuaternion` → `arduflite::Quaternion` in Phase 0. But that
+touches `ArduFliteIMU.h` and its consumers, which changes the firmware — contradicting
+the same phase's "firmware untouched" rule. Phase 0 does not need it either:
+`AxisTransform` operates on `Vec3f`. **Moved to Phase 6**, where the estimation layer
+takes ownership anyway.
+
 ## What held up
 
 Not everything was wrong, and it is worth recording what survived the pass so the

@@ -96,11 +96,15 @@ require taking the aircraft out of service.
 **Goal:** every interface in §03 exists, compiles, and is covered by host tests.
 Nothing is linked into the firmware.
 
-* `src/hal/core/`: `Status`, `Result`, `Vec3`, `Quaternion` (renamed from
-  `FliteQuaternion` — mechanical, already covered by `test_quaternion.cpp`),
-  `AxisTransform`, `SeqLock`, `Units`, `NonCopyable`.
+* `src/hal/core/`: `Status`, `Result`, `Vec3`, `AxisTransform`, `SeqLock`, `Units`,
+  `NonCopyable`. **Header-only** — anything with a `.cpp` under `src/` is compiled
+  into the firmware (review R20).
+  *The `FliteQuaternion` rename moved to Phase 6 — it touches flight code and Phase 0
+  does not need it (review R21).*
 * `src/hal/platform/` and `src/hal/device/`: all interface headers, declarations only.
-* `src/hal/host/`: the host platform (§05 §3).
+* `tests/unit/hal_host/`: the host platform (§05 §3). **Not** `src/hal/host/` —
+  `arduino-cli` compiles `src/` recursively, so that would link `std::thread` into
+  the flight firmware (review R20).
 * `src/hal/board/`: `BoardDescriptor`, `BoardValidate`, descriptors for
   `lolin_c3_mini` (`Supported`) and `firebeetle_esp32e` (`Untested`) — not yet used.
 * **Host test suite moves to C++20** to match the firmware (§09). It is currently
@@ -115,7 +119,10 @@ compiled; it is plausible C++, not verified C++. Expect corrections, and **updat
 the Wemos descriptor will also trip `static_assert`s — §00 2.4's defects surfacing,
 exactly as intended.
 
-**Done when:** host suite green in CI; firmware binary byte-identical to baseline.
+**Done when:** host suite green in CI; firmware **size-identical** to baseline
+(630,464 B lite). Not byte-identical — the Arduino build embeds build metadata, so two
+builds of unmodified source already differ (review R19). Size still proves nothing new
+was linked in.
 **Risk:** none. **Rollback:** trivial.
 
 ---

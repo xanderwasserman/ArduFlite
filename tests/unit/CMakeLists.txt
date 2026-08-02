@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 project(ArduFliteUnitTests CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+# Must match the firmware. The ESP32 core's cpp_flags resolves to -std=gnu++2a,
+# so host tests compiling as C++17 would let code pass that the firmware rejects,
+# and would hide std::span / concepts / constinit. See specs/hal ADR-021.
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ── GoogleTest via FetchContent ───────────────────────────────────────────────
@@ -21,6 +24,7 @@ set(ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 # mocks/ must come first so our Arduino.h stub shadows any real Arduino headers.
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/mocks
+    ${ROOT}                    # "src/hal/..." paths, as the firmware sees them
     ${ROOT}/src/controller     # pid.h
     ${ROOT}/src/orientation    # FliteQuaternion.h
 )
@@ -42,9 +46,15 @@ add_executable(unit_tests
     test_motion_signals.cpp
     test_baro_decimation.cpp
     test_production_contracts.cpp
+    # ── HAL Phase 0 ──────────────────────────────────────────────────────────
+    test_axis_transform.cpp
+    test_seqlock.cpp
+    test_result.cpp
 )
 
-target_link_libraries(unit_tests GTest::gtest_main)
+find_package(Threads REQUIRED)
+
+target_link_libraries(unit_tests GTest::gtest_main Threads::Threads)
 target_compile_definitions(unit_tests PRIVATE ARDUFLITE_ROOT="${ROOT}")
 
 # Mirror how the Arduino build system force-includes Arduino.h in every TU.

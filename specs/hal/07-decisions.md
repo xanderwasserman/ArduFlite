@@ -820,8 +820,10 @@ It survives — because at the *transport* level the operation really is uniform
 ("stage a normalised value, commit") — but the differing semantics are now carried
 by `ActuatorKind` in the per-channel config rather than being pretended away.
 
-**Status:** Accepted, with the ADR-024 caveat. `SensorDevice` → `Sensor` applied
-across §01–§10.
+**Status:** Accepted for the `Sensor` rename. **The `ActuatorBank` half is
+superseded by ADR-025**, which splits `Actuator` out as a separate interface — two
+of the three arguments made here supported the *bank*, not the absence of a
+per-output type, and the third did not survive arithmetic.
 
 
 ---
@@ -883,3 +885,72 @@ roll across a PWM aileron and a CAN aileron builds in a rolling-moment asymmetry
 only appears under bus load.
 
 **Status:** Accepted.
+
+---
+
+## ADR-025 — Split `Actuator` out of `ActuatorBank`
+
+**Decision:** two interfaces. `Actuator` is one output; `ActuatorBank` is one
+transport's worth of outputs. Flight code holds `Actuator&` resolved by role at
+composition time. `ActuatorBank` keeps `commit()`, `disable()`, `begin()` and
+`nativeRate_hz()`.
+
+**This reverses part of ADR-023.** The maintainer asked whether an `ActuatorBank`
+should be composed of `Actuator` objects, and whether the bank level is needed at
+all. The first is right and I had it wrong. The second has a good answer, but not
+the one I originally gave.
+
+### Where my original reasoning was wrong
+
+ADR-023 gave three reasons for a single index-based bank. Re-examined:
+
+| Original argument | Verdict |
+|---|---|
+| *"Atomic group commit — nowhere for `commit()` to live with N objects."* | **Half right, and it argues for keeping the bank, not against `Actuator`.** SYNC is a property of the *bus*, not of "all outputs". So `commit()` belongs on a transport group — which is what `ActuatorBank` now is. It never argued against per-output objects |
+| *"`disable()` is cross-cutting."* | **Same.** Batched disarm is a bus property. It justifies the bank, not the absence of `Actuator` |
+| *"N virtual objects cost more."* | **Wrong, and I should have quantified it before asserting it.** Eight actuators is roughly 350 bytes on a 320 KB part, and five extra virtual calls per tick at 500 Hz is ~2500/s — unmeasurable. This was hand-waving |
+
+So two of three arguments support the bank while saying nothing about `Actuator`, and
+the third does not survive arithmetic.
+
+### What the split actually buys
+
+1. **No magic indices.** `write(2, x)` becomes `elevator.stage(x)`. An index/role
+   mismatch after a board-descriptor edit is a bug class that stops existing.
+2. **Per-output feedback where it is used.** `readFeedback(idx, out)` becomes
+   `elevator.readFeedback(out)`.
+3. **Latching actuators become structurally safe** — the strongest reason. A
+   parachute release is never placed in the mixer's `ControlOutputs`, so the mixer
+   *cannot* reach it. That is a compile-time guarantee replacing a runtime
+   `ActuatorKind` check somebody has to remember to honour. Safety properties should
+   be structural where they can be.
+
+### Do we need the bank level at all? Yes — but it is a *transport group*
+
+The bank is not an arbitrary collection, and that distinction is what makes it earn
+its place:
+
+* **CANopen SYNC** makes every servo on that bus act on the same control cycle.
+  There is no per-output equivalent.
+* **Batched disarm** — one CAN broadcast, not five SDO writes.
+* **`nativeRate_hz()`** is a transport property (50 Hz PWM, 32 kHz DShot, PDO budget).
+
+Every one of those is a property of a *bus*. Everything genuinely per-output moved to
+`Actuator`. If a future transport had no batching semantics at all, its bank would be
+a thin loop — which is fine, and is exactly what `PwmActuatorBank::commit()` is.
+
+### Naming, revisited
+
+The split resolves the tension in ADR-023 rather than deepening it. Both names now
+mean exactly what they say: an `Actuator` is an actuator, an `ActuatorBank` is a bank
+of them. The earlier objection — that `Actuator` would mislead because
+`actuator.write(idx, value)` implies one actuator has indices — evaporates, because
+`Actuator` no longer takes an index.
+
+**Rejected:** a third level (`OutputManager` over `ActuatorBank` over `Actuator`).
+`CompositeActuatorBank` is already an `ActuatorBank` by the Composite pattern, so
+anything taking a bank takes the composite. A third type would add a level without
+adding a capability.
+
+**Status:** Accepted. Supersedes the single-interface actuator model in ADR-020 and
+the corresponding half of ADR-023.

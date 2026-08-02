@@ -20,7 +20,7 @@
 ├──────────────────────────────────────────────────────────────────────┤
 │  TIER 2  arduflite::device       Accelerometer  Gyroscope  Magnetometer        │
 │  one interface per      Barometer  Gnss  Airspeed  PowerMonitor       │
-│  MEASUREMENT, not       RcLink  ActuatorBank  Indicator               │
+│  MEASUREMENT, not       RcLink  Actuator  ActuatorBank  Indicator     │
 │  per chip               LogStore  SettingsStore  Console              │
 ├──────────────────────────────────────────────────────────────────────┤
 │  TIER 1  arduflite::drivers       Mpu6500  Mpu9250  Bmp280 …                    │
@@ -88,7 +88,7 @@ src/hal/
 │   ├── Sensor.h                # probe/begin/sample/health — a chip
 │   ├── Accelerometer.h  Gyroscope.h  Magnetometer.h  Barometer.h
 │   ├── Gnss.h  Airspeed.h  RangeFinder.h  PowerMonitor.h  Thermometer.h
-│   ├── RcLink.h  ActuatorBank.h  Indicator.h
+│   ├── RcLink.h  Actuator.h  ActuatorBank.h  Indicator.h
 │   └── LogStore.h  SettingsStore.h  Console.h
 │
 ├── drivers/                    # TIER 1 concrete drivers (arduflite::drivers)
@@ -163,7 +163,7 @@ src/input/
         │                                                                 │
         │ roll/pitch/yaw/throttle in [-1,1]                               │
         ▼                                                                 ▼
- actuators::AirframeMixer  ──►  device::ActuatorBank  ──►  hal::PwmOut[]   device::LogStore
+ actuators::AirframeMixer  ──►  device::Actuator[]  ──►  hal::PwmOut[]   device::LogStore
         ▲                        (slew, endpoints,                      device::Console
         │                          inversion, disable)                  hal::Uart
  input::RcMapper  ◄──  device::RcLink  ◄──  hal::Uart   (drivers::CrsfLink)

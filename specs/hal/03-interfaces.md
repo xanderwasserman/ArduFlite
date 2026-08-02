@@ -818,31 +818,26 @@ Deliberately absent: `ChannelConfig`, `ChannelType`, `ChannelCallback`,
 `RcLink` yields microseconds so PWM, CRSF and SBUS are genuinely interchangeable
 (CRSF's 11-bit values are converted by `CrsfLink`).
 
-### 3.3 Actuator output — transport-neutral
+### 3.3 Actuator output — two levels, transport-neutral
 
-**The previous draft of this section was wrong.** It defined
-`ActuatorChannelConfig` with `minPulse_us`, `maxPulse_us` and `frameRate_hz` — i.e.
-it named PWM in the supposedly transport-neutral interface. Any CANopen, DShot or
-smart-serial-servo implementation would have had to ignore three of its config
-fields and invent a side channel for node IDs. That is a leaky abstraction, and it
-would have shown up the day a non-PWM actuator was attempted. Corrected below.
-
-Four things had to change: **no transport vocabulary in the shared config; writes
-that can fail; a commit step; and optional feedback.**
+**Revised after review.** The first draft had a single `ActuatorBank` with
+index-based `write(idx, value)`. That conflated two genuinely different things: *one
+output*, and *one transport's worth of outputs*. Splitting them is the maintainer's
+suggestion and it is right — see ADR-025 for what my original counter-arguments got
+wrong.
 
 ```cpp
 namespace arduflite::device {
 
-enum class OutputRange    : uint8_t { Bipolar, Unipolar };   // [-1,1] vs [0,1]
+enum class OutputRange : uint8_t { Bipolar, Unipolar };   // [-1,1] vs [0,1]
 
 // What KIND of thing this output drives. Orthogonal to the transport: a binary
 // retract can hang off PWM or CAN. Affects slew, quantisation and failsafe.
 enum class ActuatorKind : uint8_t {
     Proportional,  // control surface, throttle - continuous, slew-limited
     Binary,        // retract, relay, cowl flap - snaps to min/max, slew ignored
-    Latching,      // parachute, payload release - one-shot; never driven by the
-                   // mixer, requires an explicit arm-then-fire from the flight
-                   // layer, and disable() must NOT actuate it
+    Latching,      // parachute, payload release - one-shot; disable() must NOT
+                   // actuate it, and it is never handed to the mixer at all
 };
 
 enum class FailsafeAction : uint8_t {
@@ -851,103 +846,176 @@ enum class FailsafeAction : uint8_t {
     Release,    // stop driving entirely (no pulse / no CAN command / torque off)
 };
 
-// Transport-NEUTRAL. No microseconds, no node IDs, no frame rates.
-// Everything here is meaningful for PWM, CAN, DShot and serial servos alike.
+enum class ActuatorState : uint8_t {
+    Ok,
+    Saturated,   // command clipped by travel limits
+    Stale,       // last commit() did not reach the hardware
+    Fault,       // device reported a fault
+    Offline,     // device not responding (CAN node dropped, etc.)
+};
+
+// Transport-NEUTRAL per-channel configuration.
 struct ActuatorChannelConfig {
     const char*    role           = "";        // "elevator", "throttle", "retract"
     ActuatorKind   kind           = ActuatorKind::Proportional;
     OutputRange    range          = OutputRange::Bipolar;
     bool           invert         = false;
-    float          trim           = 0.0f;      // normalised offset
-    float          minOutput      = -1.0f;     // normalised travel limits
+    float          trim           = 0.0f;
+    float          minOutput      = -1.0f;
     float          maxOutput      =  1.0f;
-    float          maxSlew_perSec = 4.0f;      // full range/s; 0 = unlimited
+    float          maxSlew_perSec = 4.0f;      // 0 = unlimited; ignored for Binary
     FailsafeAction onDisable      = FailsafeAction::Neutral;
 };
 
-// Returned by commit(). staleMask has bit N set when channel N is still holding a
-// previous command because its transport failed.
-struct CommitResult {
-    Status   status         = Status::Ok;   // Ok only if every channel committed
-    uint32_t staleMask      = 0;            // bit N = channel N did NOT update
-    uint8_t  committedCount = 0;
-    constexpr bool allOk() const { return status == Status::Ok && staleMask == 0; }
-};
-
-enum class ActuatorState : uint8_t {
-    Ok, Saturated,   // command clipped by travel limits
-    Stale,           // no feedback within the expected window
-    Fault,           // device reported a fault
-    Offline,         // device not responding (CAN node dropped, etc.)
-};
-
-// Only meaningful where hasFeedback() — CANopen drives, Dynamixel/FeeTech serial
-// servos, DShot ESCs with telemetry. Plain PWM has none.
 struct ActuatorFeedback {
-    float    position;        // normalised, MEASURED (vs lastCommand())
-    float    current_a;
-    float    temp_c;
-    std::uint16_t faultFlags; // device-specific; logged verbatim
+    float         position;     // normalised, MEASURED (vs lastCommand())
+    float         current_a;
+    float         temp_c;
+    std::uint16_t faultFlags;
     hal::Clock::time_point time;
 };
 
-class ActuatorBank {
+// ─────────────────────────────────────────────────────────────────────────────
+// ONE output. This is what flight code holds — by NAME, not by index.
+// ─────────────────────────────────────────────────────────────────────────────
+class Actuator : private NonCopyable {
+public:
+    virtual ~Actuator() = default;
+
+    // Stage a command. Normalised per the channel's range. Applies trim, travel
+    // limits, inversion and slew. NaN/Inf holds the previous value.
+    // Purely local — no bus access, cannot fail. The owning bank's commit() is
+    // what reaches the hardware.
+    virtual void stage(float normalised) = 0;
+
+    [[nodiscard]] virtual float         lastCommand() const = 0;  // post-slew, post-clamp
+    [[nodiscard]] virtual ActuatorState state()       const = 0;
+    [[nodiscard]] virtual ActuatorKind  kind()        const = 0;
+    [[nodiscard]] virtual const char*   role()        const = 0;
+
+    [[nodiscard]] virtual bool hasFeedback() const { return false; }
+    virtual Status readFeedback(ActuatorFeedback& out) const {
+        (void)out; return Status::NotSupported;
+    }
+};
+
+// Returned by commit(). staleMask bit N set = the Nth actuator of this bank is
+// still holding a previous command because its transport failed.
+struct CommitResult {
+    Status        status         = Status::Ok;
+    std::uint32_t staleMask      = 0;
+    std::uint8_t  committedCount = 0;
+    [[nodiscard]] constexpr bool allOk() const {
+        return status == Status::Ok && staleMask == 0;
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ONE TRANSPORT'S worth of outputs. A bank exists because commit and disable are
+// batched BUS operations — they belong to a transport, not to an output.
+// ─────────────────────────────────────────────────────────────────────────────
+class ActuatorBank : private NonCopyable {
 public:
     virtual ~ActuatorBank() = default;
 
-    virtual uint8_t count() const = 0;
-    virtual Status  begin(const ActuatorChannelConfig* cfgs, uint8_t n) = 0;
-    virtual Status  configure(uint8_t idx, const ActuatorChannelConfig&) = 0;
+    virtual Status begin(std::span<const ActuatorChannelConfig> cfgs) = 0;
 
-    // Stage a command. Normalised per the channel's range.
-    // NaN/Inf holds the previous value. Cannot fail — staging is local.
-    virtual void write(uint8_t idx, float value) = 0;
-    virtual void writeAll(const float* values, uint8_t n) = 0;
+    // Flight code resolves these ONCE at composition time and then holds
+    // Actuator& — it does not index into the bank per tick.
+    [[nodiscard]] virtual std::span<Actuator* const> actuators() = 0;
+    [[nodiscard]] virtual Actuator* byRole(std::string_view role) = 0;  // nullptr if absent
 
-    // Push every staged command to the hardware.
+    // Push every staged command to the hardware, atomically WITHIN this bank.
     //   PWM:     writes the LEDC duty registers.
-    //   CANopen: transmits the mapped PDOs, then a SYNC - atomic WITHIN this bank.
+    //   CANopen: transmits the mapped PDOs, then a SYNC.
     //   DShot:   emits the frame burst.
-    // The control loop does write() x N, then exactly one commit().
-    //
-    // Returns WHICH channels failed, not merely that something did. On a flying
-    // aircraft "ailerons stale" and "elevator stale" are different emergencies,
-    // and the flight layer cannot choose a response without knowing which.
     virtual CommitResult commit() = 0;
 
-    // The rate this transport actually wants to be committed at. PWM 50-333 Hz,
-    // DShot up to 32 kHz, CANopen whatever the PDO budget allows. Symmetric with
-    // Sensor::nativeRate_hz(); lets the caller decimate rather than over-driving a
-    // 50 Hz servo bus from a 500 Hz loop.
-    virtual uint16_t nativeRate_hz() const = 0;
-
-    // Applies each channel's FailsafeAction. Must be safe to call from a failsafe
-    // path and from a task that is not the usual writer.
+    // Applies each channel's FailsafeAction. Safe to call from ANY task — the
+    // failsafe path, CommandSystem and the CLI all need it. Latching channels are
+    // never actuated by this.
     virtual Status disable() = 0;
 
-    virtual float         lastCommand(uint8_t idx) const = 0;  // post-slew, post-clamp
-    virtual ActuatorState state(uint8_t idx) const = 0;
+    // The rate this transport wants to be committed at. PWM 50-333 Hz, DShot up to
+    // 32 kHz, CANopen whatever the PDO budget allows. Symmetric with
+    // Sensor::nativeRate_hz(); lets the caller decimate rather than over-driving a
+    // 50 Hz servo bus from a 500 Hz loop.
+    [[nodiscard]] virtual uint16_t nativeRate_hz() const = 0;
 
-    virtual bool   hasFeedback() const { return false; }
-    virtual Status readFeedback(uint8_t idx, ActuatorFeedback& out) const {
-        (void)idx; (void)out; return Status::NotSupported;
-    }
-
-    virtual const char* transport() const = 0;   // "PWM", "CANopen", "DShot"
+    [[nodiscard]] virtual const char* transport() const = 0;   // "PWM", "CANopen"
 };
 
 }   // namespace arduflite::device
 ```
 
+#### Why two levels, and what each is for
+
+| | `Actuator` | `ActuatorBank` |
+|---|---|---|
+| Is | one output | one **transport's** outputs |
+| Flight code holds | `Actuator&`, by name | nothing, per tick |
+| Operations | `stage()`, `state()`, `readFeedback()` | `commit()`, `disable()`, `begin()` |
+| Exists because | an output must be nameable, typed and individually fed back | commit and disable are **batched bus operations** |
+
+**The bank is not an arbitrary collection — it is a transport group.** That is the
+answer to "why control the whole bank at once": CANopen's SYNC makes every servo on
+that bus act on the same control cycle, and a CAN disarm should be one broadcast
+rather than five SDO writes. Those are properties of the *bus*, and there is nowhere
+else to put them. Everything genuinely per-output moved to `Actuator`.
+
+#### What this buys at the call site
+
+```cpp
+// Composition time, in arduflite_init() — resolved once, by role, checked once.
+struct ControlOutputs {
+    Actuator& aileronLeft;
+    Actuator& aileronRight;
+    Actuator& elevator;
+    Actuator& rudder;
+    Actuator* throttle;      // nullptr on a glider
+};
+
+// Per tick — no magic indices, no index/role mismatch possible.
+outputs.elevator.stage(cmd.pitch);
+outputs.aileronLeft.stage(cmd.rollLeft);
+// …
+const auto result = bank.commit();
+```
+
+Three concrete wins over the index-based bank:
+
+1. **No magic indices.** `write(2, x)` becomes `elevator.stage(x)`. An index/role
+   mismatch after a board-descriptor edit is a whole bug class that stops existing.
+2. **Per-output feedback without gymnastics.** `readFeedback(idx, out)` becomes
+   `elevator.readFeedback(out)` — a CAN servo reporting position and current is
+   queried where it is used.
+3. **Latching actuators become *structurally* safe.** A parachute release is simply
+   never placed in `ControlOutputs`, so the mixer cannot reach it — a compile-time
+   guarantee rather than a runtime `ActuatorKind` check someone must remember to
+   honour. This is the strongest argument for the split.
+
+#### Threading contract
+
+`Actuator` holds slew state and `ActuatorBank` owns a bus, so neither is
+free-threaded:
+
+> `stage()`, `commit()`, `begin()` are **single-writer** — the control loop only.
+> `disable()` is the **one method callable from any task** and must remain so: a
+> disarm that has to wait for a lock is not a disarm.
+
+`disable()` is an atomic latch plus a direct hardware-idle path, so it never
+interleaves destructively with an in-flight `commit()`: once latched, `commit()`
+becomes a no-op until re-armed.
+
 #### Where the transport-specific settings went
 
-Into the **driver's construction**, supplied by the board descriptor — never into
-the shared interface:
+Into the **driver's construction**, supplied by the board descriptor — never into the
+shared interface:
 
 ```cpp
 // drivers/out/PwmActuatorBank.h
 struct PwmChannelTuning { uint16_t minPulse_us, neutralPulse_us, maxPulse_us, frameRate_hz; };
-class PwmActuatorBank : public device::ActuatorBank {
+class PwmActuatorBank final : public device::ActuatorBank {
 public:
     PwmActuatorBank(std::span<hal::PwmOut* const> pins,
                     std::span<const PwmChannelTuning> tuning);
@@ -957,116 +1025,82 @@ public:
 struct CanServoNode {
     uint8_t  nodeId;
     uint16_t targetIndex;  uint8_t targetSubIndex;   // object dictionary entry
-    int32_t  countsAtMin,  countsAtMax;              // encoder counts ↔ normalised
+    int32_t  countsAtMin,  countsAtMax;              // encoder counts <-> normalised
     uint16_t heartbeat_ms;
 };
-class CanOpenActuatorBank : public device::ActuatorBank {
+class CanOpenActuatorBank final : public device::ActuatorBank {
 public:
-    CanOpenActuatorBank(hal::CanBus& bus, const CanServoNode* nodes, uint8_t n);
+    CanOpenActuatorBank(hal::CanBus& bus, std::span<const CanServoNode> nodes);
 };
 ```
 
-`AirframeMixer` and `ArduFliteController` see neither struct. They see
-`ActuatorBank`.
+`AirframeMixer` and `ArduFliteController` see neither struct. They see `Actuator&`,
+resolved by role at composition time.
 
 #### Mixed transports on one aircraft
 
-Four PWM control surfaces plus one CAN throttle is a realistic configuration, so it
-must not require a special case:
+Four PWM surfaces, a CAN throttle, a PWM retract and a latching payload release is a
+realistic configuration, so it must not require a special case.
 
 ```cpp
-// Aggregates several banks into one flat index space, so the mixer still writes
-// indices 0..N-1 and calls one commit().
+// A bank of banks. Composite pattern: it IS an ActuatorBank, so anything that
+// takes one takes this.
 class CompositeActuatorBank final : public device::ActuatorBank {
 public:
     CompositeActuatorBank(std::span<device::ActuatorBank* const> banks);
 
+    std::span<Actuator* const> actuators() override;      // concatenation, bank order
+    Actuator* byRole(std::string_view role) override;     // searches every sub-bank
+
     // Issues each sub-commit back to back with no work in between, then ORs the
     // per-bank staleMasks into the composite index space. A failure in one bank
-    // does NOT abort the others - the remaining banks must still be driven.
+    // does NOT abort the others — the remaining banks must still be driven.
     CommitResult commit() override;
-
-    // Slowest sub-bank wins: committing faster than the slowest transport wants
-    // gains nothing and costs bus bandwidth.
-    uint16_t nativeRate_hz() const override;
 
     // Disables EVERY bank unconditionally, even if an earlier one errors.
     // A partial disarm is worse than a failed one.
     Status disable() override;
+
+    // Slowest sub-bank wins: committing faster than the slowest transport wants
+    // gains nothing and costs bus bandwidth.
+    uint16_t nativeRate_hz() const override;
 };
 ```
 
-#### Three things a composite bank cannot hide
+Because flight code holds `Actuator&` resolved by role, **it cannot tell which bank
+an output came from** — which is exactly what makes mixed transports a non-event
+above the HAL. The elevator being PWM and the throttle being CAN is a fact about
+`Board.cpp` and nothing else.
 
-Mixing transports is supported, but it is not free, and the interface should not
-pretend otherwise.
+#### Three things a composite bank cannot hide
 
 **1 — `commit()` is atomic *within* a bank, never *across* banks.** CANopen's SYNC
 makes every servo on that bus act on the same control cycle. It does nothing for the
 PWM surfaces, which moved microseconds earlier. At 1 Mbit a five-node PDO group plus
-SYNC is roughly 0.6 ms; a 500 Hz loop has a 2 ms budget, so the skew is real but
-small. It is bounded by the transports' own latency because the composite issues the
-sub-commits back to back.
+SYNC is roughly 0.6 ms against a 2 ms loop budget — real but small, and bounded by
+the transports themselves because the composite issues sub-commits back to back.
 
-> **Design guidance, not a rule the code can enforce:** keep the *primary flight
-> surfaces on one bank*. Split roll across a PWM aileron and a CAN aileron and you
-> have built a rolling-moment asymmetry that appears only under bus load. Put
-> ailerons+elevator+rudder on one transport, and hang throttle, retracts and payload
-> on whatever else is convenient.
+> **Design guidance the code cannot enforce:** keep the *primary flight surfaces on
+> one bank*. Split roll across a PWM aileron and a CAN aileron and you have built a
+> rolling-moment asymmetry that appears only under bus load. Put ailerons + elevator
+> + rudder on one transport; hang throttle, retracts and payload on whatever else is
+> convenient.
 
 **2 — Partial failure is a real flight state and needs a policy.** If the CAN bank
 drops and the PWM bank does not, some surfaces follow the controller and some are
-frozen. `CommitResult::staleMask` exists so the flight layer can tell *which*, and
-decide: a stale flap is a log line, a stale elevator is a failsafe. **That policy
-lives above the HAL** — the bank's job is to report accurately, not to choose.
+frozen. `CommitResult::staleMask` and `Actuator::state()` exist so the flight layer
+can tell *which*, and decide: a stale flap is a log line, a stale elevator is a
+failsafe. **That policy lives above the HAL** — the bank reports accurately, it does
+not choose.
 
 **3 — Rate mismatch is the caller's problem, and now it has the data.**
 `nativeRate_hz()` lets the controller decimate per bank exactly as the inertial task
-decimates the barometer. Committing a 50 Hz servo bus at 500 Hz wastes bandwidth;
-committing a DShot ESC at 50 Hz under-drives it.
+decimates the barometer.
 
-#### Honest assessment: is this enough for CANopen?
+Endpoint mapping, inversion, trim, travel limits and slew stay on the `Actuator` for
+every transport — per-output calibration that must apply to *every* writer, including
+manual passthrough and failsafe. Airframe mixing does not.
 
-**The interface is — the work is not.** What this design guarantees is that adding
-CANopen actuators changes nothing above `ActuatorBank`: not the mixer, not the
-controller, not the failsafe path, not telemetry. That is the abstraction question,
-and the answer is yes.
-
-What it does not do is make CANopen small. It needs:
-
-1. **`hal::CanBus`** — a new Tier 0 interface (sketched in §2.3). The ESP32-C3 has a
-   TWAI controller, so `Esp32CanBus` is genuinely available on your current chip; it
-   is not hypothetical.
-2. **A CANopen protocol stack** — object dictionary, NMT state machine, SDO for
-   configuration, PDO mapping, heartbeat monitoring. This is a substantial component,
-   normally satisfied by integrating an existing stack (e.g. CANopenNode) rather than
-   writing one. Budget it as a project, not an afternoon.
-3. **Timing analysis.** A 500 Hz control loop over CAN needs the PDO group to fit the
-   bus budget. At 1 Mbit/s, five 8-byte PDOs plus SYNC is roughly 0.6 ms — feasible,
-   but it must be measured, not assumed.
-
-Lower-effort actuators that this same interface already covers, and which are much
-more likely near-term: **DShot ESCs** (`hasFeedback() == true` for RPM/temperature)
-and **smart serial servo buses** (Dynamixel, FeeTech) where position and current
-feedback come for free and `ActuatorFeedback` starts earning its keep.
-
-#### Threading contract
-
-`ActuatorBank` holds slew state, so it is not free-threaded:
-
-> `write()`, `writeAll()`, `commit()` and `configure()` are **single-writer** — the
-> control loop only. `disable()` is the **one method callable from any task** and
-> must remain so: the failsafe path, `CommandSystem` and the CLI all need it, and a
-> disarm that has to wait for a lock is not a disarm.
-
-`disable()` is implemented as an atomic latch plus a direct hardware-idle path, so
-it never interleaves destructively with an in-flight `commit()`: once latched,
-`commit()` becomes a no-op until re-armed. A host test drives `disable()` concurrently
-with a `write`/`commit` loop and asserts outputs stay disabled.
-
-Endpoint mapping, inversion, trim, travel limits and slew limiting stay in the bank
-for every transport — they are per-output calibration that must apply to *every*
-writer, including manual passthrough and failsafe. Airframe mixing does not.
 
 ### 3.4 Indicator
 

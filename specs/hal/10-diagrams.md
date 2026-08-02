@@ -13,7 +13,7 @@ Visual companion to §02 (architecture), §03 (interfaces) and §06 (migration p
 | 1 | [Tier dependency](#1-tier-dependency) | What depends on what, and in which direction |
 | 2 | [Sensor class model](#2-sensor-class-model) | How one chip provides several measurements (ADR-019) |
 | 3 | [Why sample and read are separate](#3-why-sample-and-read-are-separate) | The cost that makes ADR-019 affordable |
-| 4 | [Actuator class model](#4-actuator-class-model) | How PWM and CANopen sit behind one interface (ADR-020) |
+| 4 | [Actuator class model](#4-actuator-class-model) | Actuator vs ActuatorBank; how PWM and CANopen mix (ADR-020, ADR-025) |
 | 5 | [Inertial tick sequence](#5-inertial-tick-sequence) | One 500 Hz cycle, and where the bus is touched |
 | 6 | [Control output path](#6-control-output-path) | Where ledc lives, and where it does not |
 | 7 | [Calibration state machine](#7-calibration-state-machine) | Calibration without a task-pause protocol |
@@ -180,18 +180,25 @@ constructor, fed by the board descriptor.
 
 ```mermaid
 classDiagram
+    class Actuator {
+        <<interface>>
+        +stage(normalised) void
+        +lastCommand() float
+        +state() ActuatorState
+        +kind() ActuatorKind
+        +role() string
+        +hasFeedback() bool
+        +readFeedback(out) Status
+    }
+
     class ActuatorBank {
         <<interface>>
-        +count() uint8
-        +begin(cfgs, n) Status
-        +write(idx, value) void
+        +begin(cfgs) Status
+        +actuators() span
+        +byRole(role) Actuator
         +commit() CommitResult
-        +nativeRate_hz() uint16
         +disable() Status
-        +lastCommand(idx) float
-        +state(idx) ActuatorState
-        +hasFeedback() bool
-        +readFeedback(idx, out) Status
+        +nativeRate_hz() uint16
         +transport() string
     }
 
@@ -201,43 +208,34 @@ classDiagram
         +range OutputRange
         +invert bool
         +trim float
-        +minOutput float
-        +maxOutput float
         +maxSlew_perSec float
         +onDisable FailsafeAction
     }
 
-    class PwmChannelTuning {
-        +minPulse_us uint16
-        +neutralPulse_us uint16
-        +maxPulse_us uint16
-        +frameRate_hz uint16
-    }
-
-    class CanServoNode {
-        +nodeId uint8
-        +targetIndex uint16
-        +countsAtMin int32
-        +countsAtMax int32
-    }
-
+    class PwmActuator
+    class CanOpenActuator
     class PwmActuatorBank
     class CanOpenActuatorBank
     class CompositeActuatorBank
-    class SimActuatorBank
 
+    Actuator <|.. PwmActuator
+    Actuator <|.. CanOpenActuator
     ActuatorBank <|.. PwmActuatorBank
     ActuatorBank <|.. CanOpenActuatorBank
     ActuatorBank <|.. CompositeActuatorBank
-    ActuatorBank <|.. SimActuatorBank
-    ActuatorBank ..> ActuatorChannelConfig : configured by
+
+    ActuatorBank o-- Actuator : owns
+    PwmActuatorBank *-- PwmActuator
+    CanOpenActuatorBank *-- CanOpenActuator
     CompositeActuatorBank o-- ActuatorBank : aggregates
-    PwmActuatorBank ..> PwmChannelTuning : constructor only
-    CanOpenActuatorBank ..> CanServoNode : constructor only
+    Actuator ..> ActuatorChannelConfig : configured by
 ```
 
 Reading the diagram:
 
+* **Two levels.** `Actuator` is one output — what flight code holds, by name.
+  `ActuatorBank` is one *transport's* outputs — where `commit()` and `disable()`
+  live, because those are batched **bus** operations (ADR-025).
 * **`ActuatorChannelConfig` is transport-neutral** — no microseconds, no node IDs.
   That was the bug in the first draft (ADR-020).
 * **`write()` stages, `commit()` pushes.** For CAN that is one PDO group plus SYNC,

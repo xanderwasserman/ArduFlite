@@ -548,6 +548,13 @@ void arduflite_init()
         }
         LOG_WARN("IMU failed but continuing in MANUAL_MODE for pilot control.");
     }
+    // begin() only settles the filter; nothing samples until the task runs.
+    // Started before the control tasks so they never read the warm-up state.
+    else if (const arduflite::Status s = myIMU.startTask(); s != arduflite::Status::Ok)
+    {
+        LOG_ERR("FATAL: IMU task creation failed: %s", arduflite::toString(s));
+        ESP.restart();
+    }
 
     // ─────────────────────────────────────────────────────────────────
     // Servo Test - SKIP on watchdog recovery!

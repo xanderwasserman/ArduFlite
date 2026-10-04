@@ -335,12 +335,16 @@ void ArduFliteFlashTelemetry::dumpLog(int index)
     // Streamed in chunks, not read whole: a flight log runs to hundreds of
     // kilobytes and there is no buffer that size. A fixed stack buffer also
     // avoids the per-row heap churn Arduino String would cause.
+    // Chunks are written to the console raw: they split rows at arbitrary
+    // byte offsets, so a logger call — which appends a newline and caps the
+    // line length — would corrupt the CSV.
+    auto&    console = arduflite::board::Board::instance().console();
     char     chunk[FlashTelemetryConfig::MAX_ROW_BUFFER];
     size_t   offset = 0;
     for (;;)
     {
         size_t length = 0;
-        if (_store->readSession((uint16_t)index, chunk, sizeof(chunk) - 1, offset, length)
+        if (_store->readSession((uint16_t)index, chunk, sizeof(chunk), offset, length)
                 != arduflite::Status::Ok)
         {
             LOG_ERR("Failed to read %s", fn);
@@ -348,8 +352,7 @@ void ArduFliteFlashTelemetry::dumpLog(int index)
         }
         if (length == 0) { break; }   // end of data
 
-        chunk[length] = '\0';
-        LOG("%s", chunk);
+        console.write(chunk, length);
         offset += length;
     }
 

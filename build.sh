@@ -18,15 +18,19 @@ BOARD="${1:-}"
 VARIANT="${2:-}"
 BUILD_VARIANT="full"
 OPT_FLAGS="-Os"  # Optimize for size
-EXTRA_FLAGS="-DESP32"  # Compatibility for libraries that still key on ESP32
+# Passed as build.defines, which the platform splices INTO build.extra_flags.
+# Never override build.extra_flags itself: on the C3 it carries
+# ARDUINO_USB_MODE / ARDUINO_USB_CDC_ON_BOOT, and losing them silently moves
+# Serial (logger and CLI) from USB to the UART0 pins. It also defines ESP32.
+EXTRA_FLAGS=""
 
 # Parse board (using no_ota partition: 2MB app + 1.9MB LittleFS for flight logs)
 if [[ "$BOARD" == "fire" ]]; then
     FQBN="esp32:esp32:dfrobot_firebeetle2_esp32e:PartitionScheme=no_ota"
-    EXTRA_FLAGS="$EXTRA_FLAGS -DARDUFLITE_BOARD_FIREBEETLE_ESP32E"
+    EXTRA_FLAGS="-DARDUFLITE_BOARD_FIREBEETLE_ESP32E"
 elif [[ "$BOARD" == "lolin" ]]; then
     FQBN="esp32:esp32:lolin_c3_mini:PartitionScheme=no_ota"
-    EXTRA_FLAGS="$EXTRA_FLAGS -DARDUFLITE_BOARD_LOLIN_C3_MINI"
+    EXTRA_FLAGS="-DARDUFLITE_BOARD_LOLIN_C3_MINI"
 else
     echo "Usage: $0 [fire|lolin] [lite]"
     echo ""
@@ -80,7 +84,7 @@ echo ""
 BUILD_PROPS=(
     --build-property "build.optimization_flags=$OPT_FLAGS"
 )
-[[ -n "$EXTRA_FLAGS" ]] && BUILD_PROPS+=(--build-property "build.extra_flags=$EXTRA_FLAGS")
+[[ -n "$EXTRA_FLAGS" ]] && BUILD_PROPS+=(--build-property "build.defines=$EXTRA_FLAGS")
 
 arduino-cli compile \
     -b "$FQBN" \

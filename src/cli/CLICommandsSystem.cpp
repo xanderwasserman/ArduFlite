@@ -16,6 +16,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <stdint.h>
+#include <cstring>
 
 static unsigned long overrunPercentage(const LoopStats& stats)
 {
@@ -66,7 +67,9 @@ void cmdTasks(const String &args)
         return;
     }
     LOG("Task List:");
-    LOG("%s", taskListBuffer);
+    // Written raw: the table is many lines, longer than one logger line holds.
+    arduflite::board::Board::instance().console().write(
+        taskListBuffer, std::strlen(taskListBuffer));
 }
 
 void cmdSetMode(const String &args)

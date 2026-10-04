@@ -286,6 +286,9 @@ public:
     AttitudeDeg getAttitudeSetpoint() const;
     AngularRateDps getRateSetpoint() const;
 
+    /// The pilot's throttle setpoint, 0..1, before arming and cut are applied.
+    float getThrottleSetpoint() const;
+
     AngularRateDps getAttitudeCmd() const;
     AxisCommand getRateCmd() const;
 

@@ -36,7 +36,9 @@ JSON export and import are available over the web API (`/api/config/export`,
 - [IMU Configuration](#imu-configuration)
 - [Failsafe Configuration](#failsafe-configuration)
 - [CRSF Receiver](#crsf-receiver)
+- [Web Interface](#web-interface)
 - [System](#system)
+- [MAVLink](#mavlink)
 
 ---
 
@@ -350,8 +352,30 @@ degrades roll and pitch — the axes the control loops fly on.
 | `imu.gravity_tol_g` | 0.15 | 0.05 - 0.3 | Gravity reading tolerance (g) |
 
 **Tuning Notes:**
-- If calibration fails, increase `gravity_tol` or ensure aircraft is perfectly still
-- `gyro_bias_max`: Gyros with bias > this after calibration indicate a bad sensor
+- If calibration fails, increase `gravity_tol_g` or ensure aircraft is perfectly still
+- `gyro_bias_max_dps`: Gyros with bias > this after calibration indicate a bad sensor
+
+### Launch Detection
+
+A launch is motion that lasts `imu.launch_ms`: an acceleration more than
+`imu.launch_accel_g` away from 1 g, or a rotation faster than
+`imu.launch_gyro_dps` (but below 150 deg/s, which is tumbling). When armed it
+moves the flight state to INFLIGHT; when disarmed it only logs a warning.
+
+| Key | Default | Range | Description |
+|-----|---------|-------|-------------|
+| `imu.launch_accel_g` | 0.10 | 0.05 - 2.0 | Acceleration deviation from 1 g (g) |
+| `imu.launch_gyro_dps` | 15.0 | 5.0 - 149.0 | Rotation rate (deg/s) |
+| `imu.launch_ms` | 50 | 10 - 1000 | How long the motion must last (ms) |
+
+All three apply after a reboot.
+
+**Tuning Notes:**
+- The defaults catch gentle hand launches, and also catch the aircraft being
+  picked up and tilted. Raising `imu.launch_ms` is the least invasive fix: a
+  throw is sustained, handling is mostly brief jerks.
+- Watch `SCALED_IMU` in QGC while carrying the aircraft and while throwing it
+  (props off); set the thresholds between the two.
 
 ---
 
@@ -421,12 +445,138 @@ at boot.
 
 ---
 
+## MAVLink
+
+| Key | Default | Range | Description |
+|-----|---------|-------|-------------|
+| `mav.sysid` | 1 | 1 - 250 | MAVLink system ID (reboot to apply) |
+| `mav.uart.enabled` | false | true/false | MAVLink on the board's telemetry UART (reboot to apply) |
+| `mav.uart.baud` | 57600 | 9600 - 921600 | Telemetry UART baud; must match the radio (reboot to apply) |
+| `mav.uart.max_bps` | 4800 | 1200 - 1000000 | Send budget on the telemetry UART, bits per second (reboot to apply) |
+| `mav.uart.writes` | false | true/false | Accept parameter writes and reboot over the telemetry UART (reboot to apply) |
+
+On USB, MAVLink starts when a ground station connects (or with the CLI command
+`mavlink on`) and runs until reboot; see `specs/mavlink/README.md`. Writes over USB are always accepted on the
+ground. Over the telemetry UART they are off unless `mav.uart.writes` is set:
+the radio link is unauthenticated.
+
+### MAVLink Parameter Names
+
+A ground station sees every numeric key under a name of at most 16 characters.
+Names abbreviate words but keep the key's unit suffix. String keys are not
+exposed. The order below is the parameter index.
+
+| Key | MAVLink name |
+|-----|--------------|
+| `rate.roll.kp` | `RATE_RLL_KP` |
+| `rate.roll.ti_s` | `RATE_RLL_TI_S` |
+| `rate.roll.td_s` | `RATE_RLL_TD_S` |
+| `rate.roll.outlimit` | `RATE_RLL_OLIM` |
+| `rate.roll.headroom` | `RATE_RLL_HDRM` |
+| `rate.roll.alpha` | `RATE_RLL_ALPHA` |
+| `rate.pitch.kp` | `RATE_PIT_KP` |
+| `rate.pitch.ti_s` | `RATE_PIT_TI_S` |
+| `rate.pitch.td_s` | `RATE_PIT_TD_S` |
+| `rate.pitch.outlimit` | `RATE_PIT_OLIM` |
+| `rate.pitch.headroom` | `RATE_PIT_HDRM` |
+| `rate.pitch.alpha` | `RATE_PIT_ALPHA` |
+| `rate.yaw.kp` | `RATE_YAW_KP` |
+| `rate.yaw.ti_s` | `RATE_YAW_TI_S` |
+| `rate.yaw.td_s` | `RATE_YAW_TD_S` |
+| `rate.yaw.outlimit` | `RATE_YAW_OLIM` |
+| `rate.yaw.headroom` | `RATE_YAW_HDRM` |
+| `rate.yaw.alpha` | `RATE_YAW_ALPHA` |
+| `rate.out_lp_alpha` | `RATE_OUT_ALPHA` |
+| `att.roll.kp` | `ATT_RLL_KP` |
+| `att.roll.ti_s` | `ATT_RLL_TI_S` |
+| `att.roll.td_s` | `ATT_RLL_TD_S` |
+| `att.roll.outlimit_dps` | `ATT_RLL_OLIM_DPS` |
+| `att.roll.headroom` | `ATT_RLL_HDRM` |
+| `att.roll.alpha` | `ATT_RLL_ALPHA` |
+| `att.pitch.kp` | `ATT_PIT_KP` |
+| `att.pitch.ti_s` | `ATT_PIT_TI_S` |
+| `att.pitch.td_s` | `ATT_PIT_TD_S` |
+| `att.pitch.outlimit_dps` | `ATT_PIT_OLIM_DPS` |
+| `att.pitch.headroom` | `ATT_PIT_HDRM` |
+| `att.pitch.alpha` | `ATT_PIT_ALPHA` |
+| `att.yaw.kp` | `ATT_YAW_KP` |
+| `att.yaw.ti_s` | `ATT_YAW_TI_S` |
+| `att.yaw.td_s` | `ATT_YAW_TD_S` |
+| `att.yaw.outlimit_dps` | `ATT_YAW_OLIM_DPS` |
+| `att.yaw.headroom` | `ATT_YAW_HDRM` |
+| `att.yaw.alpha` | `ATT_YAW_ALPHA` |
+| `att.deadband_rad` | `ATT_DEADBAND_RAD` |
+| `mix.max_att_roll_deg` | `MIX_ATT_RLL_DEG` |
+| `mix.max_att_pitch_deg` | `MIX_ATT_PIT_DEG` |
+| `mix.max_att_yaw_deg` | `MIX_ATT_YAW_DEG` |
+| `mix.max_rate_roll_dps` | `MIX_RATE_RLL_DPS` |
+| `mix.max_rate_pitch_dps` | `MIX_RATE_PIT_DPS` |
+| `mix.max_rate_yaw_dps` | `MIX_RATE_YAW_DPS` |
+| `mix.roll_from_yaw` | `MIX_RLL_FROM_YAW` |
+| `mix.pitch_from_roll` | `MIX_PIT_FROM_RLL` |
+| `mix.yaw_from_roll` | `MIX_YAW_FROM_RLL` |
+| `servo.wing_design` | `SRV_WING_DESIGN` |
+| `servo.dual_ailerons` | `SRV_DUAL_AIL` |
+| `servo.max_slew_dps` | `SRV_MAX_SLEW_DPS` |
+| `servo.max_thr_slew_per_s` | `SRV_THSLEW_PER_S` |
+| `servo.pitch.min_pulse_us` | `SRV_PIT_MIN_US` |
+| `servo.pitch.max_pulse_us` | `SRV_PIT_MAX_US` |
+| `servo.pitch.neutral_deg` | `SRV_PIT_NTR_DEG` |
+| `servo.pitch.deflection_deg` | `SRV_PIT_DFL_DEG` |
+| `servo.pitch.invert` | `SRV_PIT_INVERT` |
+| `servo.yaw.min_pulse_us` | `SRV_YAW_MIN_US` |
+| `servo.yaw.max_pulse_us` | `SRV_YAW_MAX_US` |
+| `servo.yaw.neutral_deg` | `SRV_YAW_NTR_DEG` |
+| `servo.yaw.deflection_deg` | `SRV_YAW_DFL_DEG` |
+| `servo.yaw.invert` | `SRV_YAW_INVERT` |
+| `servo.lail.min_pulse_us` | `SRV_LAIL_MIN_US` |
+| `servo.lail.max_pulse_us` | `SRV_LAIL_MAX_US` |
+| `servo.lail.neutral_deg` | `SRV_LAIL_NTR_DEG` |
+| `servo.lail.deflection_deg` | `SRV_LAIL_DFL_DEG` |
+| `servo.lail.invert` | `SRV_LAIL_INVERT` |
+| `servo.rail.min_pulse_us` | `SRV_RAIL_MIN_US` |
+| `servo.rail.max_pulse_us` | `SRV_RAIL_MAX_US` |
+| `servo.rail.neutral_deg` | `SRV_RAIL_NTR_DEG` |
+| `servo.rail.deflection_deg` | `SRV_RAIL_DFL_DEG` |
+| `servo.rail.invert` | `SRV_RAIL_INVERT` |
+| `servo.thr.min_pulse_us` | `SRV_THR_MIN_US` |
+| `servo.thr.max_pulse_us` | `SRV_THR_MAX_US` |
+| `imu.accel_alpha` | `IMU_ACCEL_ALPHA` |
+| `imu.gyro_alpha` | `IMU_GYRO_ALPHA` |
+| `imu.mag_alpha` | `IMU_MAG_ALPHA` |
+| `imu.alti_alpha` | `IMU_ALTI_ALPHA` |
+| `imu.madgwick_beta` | `IMU_MADG_BETA` |
+| `imu.fuse_mag` | `IMU_FUSE_MAG` |
+| `imu.max_accel_g` | `IMU_MAX_ACCEL_G` |
+| `imu.max_gyro_dps` | `IMU_MAX_GYRO_DPS` |
+| `imu.fail_threshold` | `IMU_FAIL_THRESH` |
+| `imu.gyro_bias_max_dps` | `IMU_BIAS_MAX_DPS` |
+| `imu.expected_g` | `IMU_EXP_G` |
+| `imu.gravity_tol_g` | `IMU_GRAV_TOL_G` |
+| `imu.launch_accel_g` | `IMU_LCH_ACCEL_G` |
+| `imu.launch_gyro_dps` | `IMU_LCH_GYRO_DPS` |
+| `imu.launch_ms` | `IMU_LCH_MS` |
+| `failsafe.bank_deg` | `FS_BANK_DEG` |
+| `failsafe.pitch_deg` | `FS_PIT_DEG` |
+| `failsafe.throttle` | `FS_THROTTLE` |
+| `failsafe.min_lq_arm_pct` | `FS_ARM_LQ_PCT` |
+| `crsf.tri_low` | `CRSF_TRI_LOW` |
+| `crsf.tri_high` | `CRSF_TRI_HIGH` |
+| `web.enabled` | `WEB_ENABLED` |
+| `mav.sysid` | `MAV_SYSID` |
+| `mav.uart.enabled` | `MAV_UART_ENABLED` |
+| `mav.uart.baud` | `MAV_UART_BAUD` |
+| `mav.uart.max_bps` | `MAV_UART_MAX_BPS` |
+| `mav.uart.writes` | `MAV_UART_WRITES` |
+
+---
+
 ## Tuning Workflow
 
 ### First Flight Checklist
 1. **Servos**: Verify all control surfaces move correct direction
    - Toggle `servo.*.invert` as needed
-   - Adjust `servo.*.neutral` for level surfaces at rest
+   - Adjust `servo.*.neutral_deg` for level surfaces at rest
 2. **Failsafe**: Test failsafe behavior on the ground (disarm first!)
 3. **Start conservative**: Use default PID values, low mixer limits
 
@@ -438,9 +588,9 @@ at boot.
 2. **Attitude controller second**
    - Test in ATTITUDE_MODE
    - Adjust `att.*.kp` for desired leveling speed
-   - Reduce `att.*.outlimit` if self-leveling feels too aggressive
+   - Reduce `att.*.outlimit_dps` if self-leveling feels too aggressive
 3. **Mixer limits last**
-   - Increase `mix.max.*` values as you gain confidence
+   - Increase `mix.max_*` values as you gain confidence
 
 ### Common Problems
 
@@ -448,7 +598,7 @@ at boot.
 |---------|--------------|-----|
 | Oscillation in level flight | Rate P too high | Reduce `rate.*.kp` |
 | Slow to respond | Rate P too low | Increase `rate.*.kp` |
-| Servo jitter | D term amplifying noise | Reduce `rate.*.td` or `rate.*.alpha` |
-| Drifts off level | Needs integral | Add small `rate.*.ti` (start with 2-3s) |
+| Servo jitter | D term amplifying noise | Reduce `rate.*.td_s` or `rate.*.alpha` |
+| Drifts off level | Needs integral | Add small `rate.*.ti_s` (start with 2-3s) |
 | Overshoots level | Attitude P too high | Reduce `att.*.kp` |
-| Won't hold trim | Needs rate integral | Reduce `rate.*.ti` (faster I action) |
+| Won't hold trim | Needs rate integral | Reduce `rate.*.ti_s` (faster I action) |

@@ -16,6 +16,7 @@
 
 #include "src/hal/core/NonCopyable.h"
 #include "src/hal/core/Result.h"
+#include "src/hal/platform/ByteStream.h"
 #include "src/hal/platform/Mutex.h"
 #include "src/hal/platform/RegisterDevice.h"
 
@@ -79,17 +80,13 @@ public:
     [[nodiscard]] virtual Mutex& busLock() = 0;
 };
 
-class Uart : private NonCopyable
+class Uart : public ByteStream
 {
 public:
-    virtual ~Uart() = default;
-
     virtual Status begin(std::uint32_t baud, bool invertRx = false) = 0;
 
-    [[nodiscard]] virtual std::size_t available() = 0;
-    [[nodiscard]] virtual std::size_t read (std::uint8_t* dst, std::size_t maxLen) = 0;
-    virtual std::size_t               write(const std::uint8_t* src, std::size_t len) = 0;
-    virtual void                      flush() = 0;
+    /// Block until every queued byte has left the wire.
+    virtual void flush() = 0;
 };
 
 } // namespace arduflite::hal

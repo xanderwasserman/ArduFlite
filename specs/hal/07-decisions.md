@@ -3786,3 +3786,113 @@ surface to search.
   undefined cast. It is constructed at 10 Hz, so nothing observable changes.
 - **CRSF's `pauseTask()`/`resumeTask()` no longer early-return when the task was
   never started.** They set a flag no loop is reading; harmless.
+
+---
+
+## ADR-065 — `hal::ByteStream`, and a write that never has to block
+
+**Status:** Accepted (MAVLink M1). Plan: `specs/mavlink/README.md`.
+
+`device::Console` and `hal::Uart` were two near-identical byte interfaces. Both
+now derive from `hal::ByteStream`: `available()`, `read()`, `writable()` and
+`write()`. One telemetry implementation then serves the USB console on the bench
+and a UART radio in the air, chosen by constructor argument.
+
+**Reads never block; writes may.** Arduino's `HardwareSerial::write` waits for
+TX buffer space, and on a LoRa link at a few kbit/s that would stall the task
+for as long as the radio takes. `writable()` reports what fits now. A caller
+that must not stall checks it first and skips the message instead.
+`Esp32Uart::read` returns only bytes that have arrived; `readBytes()` would wait
+up to a second for ones that have not.
+
+`ByteStream` lives in `hal/platform` because `Uart` does, and `device::Console`
+may depend on platform but not the reverse.
+
+**Board.** `BoardDescriptor::telemetryUart` declares the radio port. A UART role
+is declared by its port (`kNoUart` otherwise), and `uartsValid()` rejects a port
+the MCU lacks or two roles on one port. UART0 is usable only when the console
+runs over native USB: on the C3 it is, on the FireBeetle UART0 is the console.
+
+## ADR-066 — MAVLink 2, from the vendored official C library
+
+**Status:** Accepted (MAVLink M0–M2).
+
+Serial telemetry speaks MAVLink 2, so QGroundControl can display, record and
+tune the aircraft with no ArduFlite-specific ground software.
+
+- **Vendored, pinned, never edited.** `mavlink/c_library_v2` (root helpers plus
+  the `common`, `standard` and `minimal` dialects, about 6 MB of headers) lives
+  in `src/third_party/mavlink/`. It changes only through
+  `tools/mavlink/update_vendor.sh`, which records the commit in `VERSION`. It is
+  header-only, so only the messages used reach the binary (+28 KB).
+- **One include.** `src/telemetry/mavlink/Mavlink.h` sets
+  `MAVLINK_ALIGNED_FIELDS 0` (fields packed byte by byte, never through an
+  unaligned wide store) and silences the library's four warnings, so the
+  warning checks report on ArduFlite code only. `check_layering.sh` rule 11
+  fails on any other include, and the house rules skip `src/third_party/`.
+- **No library globals.** Each endpoint owns its parser and sequence state and
+  uses the `*_pack_status` / `mavlink_frame_char_buffer` API, so the
+  per-channel static arrays are never used.
+- **Always send MAVLink 2; accept MAVLink 1 inbound.** Some ground stations and
+  radios send version 1 until they see a version 2 heartbeat.
+- **QSerial and the Debug serial backend are retired**, with `ConsoleWriter`,
+  which only they used. MAVLink replaces both; the CLI's `stream` command
+  remains for a human-readable view.
+
+## ADR-067 — The console belongs to MAVLink after `mavlink on`, until reboot
+
+**Status:** Accepted (MAVLink M3).
+
+Binary MAVLink and text logging cannot share a port. `mavlink on` hands the USB
+console over for the rest of the boot: the CLI task stops reading and exits,
+the log router stops writing text to it, and the USB endpoint starts.
+
+The CLI also hands over by itself when it reads a MAVLink frame with a valid
+checksum, which typing cannot produce and a ground station sends every second.
+Opening the port can reset the C3 (it depends on how the ground station drives
+DTR and RTS), so without this the board could come back in the CLI with no one
+there to type `mavlink on`. Both routes are refused while armed or in flight. There is
+no way back except a reboot, which a ground station can request
+(`MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN`). A one-way switch has no state to get
+wrong.
+
+Logs then reach the ground as `STATUSTEXT`. `MavlinkLogRouter` sits in front of
+the console's log handler from boot and copies each line to the queue of every
+endpoint that wants it: Info and above on USB, Warn and above on the radio. A
+line longer than 50 characters goes out as chunks sharing an id. Queuing never
+blocks the logging task: a line that cannot be queued at once is dropped and
+counted.
+
+## ADR-068 — Commands from the ground: the CLI's rule, and off on the radio
+
+**Status:** Accepted (MAVLink M3–M5).
+
+Parameter writes and reboot from a ground station are refused while armed or in
+flight. The rule is `groundCommandBlock()` in `src/state/GroundSafety.h`, the
+same function the CLI's `rejectUnsafeGroundCommand()` uses, so the two cannot
+drift. A refused or rejected write is answered with the current value, which is
+how a ground station learns the outcome.
+
+**No arming or mode changes from the ground.** The RC transmitter stays the only
+authority. Revisit with its own ADR if that changes.
+
+**Writes are off on the radio by default** (`mav.uart.writes`). A LoRa link is
+unauthenticated, so anyone on the frequency could otherwise change gains.
+Telemetry rate requests stay allowed: the port's byte budget caps them anyway.
+
+## ADR-069 — MAVLink parameter names keep the unit suffix
+
+**Status:** Accepted (MAVLink M4).
+
+MAVLink parameter names are at most 16 characters, and over half the
+configuration keys are longer. Every numeric key has an explicit name in one table
+(`MavlinkParams.cpp`), built from the `CONFIG_KEY_*` macros so a renamed key
+fails to compile. Names abbreviate words, never units: `rate.roll.ti_s` is
+`RATE_RLL_TI_S`, `servo.lail.deflection_deg` is `SRV_LAIL_DFL_DEG`. Host tests
+require every numeric key to appear exactly once, every name to be unique and
+short enough, and every unit suffix to survive.
+
+The table order is the parameter index, so it is stable for a given schema.
+String keys are not exposed: MAVLink parameters are numeric, and one of them is
+the WiFi password. Integer values use the C-cast encoding, advertised in
+`AUTOPILOT_VERSION`.

@@ -34,6 +34,12 @@ set(SOURCES_UNDER_TEST
     ${ROOT}/src/actuators/AirframeMixer.cpp
     ${ROOT}/src/core/LogRotationPolicy.cpp
     ${ROOT}/src/telemetry/PeriodicTelemetryBackend.cpp
+    ${ROOT}/src/telemetry/mavlink/FrameParser.cpp
+    ${ROOT}/src/telemetry/mavlink/MavlinkEndpoint.cpp
+    ${ROOT}/src/telemetry/mavlink/MavlinkParams.cpp
+    ${ROOT}/src/telemetry/mavlink/MessageScheduler.cpp
+    ${ROOT}/src/telemetry/mavlink/StatusText.cpp
+    ${ROOT}/src/telemetry/mavlink/TelemetryMessages.cpp
     # Real registry and schema — reachable on a host since ADR-048.
     ${ROOT}/src/utils/Logging.cpp
     ${ROOT}/src/utils/ConfigRegistry.cpp
@@ -103,6 +109,9 @@ add_executable(unit_tests
     # ── HAL Phase 9 ──────────────────────────────────────────────────────────
     test_madgwick_estimator.cpp
     test_log_replay.cpp
+    # ── MAVLink ──────────────────────────────────────────────────────────────
+    test_mavlink_params.cpp
+    test_mavlink_endpoint.cpp
 )
 
 find_package(Threads REQUIRED)

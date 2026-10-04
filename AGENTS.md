@@ -69,9 +69,16 @@ ArduFlite follows a strict layered architecture. Respect these boundaries:
 
 4. **Communication Layer** (`src/receiver/`, `src/telemetry/`)
    - **Receiver**: Input from pilot (CRSF/PWM) with failsafe callbacks
-   - **Telemetry**: Output to ground station/transmitter (Serial, CRSF, Flash)
+   - **Telemetry**: Output to ground station/transmitter (CRSF, Flash, MAVLink)
    - Each backend runs in its own FreeRTOS task
    - Use thread-safe `TelemetryData` snapshots; config queries go to `ConfigRegistry`
+   - **MAVLink** (`src/telemetry/mavlink/`, `specs/mavlink/`): one
+     `MavlinkEndpoint` per `hal::ByteStream` — the USB console once a ground
+     station connects (or after `mavlink on`), and the board's telemetry UART. The endpoint is host-tested
+     and never blocks: it checks `writable()` and the byte budget, and skips.
+   - The vendored MAVLink library in `src/third_party/mavlink/` is never edited
+     and is included only through `src/telemetry/mavlink/Mavlink.h`
+     (`check_layering.sh` rule 11). Update it with `tools/mavlink/update_vendor.sh`
 
 5. **Utilities Layer** (`src/utils/`)
    - **ConfigRegistry**: Singleton for runtime config with type-safe get/set, validation, observers
@@ -119,7 +126,10 @@ ArduFlite follows a strict layered architecture. Respect these boundaries:
 - **Flight code must not include a driver header.** Only `Board` names a
   concrete chip. Enforced by `check_layering.sh`
 - Board descriptors are data: adding a sensor to a board is one array entry
-- Telemetry observes state but **never** modifies it
+- Telemetry observes flight state but **never** modifies it. The one inbound
+  path, MAVLink parameter writes and reboot, goes through `ConfigRegistry::set()`
+  and `CommandSystem` and the shared ground-safety rule
+  (`src/state/GroundSafety.h`), exactly as the CLI does
 - Use dependency injection: pass pointers to dependencies in constructors
 
 ### Thread Safety
@@ -161,7 +171,7 @@ ArduFlite/
 │   │
 │   ├── hal/                          # Hardware abstraction — see specs/hal/
 │   │   ├── core/                     # Status, Result, Vec3, SeqLock, AxisTransform, Crc32
-│   │   ├── platform/                 # Clock, Mutex, Scheduler, Watchdog, Buses, Io, Storage
+│   │   ├── platform/                 # Clock, Mutex, Scheduler, Watchdog, Buses, ByteStream, Io, Storage
 │   │   ├── device/                   # Sensor, Actuator, RcLink, Peripherals (role interfaces)
 │   │   ├── drivers/                  # Concrete chips: imu/, baro/, rc/, out/, log/, indicator/
 │   │   ├── protocol/                 # Wire formats shared by a driver and an adapter (CRSF)
@@ -181,8 +191,7 @@ ArduFlite/
 │   │
 │   ├── core/                         # Flight-layer vocabulary, no hardware
 │   │   ├── FlightTypes.h             # AttitudeDeg, AngularRateDps, AxisCommand
-│   │   ├── LogRotationPolicy.*       # Log index allocation and purge rules
-│   │   └── ConsoleWriter.h           # Data output, distinct from the logger
+│   │   └── LogRotationPolicy.*       # Log index allocation and purge rules
 │   │
 │   ├── orientation/                  # Quaternion math
 │   │   └── FliteQuaternion.*
@@ -193,9 +202,12 @@ ArduFlite/
 │   │
 │   ├── telemetry/                    # Data output to ground station
 │   │   ├── TelemetryData.h           # Shared data structure
-│   │   ├── serial/                   # Debug and quaternion serial output
 │   │   ├── flash/                    # On-board flash logging
-│   │   └── crsf/                     # CRSF telemetry uplink
+│   │   ├── crsf/                     # CRSF telemetry uplink
+│   │   └── mavlink/                  # MAVLink 2 endpoints, parameters, STATUSTEXT
+│   │
+│   ├── third_party/                  # Vendored upstream code, never edited
+│   │   └── mavlink/                  # c_library_v2 (common dialect), see VERSION
 │   │
 │   ├── cli/                          # Command-line interface
 │   │   ├── ArduFliteCLI.*            # CLI task and command router
@@ -213,7 +225,8 @@ ArduFlite/
 │   │   └── MissionPlanner.*          # Future: waypoint navigation
 │   │
 │   ├── state/                        # State machines
-│   │   └── StateManagement.*         # Mode and flight state handlers
+│   │   ├── StateManagement.*         # Mode and flight state handlers
+│   │   └── GroundSafety.h            # The rule for ground-only commands
 │   │
 │   ├── tests/                        # Test sequences
 │   │   ├── AttitudeTests.*           # Wing wiggle tests

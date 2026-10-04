@@ -224,6 +224,8 @@ TEST(ProductionContracts, CliInputParsingAndDiagnosticsStayFailSafe)
     const std::string cliFlash = readRepoFile("src/cli/CLICommandsFlash.cpp");
     const std::string cliTelemetry = readRepoFile("src/cli/CLICommandsTelemetry.cpp");
     const std::string cliTests = readRepoFile("src/cli/CLICommandsTests.cpp");
+    const std::string groundSafety = readRepoFile("src/state/GroundSafety.h");
+    const std::string mavlink = readRepoFile("src/telemetry/mavlink/MavlinkEndpoint.cpp");
     const std::string cliAll =
         cliUtils + cliContext + cliConfig + cliSystem + cliFlash + cliTelemetry + cliTests;
 
@@ -231,7 +233,9 @@ TEST(ProductionContracts, CliInputParsingAndDiagnosticsStayFailSafe)
     expectContains(cliUtils, "parseFloatStrict");
     expectContains(cliUtils, "parseBoolStrict");
     expectContains(cliContext, "cliController->isArmed()");
-    expectContains(cliContext, "getFlightState() == INFLIGHT");
+    expectContains(cliContext, "groundCommandBlock(armed, getFlightState())");
+    expectContains(groundSafety, "state == INFLIGHT");
+    expectContains(mavlink, "groundCommandBlock(");
     expectContains(cliSystem, "rejectUnsafeGroundCommand(\"reset\")");
     expectContains(cliSystem, "rejectUnsafeGroundCommand(\"calibrate\")");
     expectContains(cliConfig, "rejectUnsafeGroundCommand(\"change configuration\")");

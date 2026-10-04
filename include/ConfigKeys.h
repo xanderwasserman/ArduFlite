@@ -150,6 +150,9 @@
 #define CONFIG_KEY_IMU_GYRO_BIAS_MAX_DPS    "imu.gyro_bias_max_dps"
 #define CONFIG_KEY_IMU_EXPECTED_G       "imu.expected_g"
 #define CONFIG_KEY_IMU_GRAVITY_TOL_G      "imu.gravity_tol_g"
+#define CONFIG_KEY_IMU_LAUNCH_ACCEL_G   "imu.launch_accel_g"
+#define CONFIG_KEY_IMU_LAUNCH_GYRO_DPS  "imu.launch_gyro_dps"
+#define CONFIG_KEY_IMU_LAUNCH_MS        "imu.launch_ms"
 #define CONFIG_KEY_IMU_ALL              "imu.*"
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -183,13 +186,23 @@
 #define CONFIG_KEY_WEB_ALL              "web.*"
 
 // ═══════════════════════════════════════════════════════════════════════════
+// MAVLink Configuration
+// ═══════════════════════════════════════════════════════════════════════════
+#define CONFIG_KEY_MAV_SYSID            "mav.sysid"
+#define CONFIG_KEY_MAV_UART_ENABLED     "mav.uart.enabled"
+#define CONFIG_KEY_MAV_UART_BAUD        "mav.uart.baud"
+#define CONFIG_KEY_MAV_UART_MAX_BPS     "mav.uart.max_bps"
+#define CONFIG_KEY_MAV_UART_WRITES      "mav.uart.writes"
+#define CONFIG_KEY_MAV_ALL              "mav.*"
+
+// ═══════════════════════════════════════════════════════════════════════════
 // All Configuration (root wildcard)
 // ═══════════════════════════════════════════════════════════════════════════
 #define CONFIG_KEY_ALL                  "*"
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Note: Pin configurations are compile-time constants in PinConfiguration.h
-// Board selection is done via BOARD_TYPE macro at build time.
+// Hardware layout is compile-time, in one descriptor per board:
+// src/hal/board/boards/. The board is selected by build.sh.
 // ═══════════════════════════════════════════════════════════════════════════
 
 #endif // CONFIG_KEYS_H

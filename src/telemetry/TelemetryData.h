@@ -87,6 +87,8 @@ struct TelemetryData
     // System status
     bool            armed;              // true if controller is armed
     bool            in_failsafe;        // true if in RC failsafe
+    bool            imu_healthy;        // the estimation layer's health verdict
+    float           throttle;           // commanded, 0..1; 0 when disarmed or cut
 
     // IMU snapshot read health
     uint32_t        imu_snapshot_retries;          // cumulative retries since boot
@@ -168,6 +170,9 @@ struct TelemetryData
         // System status
         armed               = myController.isArmed();
         in_failsafe         = rcLink.isFailsafe();
+        imu_healthy         = imuState.healthy;
+        throttle            = (armed && !myController.isThrottleCut())
+                                  ? myController.getThrottleSetpoint() : 0.0f;
 
         const auto snapshotHealth = imu.snapshotHealth();
         imu_snapshot_retries          = snapshotHealth.totalRetries;

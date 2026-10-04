@@ -57,7 +57,15 @@ void ArduFliteCLI::cliTask(void* parameters) {
             const int byte = console.readByte();
             if (byte < 0) { break; }
             char c = static_cast<char>(byte);
-            if (c == '\n' || c == '\r') {
+
+            if (consoleCarriesMavlink(static_cast<std::uint8_t>(byte))) {
+                // A ground station is on this port: what was typed so far is
+                // its binary, not a command.
+                inputLine = "";
+                if (!rejectUnsafeGroundCommand("hand the console to MAVLink") && requestConsoleHandover()) {
+                    LOG("Ground station detected. Console switching to MAVLink until reboot.");
+                }
+            } else if (c == '\n' || c == '\r') {
                 // Process the command line if non-empty.
                 if (inputLine.length() > 0) {
                     ParsedCommand parsed = parseCommandArgs(inputLine);
@@ -78,6 +86,11 @@ void ArduFliteCLI::cliTask(void* parameters) {
                 }
             } else {
                 inputLine += c;
+            }
+
+            if (ConsoleHandover handover = pendingConsoleHandover()) {
+                handover();
+                return;
             }
         }
         // Short delay to yield.

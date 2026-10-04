@@ -84,6 +84,9 @@ public:
         float        maxAccel_g   = 16.0f;
         float        maxGyro_dps  = 2000.0f;
         std::uint8_t failThreshold = 10;
+
+        /// Launch and stability detection (imu.launch_* keys).
+        MotionDetector::Config motion{};
     };
 
     /**

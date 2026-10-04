@@ -36,6 +36,7 @@ void cmdCalibrateIMU(const String &args);
 void cmdFlash(const String &args);
 void cmdConfig(const String &args);
 void cmdStream(const String &args);
+void cmdMavlink(const String &args);
 void cmdTest(const String &args);
 
 #endif // CLI_COMMANDS_H

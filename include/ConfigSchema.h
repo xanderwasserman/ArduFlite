@@ -162,6 +162,9 @@ CONFIG_UINT8(CONFIG_KEY_IMU_FAIL_THRESHOLD, 5,      1,     20,     "Consecutive 
 CONFIG_FLOAT(CONFIG_KEY_IMU_GYRO_BIAS_MAX_DPS,  5.0f,   1.0f,  20.0f,  "Max acceptable gyro bias (deg/s)");
 CONFIG_FLOAT(CONFIG_KEY_IMU_EXPECTED_G,     1.0f,   0.9f,  1.1f,   "Expected gravity magnitude (g)");
 CONFIG_FLOAT(CONFIG_KEY_IMU_GRAVITY_TOL_G,    0.15f,  0.05f, 0.3f,   "Gravity reading tolerance (g)");
+CONFIG_FLOAT(CONFIG_KEY_IMU_LAUNCH_ACCEL_G,   0.10f,  0.05f, 2.0f,   "Launch: accel deviation from 1 g (g; reboot to apply)");
+CONFIG_FLOAT(CONFIG_KEY_IMU_LAUNCH_GYRO_DPS,  15.0f,  5.0f,  149.0f, "Launch: rotation rate (deg/s; reboot to apply)");
+CONFIG_INT(CONFIG_KEY_IMU_LAUNCH_MS,          50,     10,    1000,   "Launch: how long the motion must last (ms; reboot to apply)");
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Failsafe Configuration
@@ -192,6 +195,16 @@ CONFIG_STRING(CONFIG_KEY_SYS_AIRCRAFT_NAME, "ArduFlite", "Aircraft name for tele
 CONFIG_BOOL(CONFIG_KEY_WEB_ENABLED, false, "Enable WiFi AP and web server");
 CONFIG_STRING(CONFIG_KEY_WEB_AP_SSID, "ArduFlite", "WiFi AP name (SSID)");
 CONFIG_STRING(CONFIG_KEY_WEB_AP_PASS, "arduflite", "WiFi AP password (8+ characters; set before field use)");
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MAVLink Configuration
+// ═══════════════════════════════════════════════════════════════════════════
+
+CONFIG_UINT8(CONFIG_KEY_MAV_SYSID,         1,     1,    250,     "MAVLink system ID (reboot to apply)");
+CONFIG_BOOL(CONFIG_KEY_MAV_UART_ENABLED,   false, "MAVLink on the telemetry UART (reboot to apply)");
+CONFIG_INT(CONFIG_KEY_MAV_UART_BAUD,       57600, 9600, 921600,  "Telemetry UART baud, matching the radio (reboot to apply)");
+CONFIG_INT(CONFIG_KEY_MAV_UART_MAX_BPS,    4800,  1200, 1000000, "Telemetry UART send budget, bits/s (reboot to apply)");
+CONFIG_BOOL(CONFIG_KEY_MAV_UART_WRITES,    false, "Accept parameter writes and commands over the telemetry UART (reboot to apply)");
 
 #endif // CONFIG_SCHEMA_IMPL
 

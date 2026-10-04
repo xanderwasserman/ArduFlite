@@ -41,6 +41,7 @@ void InertialSubsystem::configure(const Config& config)
 {
     _config    = config;
     _transform = AxisTransform{ config.axes };
+    _motion    = MotionDetector{ config.motion };
 
     _accelFilter.setAlpha(config.accelAlpha);
     _gyroFilter.setAlpha(config.gyroAlpha);

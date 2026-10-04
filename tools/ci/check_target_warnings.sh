@@ -30,7 +30,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 # a regression or a deliberate change, and both deserve to be noticed — without
 # this, a file that stopped compiling standalone would simply stop being
 # checked, which is the quietest possible way to lose coverage.
-FLOOR=27
+FLOOR=31
 
 CC=""
 for candidate in \

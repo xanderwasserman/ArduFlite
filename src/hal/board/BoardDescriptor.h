@@ -24,6 +24,9 @@ namespace arduflite::board {
 using Pin = std::int8_t;
 inline constexpr Pin kNoPin = -1;
 
+/// UartDesc::port for a role the board does not have.
+inline constexpr std::uint8_t kNoUart = 0xFF;
+
 /// A port in progress must be able to compile before every pin is known.
 /// Untested relaxes the "fitted parts must be wired" assertion and makes the
 /// board warn loudly at boot. Nothing may be released as Untested.
@@ -44,7 +47,7 @@ struct McuProfile
 };
 
 struct I2cBusDesc { Pin sda = kNoPin; Pin scl = kNoPin; std::uint32_t clock_hz = 400000; };
-struct UartDesc   { std::uint8_t port = 0; Pin rx = kNoPin; Pin tx = kNoPin;
+struct UartDesc   { std::uint8_t port = kNoUart; Pin rx = kNoPin; Pin tx = kNoPin;
                     std::uint32_t baud = 115200; bool invertRx = false; };
 struct GpioDesc   { Pin pin = kNoPin; hal::PinMode mode = hal::PinMode::Input;
                     const char* role = ""; };
@@ -114,7 +117,8 @@ struct BoardDescriptor
 
     I2cBusDesc sensorBus{};
     UartDesc   rcUart{};
-    UartDesc   consoleUart{};
+    UartDesc   consoleUart{};     ///< kNoUart when the console is native USB
+    UartDesc   telemetryUart{};   ///< MAVLink radio port; its baud is mav.uart.baud
 
     std::array<SensorMount, kMaxSensors> sensors{};
     std::uint8_t                         sensorCount = 0;

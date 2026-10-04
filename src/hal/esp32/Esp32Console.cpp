@@ -20,21 +20,30 @@ Status Esp32Console::begin(std::uint32_t baud)
     return Status::Ok;
 }
 
-std::size_t Esp32Console::write(const char* s, std::size_t len)
+std::size_t Esp32Console::available()
 {
-    if (s == nullptr || len == 0) { return 0; }
-    return Serial.write(reinterpret_cast<const std::uint8_t*>(s), len);
+    const int n = Serial.available();
+    return (n > 0) ? static_cast<std::size_t>(n) : 0;
 }
 
-std::size_t Esp32Console::available() const
+std::size_t Esp32Console::read(std::uint8_t* dst, std::size_t maxLen)
 {
-    // Serial::available() is not const, and the port is a global anyway.
-    return static_cast<std::size_t>(Serial.available());
+    if (dst == nullptr || maxLen == 0) { return 0; }
+    const std::size_t ready = available();
+    if (ready == 0) { return 0; }
+    return Serial.read(dst, (ready < maxLen) ? ready : maxLen);
 }
 
-int Esp32Console::readByte()
+std::size_t Esp32Console::writable()
 {
-    return Serial.read();   // already -1 when empty
+    const int n = Serial.availableForWrite();
+    return (n > 0) ? static_cast<std::size_t>(n) : 0;
+}
+
+std::size_t Esp32Console::write(const std::uint8_t* src, std::size_t len)
+{
+    if (src == nullptr || len == 0) { return 0; }
+    return Serial.write(src, len);
 }
 
 void Esp32Console::flushOutput()

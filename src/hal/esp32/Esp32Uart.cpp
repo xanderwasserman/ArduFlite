@@ -15,16 +15,22 @@ namespace arduflite::hal::esp32 {
 
 namespace {
 
-/// One HardwareSerial per port, created once. UART0 is the USB CDC console on
-/// the C3, so only 1 and 2 are usable for peripherals.
+/// The core's instance for a hardware UART. UART0 is available only when the
+/// console runs over USB; otherwise it IS the console. Which ports a board may
+/// use is the descriptor's business, checked by BoardValidate.
 HardwareSerial* portInstance(std::uint8_t port)
 {
-    static HardwareSerial s1(1);
-    static HardwareSerial s2(2);
     switch (port)
     {
-        case 1:  return &s1;
-        case 2:  return &s2;
+#if ARDUINO_USB_CDC_ON_BOOT
+        case 0:  return &Serial0;
+#endif
+#if SOC_UART_NUM > 1
+        case 1:  return &Serial1;
+#endif
+#if SOC_UART_NUM > 2
+        case 2:  return &Serial2;
+#endif
         default: return nullptr;
     }
 }
@@ -55,7 +61,15 @@ std::size_t Esp32Uart::available()
 std::size_t Esp32Uart::read(std::uint8_t* dst, std::size_t maxLen)
 {
     if (!_started || dst == nullptr || maxLen == 0) { return 0; }
-    const int n = asSerial(_serial)->readBytes(dst, maxLen);
+    const std::size_t ready = available();
+    if (ready == 0) { return 0; }
+    return asSerial(_serial)->read(dst, (ready < maxLen) ? ready : maxLen);
+}
+
+std::size_t Esp32Uart::writable()
+{
+    if (!_started) { return 0; }
+    const int n = asSerial(_serial)->availableForWrite();
     return (n > 0) ? static_cast<std::size_t>(n) : 0;
 }
 

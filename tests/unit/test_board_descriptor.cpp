@@ -81,6 +81,7 @@ TEST(BoardDescriptor, ShippingLolinBoardIsValid)
     EXPECT_TRUE(v::outputCountWithinMcu(b))    << "more PWM outputs than LEDC channels";
     EXPECT_TRUE(v::allRolesUnique(b))          << "two outputs claim the same role";
     EXPECT_TRUE(v::allSensorAxesValid(b))      << "a sensor axis map is singular";
+    EXPECT_TRUE(v::uartsValid(b))              << "a UART is missing or claimed twice";
     EXPECT_TRUE(v::requiredPeripheralsPresent(b));
     EXPECT_TRUE(v::isValidConstexpr(b));
 }
@@ -226,6 +227,20 @@ TEST(BoardValidation, SupportedBoardMustHaveItsRcLinkWired)
     auto b = makeGoodBoard();
     b.rcUart.rx = kNoPin;
     EXPECT_FALSE(v::requiredPeripheralsPresent(b));
+}
+
+TEST(BoardValidation, CatchesTelemetryUartOnABusyOrMissingPort)
+{
+    auto b = makeGoodBoard();
+    b.telemetryUart = { .port = 1, .rx = 20, .tx = 21 };   // the RC link's port
+    EXPECT_FALSE(v::uartsValid(b));
+
+    b.telemetryUart.port = 2;                              // the C3 has two UARTs
+    EXPECT_FALSE(v::uartsValid(b));
+
+    b.consoleUart   = {};
+    b.telemetryUart.port = 0;
+    EXPECT_TRUE(v::uartsValid(b));
 }
 
 TEST(BoardValidation, UntestedBoardMayHaveUnknownPins)

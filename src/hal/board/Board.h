@@ -66,6 +66,10 @@ public:
     /// explicit rather than a comment in ArdufliteApp.cpp.
     [[nodiscard]] hal::Uart&      rcUart()    noexcept;
 
+    /// The MAVLink radio UART, or nullptr when the board declares none. Not
+    /// started by begin(): its baud is runtime configuration (mav.uart.baud).
+    [[nodiscard]] hal::Uart*      telemetryUart() noexcept;
+
     /// PWM outputs in board-descriptor order. Phase 3 wires these to an
     /// ActuatorBank; nothing consumes them yet.
     [[nodiscard]] hal::PwmOut* pwmOutput(std::uint8_t index) noexcept;

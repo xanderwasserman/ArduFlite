@@ -7,6 +7,7 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "src/cli/CLICommandContext.h"
+#include "src/state/GroundSafety.h"
 #include "src/utils/Logging.h"
 
 namespace
@@ -14,6 +15,9 @@ namespace
 ArduFliteController* cliController = nullptr;
 arduflite::estimation::InertialSubsystem* cliIMU = nullptr;
 ArduFliteFlashTelemetry* cliFlashTelemetry = nullptr;
+ConsoleHandover consoleHandover = nullptr;
+ConsoleMavlinkDetector mavlinkDetector = nullptr;
+bool handoverRequested = false;   // set and read only by the CLI task
 }
 
 void setCliController(ArduFliteController* controller)
@@ -48,21 +52,40 @@ ArduFliteFlashTelemetry* getCliFlashTelemetry()
 
 bool rejectUnsafeGroundCommand(const char* action)
 {
-    if (cliController && cliController->isArmed())
-    {
-        LOG_ERR("Cannot %s while armed — disarm first!", action);
-        return true;
-    }
+    const bool armed = (cliController != nullptr) && cliController->isArmed();
 
-    // Deliberately NOT guarded on cliIMU being non-null. The flight state is
-    // owned by StateManagement and is valid regardless of whether the CLI holds
-    // an IMU handle; keeping the old `cliIMU &&` would let a dangerous command
-    // through in flight on any path where that pointer was never set.
-    if (getFlightState() == INFLIGHT)
+    switch (groundCommandBlock(armed, getFlightState()))
     {
-        LOG_ERR("Cannot %s while INFLIGHT.", action);
-        return true;
+        case GroundBlock::Armed:
+            LOG_ERR("Cannot %s while armed — disarm first!", action);
+            return true;
+        case GroundBlock::InFlight:
+            LOG_ERR("Cannot %s while INFLIGHT.", action);
+            return true;
+        case GroundBlock::None:
+            break;
     }
-
     return false;
+}
+
+void setConsoleHandover(ConsoleHandover handover, ConsoleMavlinkDetector detector)
+{
+    consoleHandover = handover;
+    mavlinkDetector = detector;
+}
+
+bool consoleCarriesMavlink(std::uint8_t byte)
+{
+    return mavlinkDetector != nullptr && mavlinkDetector(byte);
+}
+
+bool requestConsoleHandover()
+{
+    handoverRequested = (consoleHandover != nullptr);
+    return handoverRequested;
+}
+
+ConsoleHandover pendingConsoleHandover()
+{
+    return handoverRequested ? consoleHandover : nullptr;
 }

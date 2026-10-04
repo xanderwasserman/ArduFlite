@@ -34,6 +34,7 @@ public:
 
     [[nodiscard]] std::size_t available() override;
     [[nodiscard]] std::size_t read(std::uint8_t* dst, std::size_t maxLen) override;
+    [[nodiscard]] std::size_t writable() override;
     std::size_t               write(const std::uint8_t* src, std::size_t len) override;
     void                      flush() override;
 

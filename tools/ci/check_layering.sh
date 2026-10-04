@@ -11,6 +11,12 @@ fail=0
 
 report() { echo "FAIL: $1"; fail=1; }
 
+# ArduFlite's own sources. src/third_party/ is upstream code that is vendored,
+# never edited (ADR-066), so the house rules below do not apply to it.
+source_files() {
+    find "$@" \( -name '*.cpp' -o -name '*.h' \) -not -path 'src/third_party/*'
+}
+
 # ── 1. No vendor types in portable headers ──────────────────────────────────
 # hal/core, hal/platform and hal/device must be portable to a non-Arduino MCU.
 PORTABLE="src/hal/core src/hal/platform src/hal/device src/hal/board"
@@ -42,7 +48,7 @@ if [ -d src/hal/drivers ]; then
     # deliberately not in it — the same false positive the estimation and
     # pause-protocol checks below strip comments to avoid.
     drv_hits=""
-    for f in $(find src -name '*.cpp' -o -name '*.h'); do
+    for f in $(source_files src); do
         case "$f" in
             src/hal/drivers/*|src/hal/board/Board*) continue ;;
         esac
@@ -124,7 +130,7 @@ fi
 # which is a usability and finger-safety choice, not a bus-ownership workaround.
 # This check targets the IMU handshake specifically.
 pause_hits=""
-for f in $(find src -name '*.cpp' -o -name '*.h'); do
+for f in $(source_files src); do
     n=$(strip_comments < "$f" | grep -n "_pauseRequested\|_taskPaused" | sed "s|^|    $f:|")
     [ -n "$n" ] && pause_hits="$pause_hits$n\n"
 done
@@ -155,7 +161,7 @@ fi
 echo "── Scalar type punning ──"
 PUN_UNION='union[[:space:]]*\{[^}]*\b(float|double)\b'
 PUN_CAST='reinterpret_cast<[[:space:]]*(unsigned[[:space:]]+)?(long|int|short|float|double)'
-for file in $(find src include -name '*.cpp' -o -name '*.h' | sort); do
+for file in $(source_files src include | sort); do
     if strip_comments < "$file" | tr '\n' ' ' | grep -qE "$PUN_UNION"; then
         echo "  FAIL: $file puns a float through a union - use std::bit_cast"
         fail=1
@@ -186,9 +192,19 @@ while IFS= read -r file; do
         printf "  %4d  %s\n" "$n" "$file"
         total=$((total + n))
     fi
-done < <(find src include -name '*.cpp' -o -name '*.h' | grep -v '^src/hal/' | sort)
+done < <(source_files src include | grep -v '^src/hal/' | sort)
 echo "  ----"
 printf "  %4d  TOTAL (must only decrease)\n" "$total"
+
+# ── 11. Vendored code is reached through one wrapper ────────────────────────
+# ADR-066. The wrapper configures the library and silences its warnings; an
+# include that bypasses it gets neither.
+if hits=$(grep -rnE '^[[:space:]]*#[[:space:]]*include.*third_party/' src include 2>/dev/null \
+            | grep -v '^src/third_party/' \
+            | grep -v '^src/telemetry/mavlink/Mavlink.h:'); then
+    report "include the vendored MAVLink library only through src/telemetry/mavlink/Mavlink.h:"
+    echo "$hits" | sed 's/^/    /'
+fi
 
 if [ "$fail" -eq 0 ]; then
     echo ""

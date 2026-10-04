@@ -8,10 +8,10 @@
  *
  * @brief Debounced launch and stability detection from filtered inertial data.
  *
- * Pure signal processing over accelerometer and gyroscope. Thresholds and
- * debounce times are unchanged — StateManagement drives the PREFLIGHT → INFLIGHT
- * → LANDED transitions off these two booleans, so a change here changes when the
- * aircraft believes it has been launched.
+ * Pure signal processing over accelerometer and gyroscope. StateManagement
+ * drives the PREFLIGHT → INFLIGHT → LANDED transitions off these two booleans,
+ * so a change here changes when the aircraft believes it has been launched. The
+ * launch thresholds are runtime configuration (imu.launch_* keys).
  */
 #ifndef ARDUFLITE_ESTIMATION_MOTION_DETECTOR_H
 #define ARDUFLITE_ESTIMATION_MOTION_DETECTOR_H

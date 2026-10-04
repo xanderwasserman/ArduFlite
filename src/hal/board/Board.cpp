@@ -400,6 +400,10 @@ hal::Watchdog&  Board::watchdog()  noexcept { return storage().watchdog; }
 hal::System&    Board::system()    noexcept { return storage().system; }
 hal::I2cBus&    Board::sensorBus() noexcept { return storage().sensorBus; }
 hal::Uart&      Board::rcUart()    noexcept { return storage().rcUart; }
+hal::Uart*      Board::telemetryUart() noexcept
+{
+    return (kBoard.telemetryUart.port != kNoUart) ? &storage().telemetryUart : nullptr;
+}
 hal::GpioPin&   Board::userButton() noexcept { return storage().userButton; }
 device::SettingsStore& Board::settings() noexcept { return storage().settings; }
 device::Console&       Board::console()  noexcept { return storage().console; }
@@ -514,6 +518,14 @@ void Board::logInventory() const
             LOG_INF("[Board]     %-14s gpio%d", bank.outputs[i].role,
                     static_cast<int>(bank.outputs[i].pin));
         }
+    }
+
+    if (kBoard.telemetryUart.port != kNoUart)
+    {
+        LOG_INF("[Board]   Telemetry UART%u  rx gpio%d  tx gpio%d",
+                static_cast<unsigned>(kBoard.telemetryUart.port),
+                static_cast<int>(kBoard.telemetryUart.rx),
+                static_cast<int>(kBoard.telemetryUart.tx));
     }
 
     LOG_INF("[Board]   Heap   %u free (%u min)",

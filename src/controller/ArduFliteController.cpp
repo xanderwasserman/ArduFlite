@@ -810,6 +810,13 @@ AttitudeDeg ArduFliteController::getAttitudeSetpoint() const
     return value;
 }
 
+float ArduFliteController::getThrottleSetpoint() const
+{
+    std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+    if (!static_cast<bool>(lock)) return 0.0f;
+    return pilotThrottleSetpoint;
+}
+
 AngularRateDps ArduFliteController::getRateSetpoint() const
 {
     AngularRateDps value{};

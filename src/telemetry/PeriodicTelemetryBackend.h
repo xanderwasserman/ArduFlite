@@ -22,14 +22,17 @@
 #ifndef ARDUFLITE_TELEMETRY_PERIODIC_BACKEND_H
 #define ARDUFLITE_TELEMETRY_PERIODIC_BACKEND_H
 
+#include <chrono>
 #include <cstdint>
 
 #include "src/hal/platform/Mutex.h"
 #include "src/hal/platform/Scheduler.h"
-#include "src/telemetry/ArduFliteTelemetry.h"
 #include "src/telemetry/TelemetryData.h"
 
-class PeriodicTelemetryBackend : public ArduFliteTelemetry
+/// How long publish() and snapshot() wait for the snapshot lock (see above).
+inline constexpr std::chrono::milliseconds kTelemetryLockTimeout{ 5 };
+
+class PeriodicTelemetryBackend
 {
 public:
     /**
@@ -38,12 +41,12 @@ public:
      * Drops the sample if the lock is not free within kTelemetryLockTimeout,
      * so a caller in the flight path is never blocked by a slow backend.
      */
-    void publish(const TelemetryData& telemData) final;
+    void publish(const TelemetryData& telemData);
 
     /// Allocate the mutex, run onBegin(), spawn the task. Idempotent.
-    void begin() final;
+    void begin();
 
-    ~PeriodicTelemetryBackend() override;
+    virtual ~PeriodicTelemetryBackend();
 
 protected:
     /**

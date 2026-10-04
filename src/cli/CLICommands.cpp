@@ -31,6 +31,7 @@ const CLICommand cliCommands[] = {
     { "flash","     Flash functionalities; usage: flash list|start|stop|dump|rm|reset",        cmdFlash        },
     { "config","    Config commands; usage: config list|get|set|save|load|defaults",           cmdConfig       },
     { "stream","    Stream live telemetry; usage: stream [freq_hz]",                           cmdStream       },
+    { "mavlink","   Hand this port to MAVLink until reboot; usage: mavlink on",                cmdMavlink      },
     { "test","      Run integration test; usage: test loops",                                  cmdTest         }
 };
 

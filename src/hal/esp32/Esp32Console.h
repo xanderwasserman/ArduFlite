@@ -24,9 +24,12 @@ public:
 
     Status begin(std::uint32_t baud);
 
-    std::size_t write(const char* s, std::size_t len) override;
-    [[nodiscard]] std::size_t available() const override;
-    [[nodiscard]] int readByte() override;
+    using device::Console::write;
+
+    [[nodiscard]] std::size_t available() override;
+    [[nodiscard]] std::size_t read(std::uint8_t* dst, std::size_t maxLen) override;
+    [[nodiscard]] std::size_t writable() override;
+    std::size_t write(const std::uint8_t* src, std::size_t len) override;
     void flushOutput() override;
 
 private:

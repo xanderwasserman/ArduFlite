@@ -30,8 +30,10 @@
 #include "src/estimation/MadgwickEstimator.h"
 #include "src/estimation/InertialSubsystem.h"
 #include "src/estimation/SensorSelector.h"
+#include <atomic>
 #include <optional>
 #include "src/cli/ArduFliteCLI.h"
+#include "src/cli/CLICommandContext.h"
 #include "src/mission_planner/MissionPlanner.h"
 #include "src/state/StateManagement.h"
 
@@ -56,11 +58,10 @@
 #include "src/controller/ArduFliteRateController.h"
 #include "src/controller/ArduFliteController.h"
 
-#include "src/telemetry/ArduFliteTelemetry.h"
-#include "src/telemetry/serial/ArduFliteQSerialTelemetry.h"
-#include "src/telemetry/serial/ArduFliteDebugSerialTelemetry.h"
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
 #include "src/telemetry/crsf/ArdufliteCRSFTelemetry.h"
+#include "src/telemetry/mavlink/MavlinkTelemetry.h"
+#include "src/telemetry/mavlink/StatusText.h"
 
 #include "src/hal/drivers/rc/CrsfLink.h"
 #include "src/receiver/crsf/ArdufliteCRSFCallbacks.h"
@@ -96,10 +97,9 @@ static bool isWatchdogRecovery() {
             reason == ESP_RST_WDT);
 }
 
-// CRSF receive and telemetry SHARE one UART — the ESP32-C3 has only UART0 and
-// UART1, and UART0 is the USB CDC console. Board owns the port and hands the
-// same hal::Uart& to both, which makes the sharing explicit rather than a
-// comment. Constructed in arduflite_init() once the Board is up.
+// CRSF receive and telemetry SHARE the receiver's UART. Board owns the port and
+// hands the same hal::Uart& to both, which makes the sharing explicit rather
+// than a comment. Constructed in arduflite_init() once the Board is up.
 static arduflite::drivers::CrsfLink*    g_rcLink = nullptr;
 static arduflite::input::RcMapper       g_rcMapper;
 static ArdufliteCRSFTelemetry*          g_crsfTx = nullptr;
@@ -107,8 +107,19 @@ static ArdufliteCRSFTelemetry*          g_crsfTx = nullptr;
 // Declare telemetry instances.
 TelemetryData               telemetryData;
 ArduFliteFlashTelemetry     flashTelemetry(50.0f);                      // 50 Hz logging
-// ArduFliteDebugSerialTelemetry    debugTelemetry(1.0f);               // 1 Hz telemetry frequency
-// ArduFliteQSerialTelemetry        telemetry(20.0f);
+
+// MAVLink (specs/mavlink): the USB console after `mavlink on`, and the
+// telemetry UART when the board declares one and mav.uart.enabled is set.
+// Log lines reach both as STATUSTEXT through the router, which wraps the
+// console's log handler from arduflite_init() on.
+static std::optional<arduflite::mavlink::MavlinkLogRouter> g_logRouter;
+static arduflite::mavlink::StatusTextQueue g_usbStatusText;
+static arduflite::mavlink::StatusTextQueue g_radioStatusText;
+static arduflite::mavlink::MavlinkTelemetry g_mavlinkUsb(
+    "MavlinkUsb", 100.0f, arduflite::board::Board::instance().console(), &g_usbStatusText);
+static std::optional<arduflite::mavlink::MavlinkTelemetry> g_mavlinkRadio;
+static std::atomic<bool> g_mavlinkUsbStarted{ false };   ///< published to only once begun
+static arduflite::mavlink::FrameParser g_consoleFrames;  ///< used by the CLI task only
 
 // Declare instances of the core components.
 //
@@ -315,6 +326,108 @@ static void rcLinkTask(void* arg)
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MAVLink
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Milliseconds between sends of each telemetry stream; 0 is off. The radio set
+/// covers what CRSF telemetry sends, within a slow link's budget.
+static constexpr arduflite::mavlink::StreamIntervals makeIntervals(
+    std::uint32_t heartbeat, std::uint32_t sysStatus, std::uint32_t attitude,
+    std::uint32_t vfrHud, std::uint32_t scaledImu, std::uint32_t values)
+{
+    using arduflite::mavlink::Stream;
+    using arduflite::mavlink::streamIndex;
+
+    arduflite::mavlink::StreamIntervals ms{};
+    ms[streamIndex(Stream::Heartbeat)] = heartbeat;
+    ms[streamIndex(Stream::SysStatus)] = sysStatus;
+    ms[streamIndex(Stream::Attitude)]  = attitude;
+    ms[streamIndex(Stream::VfrHud)]    = vfrHud;
+    ms[streamIndex(Stream::ScaledImu)] = scaledImu;
+    ms[streamIndex(Stream::Values)]    = values;
+    return ms;
+}
+
+static constexpr auto kUsbStreams   = makeIntervals(1000, 1000,  40, 100, 40, 200);
+static constexpr auto kRadioStreams = makeIntervals(1000, 2000, 250, 500,  0,   0);
+
+/// A ground station's reboot request, executed by the main loop like the CLI's.
+static void requestReboot()
+{
+    SystemCommand command{};
+    command.type = CMD_RESET;
+    (void)CommandSystem::instance().pushCommand(command);
+}
+
+/// Put the logger behind the MAVLink router. Runs first in arduflite_init(),
+/// before any task that could log exists.
+static void installLogRouter()
+{
+    g_logRouter.emplace(Logger::instance().handler());
+    Logger::instance().setHandler(&*g_logRouter);
+}
+
+/// Fed each console byte by the CLI task: true once a ground station's frame
+/// has arrived.
+static bool detectGroundStation(std::uint8_t byte)
+{
+    return g_consoleFrames.feed(byte) != nullptr;
+}
+
+/// Run by the CLI task once it has stopped reading the console.
+static void handConsoleToMavlink()
+{
+    arduflite::board::Board::instance().console().flushOutput();
+    g_logRouter->releaseConsole();
+    g_logRouter->attach(arduflite::mavlink::MavlinkLogRouter::Port::Usb, g_usbStatusText, LogLevel::Info);
+    g_mavlinkUsb.begin();
+    g_mavlinkUsbStarted.store(true, std::memory_order_release);
+}
+
+/// Make the console ready to hand over to MAVLink, and start the telemetry UART
+/// endpoint when the board has one and it is enabled.
+static void setupMavlink()
+{
+    auto& board = arduflite::board::Board::instance();
+    auto usbMutex   = board.allocMutex();
+    auto radioMutex = board.allocMutex();
+    if (!usbMutex || !radioMutex)
+    {
+        LOG_ERR("MAVLink disabled: mutex pool exhausted - raise kMutexPoolSize.");
+        return;
+    }
+    g_usbStatusText.setMutex(*usbMutex.value());
+    g_radioStatusText.setMutex(*radioMutex.value());
+
+    auto& config = ConfigRegistry::instance();
+    const auto systemId = config.get<uint8_t>(CONFIG_KEY_MAV_SYSID);
+
+    g_mavlinkUsb.configure({ systemId, kUsbStreams, 0, true }, requestReboot);
+    setConsoleHandover(handConsoleToMavlink, detectGroundStation);
+
+    arduflite::hal::Uart* uart = board.telemetryUart();
+    if (uart == nullptr || !config.get<bool>(CONFIG_KEY_MAV_UART_ENABLED)) { return; }
+
+    const auto baud = static_cast<std::uint32_t>(config.get<int32_t>(CONFIG_KEY_MAV_UART_BAUD));
+    if (const arduflite::Status s = uart->begin(baud); s != arduflite::Status::Ok)
+    {
+        LOG_ERR("MAVLink: telemetry UART failed to start: %s", arduflite::toString(s));
+        return;
+    }
+
+    const arduflite::mavlink::EndpointConfig radio{
+        systemId, kRadioStreams,
+        static_cast<std::uint32_t>(config.get<int32_t>(CONFIG_KEY_MAV_UART_MAX_BPS)),
+        config.get<bool>(CONFIG_KEY_MAV_UART_WRITES)
+    };
+    g_logRouter->attach(arduflite::mavlink::MavlinkLogRouter::Port::Radio, g_radioStatusText, LogLevel::Warn);
+    g_mavlinkRadio.emplace("MavlinkRadio", 50.0f, *uart, &g_radioStatusText);
+    g_mavlinkRadio->configure(radio, requestReboot);
+    g_mavlinkRadio->begin();
+    LOG_INF("MAVLink on the telemetry UART at %lu baud.", static_cast<unsigned long>(baud));
+}
+
 void arduflite_init()
 {
     // ─────────────────────────────────────────────────────────────────
@@ -323,6 +436,8 @@ void arduflite_init()
     // Check FIRST before any other initialization. If this is a watchdog
     // reset during flight, we need to recover as fast as possible.
     const bool watchdogRecovery = isWatchdogRecovery();
+
+    installLogRouter();
 
     if (auto* led = arduflite::board::Board::instance().indicator())
     {
@@ -492,7 +607,7 @@ void arduflite_init()
     ControlMixer::init(controller, g_mixerConfigMutex);
 
     flashTelemetry.begin();
-    // debugTelemetry.begin();
+    setupMavlink();
 
     // ── Estimation layer ────────────────────────────────────────────────────
     {
@@ -520,6 +635,10 @@ void arduflite_init()
         imuConfig.maxAccel_g     = config.get<float>(CONFIG_KEY_IMU_MAX_ACCEL_G);
         imuConfig.maxGyro_dps    = config.get<float>(CONFIG_KEY_IMU_MAX_GYRO_DPS);
         imuConfig.failThreshold  = config.get<uint8_t>(CONFIG_KEY_IMU_FAIL_THRESHOLD);
+        imuConfig.motion.accelThrowThreshold_g = config.get<float>(CONFIG_KEY_IMU_LAUNCH_ACCEL_G);
+        imuConfig.motion.gyroThrowMin_dps      = config.get<float>(CONFIG_KEY_IMU_LAUNCH_GYRO_DPS);
+        imuConfig.motion.launchDebounce        =
+            std::chrono::milliseconds{ config.get<int32_t>(CONFIG_KEY_IMU_LAUNCH_MS) };
 
         // How the IMU is physically mounted: accelY, gyroX and gyroZ negated,
         // i.e. the map {+X, -Y, +Z}. A REFLECTION, determinant -1 — which is why
@@ -698,6 +817,8 @@ void arduflite_loop()
 
     if (g_crsfTx) { g_crsfTx->publish(telemetryData); }
     flashTelemetry.publish(telemetryData);
+    if (g_mavlinkUsbStarted.load(std::memory_order_acquire)) { g_mavlinkUsb.publish(telemetryData); }
+    if (g_mavlinkRadio) { g_mavlinkRadio->publish(telemetryData); }
 
     vTaskDelay(pdMS_TO_TICKS(1));
 }

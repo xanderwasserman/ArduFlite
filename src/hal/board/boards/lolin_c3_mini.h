@@ -33,9 +33,9 @@ inline constexpr BoardDescriptor kBoard{
     .maturity = BoardMaturity::Supported,
     .mcu      = kEsp32C3,
 
-    .sensorBus   = { .sda = 3, .scl = 5, .clock_hz = 400000 },
-    .rcUart      = { .port = 1, .rx = 6, .tx = 8, .baud = 420000, .invertRx = false },
-    .consoleUart = { .port = 0, .rx = kNoPin, .tx = kNoPin, .baud = 115200, .invertRx = false },
+    .sensorBus     = { .sda = 3, .scl = 5, .clock_hz = 400000 },
+    .rcUart        = { .port = 1, .rx = 6, .tx = 8, .baud = 420000, .invertRx = false },
+    .telemetryUart = { .port = 0, .rx = 20, .tx = 21 },
 
     .sensors = { {
         // Mirrored map (det = -1): this is what the prototype is trimmed

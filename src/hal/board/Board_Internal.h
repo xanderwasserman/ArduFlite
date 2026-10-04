@@ -54,6 +54,9 @@ struct BoardStorage
     /// Shared by the CRSF receiver (reads) and CRSF telemetry (writes).
     hal::esp32::Esp32Uart rcUart{ kBoard.rcUart.port, kBoard.rcUart.rx, kBoard.rcUart.tx };
 
+    hal::esp32::Esp32Uart telemetryUart{ kBoard.telemetryUart.port, kBoard.telemetryUart.rx,
+                                         kBoard.telemetryUart.tx };
+
     std::array<hal::esp32::Esp32PwmOut, BoardDescriptor::kMaxBanks *
                                         ActuatorBankDesc::kMaxPerBank> pwm{};
     std::uint8_t pwmCount = 0;
@@ -138,9 +141,10 @@ struct BoardStorage
     std::uint8_t magCount    = 0;
     std::uint8_t baroCount   = 0;
 
-    /// Pool for flight-layer classes. Sized from what actually asks:
-    /// ArduFliteController takes 3, telemetry backends 2 each. 16 is generous.
-    static constexpr std::uint8_t kMutexPoolSize = 16;
+    /// Pool for flight-layer classes. Sized from what actually asks — about 17
+    /// with both MAVLink endpoints running: ArduFliteController takes 3, each
+    /// telemetry backend 1 or 2, each MAVLink status-text queue 1.
+    static constexpr std::uint8_t kMutexPoolSize = 24;
     std::array<hal::esp32::Esp32Mutex, kMutexPoolSize> mutexPool{};
     std::uint8_t                                       mutexesUsed = 0;
 };

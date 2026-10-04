@@ -68,11 +68,21 @@ ArduFlite is a highly modular and real-time flight control framework designed fo
 
 - **Multiple Backends**  
   Each runs in its own task at a rate given to its constructor. The rates below
-  are what `ArdufliteApp.cpp` configures; only CRSF and Flash are enabled.
+  are what `ArdufliteApp.cpp` configures.
   - **CRSF Telemetry** (10 Hz) — native to ELRS/Crossfire.
   - **Flash Telemetry** (50 Hz) — on-board CSV flight logging.
-  - **Debug Serial** and **Q-Serial** — ground-side development backends,
-    constructed but commented out.
+  - **MAVLink 2** — for QGroundControl and other ground stations: over USB
+    after the CLI command `mavlink on`, and over a radio on the board's
+    telemetry UART when `mav.uart.enabled` is set.
+- **MAVLink Highlights**  
+  - Attitude, HUD, IMU, system status and log lines (`STATUSTEXT`) in QGC.
+  - Every numeric configuration key is a MAVLink parameter, so QGC can tune
+    the aircraft. Writes are refused while armed or in flight, and are off on
+    the radio unless `mav.uart.writes` is set.
+  - The USB port switches to MAVLink when a ground station connects (or on
+    `mavlink on`) and stays MAVLink until reboot; QGC can request the reboot.
+  - Uses the official MAVLink C library, vendored in `src/third_party/mavlink/`.
+    See `specs/mavlink/README.md`.
 - **CRSF Telemetry Highlights**  
   - Fast frames every loop (10 Hz): Attitude, Link-Stats, Vario.
   - Medium frames every 200 ms (5 Hz): Baro Altitude, GPS, Flight Mode.
@@ -155,7 +165,7 @@ ArduFlite employs a cascade control structure:
     and slew limit and commits them to hardware in one batched write.
 
 4. **Telemetry & CLI:**  
-   Multiple telemetry modules are provided to suit different monitoring needs (CRSF uplink, Flash logging, and debug Serial). A dedicated CLI task supports real-time data queries, dynamic parameter adjustments, and troubleshooting commands.
+   Multiple telemetry modules are provided to suit different monitoring needs (CRSF uplink, Flash logging, and MAVLink to a ground station). A dedicated CLI task supports real-time data queries, dynamic parameter adjustments, and troubleshooting commands.
 
 ## 🔧 Installation & Setup
 
@@ -258,11 +268,9 @@ Once the system is running:
 
     - Flash Telemetry: For high-frequency on-board logging. Use `tools/flash_dump/` to extract flight logs after landing.
 
-    - Debug Serial Telemetry: For low-frequency logging and debugging.
+    - MAVLink: For QGroundControl. On USB, connect QGC to the board's port: the CLI recognises the ground station and hands the port over by itself (`mavlink on` does the same by hand). The port stays MAVLink until reboot. For a radio, set `mav.uart.enabled`, `mav.uart.baud` and `mav.uart.max_bps` to match it and reboot.
 
-    - IMU snapshot health counters are included in Flash logs, Debug Serial output, CLI `stream`, and web status/telemetry JSON so snapshot contention can be diagnosed after field tests.
-
-    - Q Serial Telemetry: For high-frequency, detailed real-time quaternion data output, for use with the visualiser.
+    - IMU snapshot health counters are included in Flash logs, CLI `stream`, and web status/telemetry JSON so snapshot contention can be diagnosed after field tests.
 
 - CLI Access:
     Open the Serial Monitor at 115200 baud. Type `help` to see a list of available commands.
@@ -289,9 +297,9 @@ Once the system is running:
 
     - `config set rate.roll.kp 0.12` – Sets a parameter value (persisted to flash).
 
-    - `config export` – Exports all config as JSON for backup.
+    - `config defaults` – Resets all parameters to defaults.
 
-    - `config reset` – Resets all parameters to defaults.
+    - `mavlink on` – Hands this port to MAVLink until reboot.
 
 - Control Operation:
     The attitude controller continuously computes new setpoints (from pilot input or test sequences), and the rate controller maintains stable flight even in the presence of disturbances.

@@ -114,3 +114,29 @@ void cmdStream(const String &args)
         }
     }
 }
+
+/**
+ * @brief `mavlink on`: hand the console to MAVLink until reboot.
+ *
+ * The CLI stops reading once this command returns, and log lines travel to the
+ * ground station as STATUSTEXT from then on (ADR-067).
+ */
+void cmdMavlink(const String &args)
+{
+    String arg = args;
+    arg.trim();
+    if (arg != "on")
+    {
+        LOG("Usage: mavlink on   (this port speaks MAVLink until reboot)");
+        return;
+    }
+
+    if (rejectUnsafeGroundCommand("hand the console to MAVLink")) return;
+
+    if (!requestConsoleHandover())
+    {
+        LOG_ERR("MAVLink is not available on this port.");
+        return;
+    }
+    LOG("Console switching to MAVLink until reboot. Connect a ground station to this port.");
+}

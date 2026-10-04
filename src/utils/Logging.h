@@ -56,6 +56,9 @@ public:
     // Swap in a different handler (e.g. for testing)
     void setHandler(LogHandler* handler);
 
+    // The handler currently in use, so a new one can wrap it
+    [[nodiscard]] LogHandler* handler() const { return _handler; }
+
     // Logging methods
     void debug(const char* fmt, ...);
     void info (const char* fmt, ...);

@@ -16,6 +16,7 @@
 
 #include "src/hal/core/NonCopyable.h"
 #include "src/hal/core/Result.h"
+#include "src/hal/platform/ByteStream.h"
 #include "src/hal/platform/Clock.h"
 #include "src/hal/platform/Storage.h"
 
@@ -180,18 +181,24 @@ public:
     virtual Status erase(const char* key) = 0;
 };
 
-class Console : private NonCopyable
+/// The diagnostic console: log output and the CLI's input. A ByteStream, so
+/// the same port can be handed to a binary protocol (`mavlink on`).
+class Console : public hal::ByteStream
 {
 public:
-    virtual ~Console() = default;
+    using hal::ByteStream::write;
 
-    virtual std::size_t write(const char* s, std::size_t len) = 0;
-
-    /// Bytes ready to read. Never blocks.
-    [[nodiscard]] virtual std::size_t available() const = 0;
+    std::size_t write(const char* s, std::size_t len)
+    {
+        return write(reinterpret_cast<const std::uint8_t*>(s), len);
+    }
 
     /// One byte, or -1 if none are ready. Never blocks.
-    [[nodiscard]] virtual int readByte() = 0;
+    [[nodiscard]] int readByte()
+    {
+        std::uint8_t byte = 0;
+        return (read(&byte, 1) == 1) ? byte : -1;
+    }
 
     /**
      * @brief Push buffered output to the wire.

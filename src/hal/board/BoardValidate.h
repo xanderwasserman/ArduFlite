@@ -79,6 +79,8 @@ constexpr PinList collectPins(const BoardDescriptor& b) noexcept
     list.add(b.rcUart.tx);
     list.add(b.consoleUart.rx);
     list.add(b.consoleUart.tx);
+    list.add(b.telemetryUart.rx);
+    list.add(b.telemetryUart.tx);
     list.add(b.userButton.pin);
     list.add(b.statusLed.pin);
 
@@ -206,6 +208,24 @@ constexpr bool requiredPeripheralsPresent(const BoardDescriptor& b) noexcept
     return true;
 }
 
+/// Every declared UART exists on the MCU, and no two roles share one.
+constexpr bool uartsValid(const BoardDescriptor& b) noexcept
+{
+    const UartDesc* const uarts[] = { &b.rcUart, &b.consoleUart, &b.telemetryUart };
+    constexpr int kCount = sizeof(uarts) / sizeof(uarts[0]);
+
+    for (int i = 0; i < kCount; ++i)
+    {
+        if (uarts[i]->port == kNoUart) { continue; }
+        if (uarts[i]->port >= b.mcu.uartCount) { return false; }
+        for (int j = i + 1; j < kCount; ++j)
+        {
+            if (uarts[j]->port == uarts[i]->port) { return false; }
+        }
+    }
+    return true;
+}
+
 constexpr bool isValidConstexpr(const BoardDescriptor& b) noexcept
 {
     return allPinsValid(b)
@@ -214,6 +234,7 @@ constexpr bool isValidConstexpr(const BoardDescriptor& b) noexcept
         && outputCountWithinMcu(b)
         && allRolesUnique(b)
         && allSensorAxesValid(b)
+        && uartsValid(b)
         && requiredPeripheralsPresent(b);
 }
 

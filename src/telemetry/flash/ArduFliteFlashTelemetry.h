@@ -47,7 +47,7 @@ public:
     void deleteLog(int index);
 
     /// @brief Erase all stored logs. Stops logging first. Use with care.
-    void reset() override
+    void reset()
     {
         // Stop any active logging session before formatting to prevent the telemetry
         // task from writing to an invalidated file handle after the format completes.

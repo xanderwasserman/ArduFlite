@@ -7,16 +7,51 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "src/utils/ConfigRegistry.h"
+
+#include <chrono>
+#include <mutex>
 #include "src/utils/Logging.h"
-#include "include/ArduFlite.h"
 #include "include/ConfigKeys.h"
 
 #include <cstring>  // For strcmp, strncmp
 
+/// How long a caller waits for the registry before giving up. Plain integer
+/// milliseconds, not TickType_t — nothing here needs the RTOS's time base.
+static constexpr int CONFIG_LOCK_TIMEOUT_MS = 100;
+
+namespace {
+
+/**
+ * @brief Scoped lock over the registry mutex, tolerant of it being absent.
+ *
+ * Presents the same acquired() surface the 27 call sites already use, so the
+ * FreeRTOS-to-hal::Mutex migration did not have to touch any of them.
+ *
+ * A null mutex reports ACQUIRED, deliberately: that is the pre-Board::begin()
+ * window, where the only caller is static-init registration on one thread.
+ * Reporting failure there would make every early registration silently fail.
+ */
+class RegistryLock {
+public:
+    explicit RegistryLock(arduflite::hal::Mutex* mutex) {
+        if (mutex == nullptr) { _acquired = true; return; }
+        _lock = std::unique_lock<arduflite::hal::Mutex>(
+            *mutex, std::chrono::milliseconds(CONFIG_LOCK_TIMEOUT_MS));
+        _acquired = _lock.owns_lock();
+    }
+
+    [[nodiscard]] bool acquired() const { return _acquired; }
+
+private:
+    std::unique_lock<arduflite::hal::Mutex> _lock;
+    bool _acquired = false;
+};
+
+} // namespace
+
 // Maximum time (ms) to wait for the ConfigRegistry mutex.
 // Bounded to prevent infinite blocking if a lower-priority task holds the
 // lock (priority inversion). 100 ms is generous for an in-memory map op.
-static constexpr TickType_t CONFIG_LOCK_TIMEOUT_MS = 100;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // LOCK ORDERING (must follow to prevent deadlock):
@@ -46,7 +81,7 @@ void ConfigRegistry::init() {
     // Create the mutex now that FreeRTOS is ready
     ensureMutex();
 
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return;
 
     // Process any pending registrations from static initialization
@@ -77,26 +112,19 @@ void ConfigRegistry::init() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+
 // Mutex Management
 // ═══════════════════════════════════════════════════════════════════════════
 
+void ConfigRegistry::setMutex(arduflite::hal::Mutex* mutex) {
+    _mutex.store(mutex, std::memory_order_release);
+}
+
 void ConfigRegistry::ensureMutex() const {
-    // Thread-safe mutex initialization using atomic compare-exchange
-    SemaphoreHandle_t expected = nullptr;
-    if (_mutex.load(std::memory_order_acquire) == nullptr) {
-        SemaphoreHandle_t newMutex = xSemaphoreCreateMutex();
-        if (newMutex == nullptr) {
-            LOG_ERR("ConfigRegistry: Failed to create mutex - out of memory");
-            return;  // Will fail on lock acquisition
-        }
-        // Atomically set _mutex if it's still nullptr
-        if (!_mutex.compare_exchange_strong(expected, newMutex,
-                                             std::memory_order_release,
-                                             std::memory_order_relaxed)) {
-            // Another thread already created a mutex, delete ours
-            vSemaphoreDelete(newMutex);
-        }
-    }
+    // Nothing to do. The mutex is injected by setMutex() from Board's pool,
+    // because params register at static-init time before the scheduler exists.
+    // Before setMutex() the registry is single-threaded by construction, and
+    // after it there is exactly one mutex — so there is no race to guard.
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -134,7 +162,7 @@ void ConfigRegistry::registerParamInternal(
     bool        requiresReboot
 ) {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return;
 
     // Check for duplicate registration
@@ -164,7 +192,7 @@ void ConfigRegistry::registerParamInternal(
 template<>
 float ConfigRegistry::get<float>(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return 0.0f;
 
     auto it = _params.find(key);
@@ -182,7 +210,7 @@ float ConfigRegistry::get<float>(const char* key) const {
 template<>
 int32_t ConfigRegistry::get<int32_t>(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return 0;
 
     auto it = _params.find(key);
@@ -200,7 +228,7 @@ int32_t ConfigRegistry::get<int32_t>(const char* key) const {
 template<>
 uint8_t ConfigRegistry::get<uint8_t>(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return 0;
 
     auto it = _params.find(key);
@@ -218,7 +246,7 @@ uint8_t ConfigRegistry::get<uint8_t>(const char* key) const {
 template<>
 bool ConfigRegistry::get<bool>(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return false;
 
     auto it = _params.find(key);
@@ -234,21 +262,21 @@ bool ConfigRegistry::get<bool>(const char* key) const {
 }
 
 template<>
-String ConfigRegistry::get<String>(const char* key) const {
+std::string ConfigRegistry::get<std::string>(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
-    if (!lock.acquired()) return String();
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
+    if (!lock.acquired()) return std::string();
 
     auto it = _params.find(key);
     if (it == _params.end()) {
         LOG_WARN("Config key not found: %s", key);
-        return String();
+        return std::string();
     }
     if (it->second.type != ConfigType::STRING) {
         LOG_WARN("Config type mismatch for %s: expected STRING", key);
-        return String();
+        return std::string();
     }
-    return String(it->second.currentVal.s);
+    return std::string(it->second.currentVal.s);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -286,7 +314,7 @@ bool ConfigRegistry::set<float>(const char* key, float value) {
     change.newValue.f = value;
 
     {
-        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+        RegistryLock lock(_mutex.load(std::memory_order_acquire));
         if (!lock.acquired()) return false;
 
         auto it = _params.find(key);
@@ -328,7 +356,7 @@ bool ConfigRegistry::set<int32_t>(const char* key, int32_t value) {
     change.newValue.i = value;
 
     {
-        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+        RegistryLock lock(_mutex.load(std::memory_order_acquire));
         if (!lock.acquired()) return false;
 
         auto it = _params.find(key);
@@ -369,7 +397,7 @@ bool ConfigRegistry::set<uint8_t>(const char* key, uint8_t value) {
     change.newValue.u8 = value;
 
     {
-        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+        RegistryLock lock(_mutex.load(std::memory_order_acquire));
         if (!lock.acquired()) return false;
 
         auto it = _params.find(key);
@@ -410,7 +438,7 @@ bool ConfigRegistry::set<bool>(const char* key, bool value) {
     change.newValue.b = value;
 
     {
-        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+        RegistryLock lock(_mutex.load(std::memory_order_acquire));
         if (!lock.acquired()) return false;
 
         auto it = _params.find(key);
@@ -433,7 +461,7 @@ bool ConfigRegistry::set<bool>(const char* key, bool value) {
 }
 
 template<>
-bool ConfigRegistry::set<String>(const char* key, String value) {
+bool ConfigRegistry::set<std::string>(const char* key, std::string value) {
     ensureMutex();
 
     // Validate string length
@@ -450,7 +478,7 @@ bool ConfigRegistry::set<String>(const char* key, String value) {
     change.newValue.s[CONFIG_STRING_MAX_LEN - 1] = '\0';
 
     {
-        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+        RegistryLock lock(_mutex.load(std::memory_order_acquire));
         if (!lock.acquired()) return false;
 
         auto it = _params.find(key);
@@ -479,7 +507,7 @@ bool ConfigRegistry::set<String>(const char* key, String value) {
 
 void ConfigRegistry::setRaw(const char* key, ConfigValue value) {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return;
 
     auto it = _params.find(key);
@@ -501,7 +529,7 @@ void ConfigRegistry::setRaw(const char* key, ConfigValue value) {
 
 bool ConfigRegistry::requiresReboot(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return false;
 
     auto it = _params.find(key);
@@ -519,7 +547,7 @@ bool ConfigRegistry::reset(const char* key) {
     change.key = key;
 
     {
-        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+        RegistryLock lock(_mutex.load(std::memory_order_acquire));
         if (!lock.acquired()) return false;
 
         auto it = _params.find(key);
@@ -545,7 +573,7 @@ void ConfigRegistry::resetAll() {
     std::vector<ConfigChange> changes;
 
     {
-        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+        RegistryLock lock(_mutex.load(std::memory_order_acquire));
         if (!lock.acquired()) return;
 
         for (auto& [key, param] : _params) {
@@ -574,7 +602,7 @@ void ConfigRegistry::resetAll() {
 
 void ConfigRegistry::subscribe(const char* pattern, ConfigObserver callback) {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return;
 
     _observers.emplace_back(pattern, callback);
@@ -611,7 +639,7 @@ void ConfigRegistry::notifyObservers(const ConfigChange& change) {
 
     {
         ensureMutex();
-        SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+        RegistryLock lock(_mutex.load(std::memory_order_acquire));
         if (!lock.acquired()) return;
 
         for (const auto& [pattern, callback] : _observers) {
@@ -634,7 +662,7 @@ void ConfigRegistry::notifyObservers(const ConfigChange& change) {
 
 bool ConfigRegistry::hasDirty() const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return false;
 
     for (const auto& [key, param] : _params) {
@@ -643,16 +671,16 @@ bool ConfigRegistry::hasDirty() const {
     return false;
 }
 
-std::vector<String> ConfigRegistry::getDirtyKeys() const {
+std::vector<std::string> ConfigRegistry::getDirtyKeys() const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
 
-    std::vector<String> result;
+    std::vector<std::string> result;
     if (!lock.acquired()) return result;
 
     for (const auto& [key, param] : _params) {
         if (param.dirty) {
-            result.push_back(key.c_str());  // Copy key as String
+            result.push_back(key.c_str());  // Copy key as std::string
         }
     }
     return result;
@@ -660,7 +688,7 @@ std::vector<String> ConfigRegistry::getDirtyKeys() const {
 
 void ConfigRegistry::clearDirty(const char* key) {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return;
 
     auto it = _params.find(key);
@@ -671,7 +699,7 @@ void ConfigRegistry::clearDirty(const char* key) {
 
 void ConfigRegistry::clearAllDirty() {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return;
 
     for (auto& [key, param] : _params) {
@@ -681,7 +709,7 @@ void ConfigRegistry::clearAllDirty() {
 
 void ConfigRegistry::markDirty(const char* key) {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return;
 
     auto it = _params.find(key);
@@ -696,7 +724,7 @@ void ConfigRegistry::markDirty(const char* key) {
 
 std::optional<ConfigParam> ConfigRegistry::getParam(const char* key) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return std::nullopt;
 
     auto it = _params.find(key);
@@ -708,21 +736,21 @@ std::optional<ConfigParam> ConfigRegistry::getParam(const char* key) const {
 
 std::unordered_map<std::string, ConfigParam> ConfigRegistry::getAllParams() const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return {};
     return _params;  // Return copy
 }
 
 size_t ConfigRegistry::count() const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
     if (!lock.acquired()) return 0;
     return _params.size();
 }
 
 std::vector<ConfigParam> ConfigRegistry::list(const char* pattern) const {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), CONFIG_LOCK_TIMEOUT_MS);
+    RegistryLock lock(_mutex.load(std::memory_order_acquire));
 
     std::vector<ConfigParam> result;
     if (!lock.acquired()) return result;

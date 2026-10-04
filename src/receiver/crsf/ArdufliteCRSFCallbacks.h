@@ -13,7 +13,6 @@
 #include "src/utils/CommandSystem.h"
 #include "src/utils/ControlMixer.h"
 
-#include <Arduino.h>
 
 namespace CRSFCallbacks {
   void onFailsafe();

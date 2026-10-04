@@ -8,13 +8,14 @@
  */
 #include "src/utils/HoldButton.h"
 
-HoldButton::HoldButton(int pin,
+HoldButton::HoldButton(arduflite::hal::GpioPin& pin,
+                       const arduflite::hal::Clock& clock,
                        unsigned long holdTimeMs,
                        HoldButtonCallback callback,
                        bool usePullup,
                        bool autoReset,
                        unsigned long debounceMs)
-    : ButtonBase(pin, usePullup, debounceMs)
+    : ButtonBase(pin, clock, usePullup, debounceMs)
     , _holdTime(holdTimeMs)
     , _callback(callback)
     , _autoReset(autoReset)
@@ -27,7 +28,7 @@ void HoldButton::update() {
     // or directly: readAndDebounce();
 
     // 2) Then implement hold-time logic using the stable pressed
-    unsigned long now = millis();
+    unsigned long now = nowMs();
 
     if (isPressed()) {
         if (_pressStart == 0) {

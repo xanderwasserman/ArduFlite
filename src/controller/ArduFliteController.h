@@ -9,18 +9,29 @@
 #ifndef ARDU_FLITE_CONTROLLER_H
 #define ARDU_FLITE_CONTROLLER_H
 
-#include "src/orientation/ArduFliteIMU.h"
+#include "src/core/FlightTypes.h"
+#include "src/estimation/InertialSubsystem.h"
+#include "src/state/StateManagement.h"
 #include "src/controller/ArduFliteAttitudeController.h"
 #include "src/controller/ArduFliteRateController.h"
-#include "src/actuators/ServoManager.h"
+#include "src/actuators/AirframeMixer.h"
+#include "src/actuators/ControlOutputs.h"
+#include "src/hal/device/Actuator.h"
 #include "include/ArduFlite.h"
 #include "include/ControllerTypes.h"
 
-#include <Arduino.h>
+#include <chrono>
+
+#include "src/hal/platform/Clock.h"
+#include "src/hal/platform/Mutex.h"
+#include "src/hal/platform/Scheduler.h"
+#include "src/hal/platform/Storage.h"
+#include "src/hal/platform/Watchdog.h"
+
 #include <atomic>
 
 // Forward declaration
-class ArdufliteCRSFReceiver;
+namespace arduflite::device { class RcLink; }
 
 /**
  * @brief Control loop timing statistics.
@@ -66,17 +77,64 @@ class ArduFliteController
 {
 public:
     /**
+     * @brief Platform services this controller needs.
+     *
+     * Grouped into a struct rather than six more constructor parameters. The
+     * point of ADR-001 is that dependencies are VISIBLE in the signature — if
+     * this struct ever grows unwieldy, that is the design telling you the
+     * controller does too much.
+     */
+    struct Platform
+    {
+        arduflite::hal::Clock*     clock           = nullptr;
+        arduflite::hal::Scheduler* scheduler       = nullptr;
+        arduflite::hal::Watchdog*  watchdog        = nullptr;
+        arduflite::hal::System*    system          = nullptr;
+        arduflite::hal::Mutex*     ctrlMutex       = nullptr;
+        arduflite::hal::Mutex*     outerStatsMutex = nullptr;
+        arduflite::hal::Mutex*     innerStatsMutex = nullptr;
+
+        /// The bank owning every control surface. commit() is a batched bus
+        /// operation, so it belongs here rather than on individual actuators.
+        arduflite::device::ActuatorBank* outputs = nullptr;
+
+        [[nodiscard]] bool valid() const
+        {
+            return clock && scheduler && watchdog && system && outputs
+                && ctrlMutex && outerStatsMutex && innerStatsMutex;
+        }
+    };
+
+    /**
+     * @brief Inject platform services. Must be called before startTasks().
+     *
+     * Deferred rather than constructor-injected because the controller is a
+     * global and the Board's mutex pool needs FreeRTOS running — the same reason
+     * initFromConfig() exists. Pointers, not references, so the global can be
+     * default-constructed.
+     */
+    void setPlatform(const Platform& platform);
+
+    /// Reload airframe geometry from ConfigRegistry. Call after config load.
+    void initFromConfig();
+
+    /// Boot self-test: drive every surface to a normalised deflection and commit.
+    /// Goes through the mixer and the bank, so it exercises the real output
+    /// path — driving the servos directly would pass with a miswired mixer.
+    void stageTestDeflection(float normalised);
+
+    /**
      * @brief Constructs the overall ArduFlite controller.
      *
-     * @param imu Pointer to the ArduFliteIMU instance.
-     * @param attitudeCtrl Pointer to the ArduFliteAttitudeController instance.
-     * @param rateCtrl Pointer to the ArduFliteRateController instance.
-     * @param servoMgr Pointer to the ServoManager instance.
+     * @param imu          the estimation subsystem to read attitude from
+     * @param attitudeCtrl outer loop: attitude error -> rate setpoint
+     * @param rateCtrl     inner loop: rate error -> surface command
+     *
+     * Platform services arrive separately via setPlatform(); see Platform.
      */
-    ArduFliteController(ArduFliteIMU* imu,
+    ArduFliteController(arduflite::estimation::InertialSubsystem* imu,
                           ArduFliteAttitudeController* attitudeCtrl,
-                          ArduFliteRateController* rateCtrl,
-                          ServoManager* servoMgr);
+                          ArduFliteRateController* rateCtrl);
 
     /**
      * @brief Starts the controller tasks.
@@ -93,9 +151,9 @@ public:
      * In ATTITUDE_MODE, the pilot sets a desired attitude which the attitude controller
      * uses to compute the desired angular rates.
      *
-     * @param setpoint EulerAngles attitude setpoint in degrees.
+     * @param setpoint AttitudeDeg attitude setpoint, in degrees.
      */
-    void setAttitudeSetpoint(EulerAngles setpointDeg);
+    void setAttitudeSetpoint(AttitudeDeg setpointDeg);
 
     /**
      * @brief Sets the desired attitude for a specified axis (in Euler angles, degrees) for ATTITUDE_MODE.
@@ -113,9 +171,19 @@ public:
      *
      * In RATE_MODE, the pilot directly provides angular rate setpoints.
      *
-     * @param rateSetpoint EulerAngles rate setpoint in degrees/s.
+     * @param rateSetpoint AngularRateDps rate setpoint, in degrees/s.
      */
-    void setRateSetpoint(EulerAngles rateSetpoint);
+    void setRateSetpoint(AngularRateDps rateSetpoint);
+
+    /**
+     * @brief Direct surface demand for MANUAL_MODE, normalised -1..+1.
+     *
+     * Stored separately from pilotRateSetpoint, and typed differently, so a
+     * deg/s value cannot reach the mixer as a normalised demand. Sharing one
+     * slot would make its meaning depend on the current mode, and a demotion to
+     * MANUAL_MODE would deliver whatever the previous mode had left there.
+     */
+    void setManualCommand(AxisCommand command);
 
     /**
      * @brief Sets the pilot-provided roll rate setpoint in Rate mode.
@@ -190,7 +258,7 @@ public:
      * @param receiver Pointer to CRSF receiver for link quality check (may be nullptr)
      * @return true if arm succeeded, false if preflight check failed
      */
-    bool arm(ArdufliteCRSFReceiver* receiver = nullptr);
+    bool arm(arduflite::device::RcLink* rcLink = nullptr);
 
     /**
      * @brief Disarm the controller: disable servo outputs immediately.
@@ -215,11 +283,11 @@ public:
      */
     bool isThrottleCut() const;
 
-    EulerAngles getAttitudeSetpoint() const;
-    EulerAngles getRateSetpoint() const;
+    AttitudeDeg getAttitudeSetpoint() const;
+    AngularRateDps getRateSetpoint() const;
 
-    EulerAngles getAttitudeCmd() const;
-    EulerAngles getRateCmd() const;
+    AngularRateDps getAttitudeCmd() const;
+    AxisCommand getRateCmd() const;
 
     LoopStats getOuterLoopStats();
     LoopStats getInnerLoopStats();
@@ -255,45 +323,52 @@ public:
     void setAttitudeDeadband(float deadband);
 
 private:
-    ArduFliteIMU* imu;                                      //< Pointer to the IMU instance.
+    arduflite::estimation::InertialSubsystem* imu;                                      //< Pointer to the IMU instance.
     ArduFliteAttitudeController* attitudeCtrl;              //< Pointer to the outer loop controller.
     ArduFliteRateController* rateCtrl;                      //< Pointer to the inner loop controller.
-    ServoManager* servoMgr;                                 //< Pointer to the servo manager.
+    arduflite::actuators::ControlOutputs surfaces{};        //< Resolved by role at setPlatform().
+    arduflite::actuators::WingDesign      wingDesign =
+        arduflite::actuators::WingDesign::Conventional;     //< From ConfigRegistry.
 
-    TaskHandle_t outerTaskHandle;                           //< Handle for the outer loop task.
-    TaskHandle_t innerTaskHandle;                           //< Handle for the inner loop task.
+    /// Set by pauseTasks(), read by both control loops every iteration. The
+    /// loops keep running and keep feeding the watchdog while it is set; they
+    /// simply skip their body — see pauseTasks().
+    std::atomic<bool> tasksPaused{ false };
 
     ArduFliteMode mode;                                     //< Current operating mode.
-    EulerAngles pilotRateSetpoint       {0.0f};             //< Pilot rate setpoint (deg/s) for RATE_MODE.
-    EulerAngles pilotAttitudeSetpoint   {0.0f};             //< Pilot attitude setpoint for ATTITUDE_MODE.
+    AngularRateDps pilotRateSetpoint{};                     //< Pilot rate setpoint for RATE_MODE.
+    AxisCommand    pilotManualCommand{};                    //< Pilot surface demand for MANUAL_MODE.
+    AttitudeDeg pilotAttitudeSetpoint   {};                 //< Pilot attitude setpoint for ATTITUDE_MODE.
     float       pilotThrottleSetpoint   = 0.0f;             //< Pilot throttle setpoint for all modes.
 
     // Shared command variables
-    EulerAngles lastAttitudeCmd         {0.0f};
-    EulerAngles lastRateCmd             {0.0f};
+    AngularRateDps lastAttitudeCmd      {};   //< attitude loop OUTPUT: a rate setpoint
+    AxisCommand lastRateCmd             {};   //< rate loop OUTPUT: normalised axis demand
 
     // Statistics for the outer and inner loops.
     LoopStats outerLoopStats            = {0, 0, 0, 0};
     LoopStats innerLoopStats            = {0, 0, 0, 0};
 
-    SemaphoreHandle_t ctrlMutex;                            //< Mutex to protect shared state.
+    Platform plat;                                          //< Injected platform services.
 
-    // Mutexes for thread-safe access to these stats.
-    SemaphoreHandle_t outerStatsMutex;
-    SemaphoreHandle_t innerStatsMutex;
-
-    bool armed          = false;                            //< true once we’ve called arm()
-    bool throttleCut    = true;                             //< Throttle is cut by default
+    /**
+     * @brief Arm and throttle-cut state. ATOMIC, deliberately not under ctrlMutex.
+     *
+     * Both are safety gates and must not be able to fail to close. Behind a
+     * bounded wait, cutThrottle() would do nothing on a timeout, and the control
+     * loop would act on a stale copy for any tick that missed the lock — so a
+     * disarm would not take effect until contention cleared.
+     *
+     * They are independent booleans, not part of the setpoint group's
+     * coherence, so nothing is lost by keeping them out of the mutex.
+     */
+    std::atomic<bool> armed{ false };
+    std::atomic<bool> throttleCut{ true };   //< Throttle is cut by default
     // IMU failure recovery state
     ArduFliteMode savedModeBeforeImuFailure = ATTITUDE_MODE; //< Mode to restore when IMU recovers
     bool imuFailureActive = false;                          //< True when in IMU failure MANUAL_MODE
-    // WDT re-registration flags: set by resumeTasks(), cleared by each task on its
-    // first tick after resume. Atomic because resumeTasks() and the control tasks
-    // run in different FreeRTOS contexts.
-    std::atomic<bool> outerWdtReregister{false};
-    std::atomic<bool> innerWdtReregister{false};
-    static constexpr TickType_t outerLoopMs = 10;
-    static constexpr TickType_t innerLoopMs = 2;
+    static constexpr std::uint32_t outerLoopMs = 10;
+    static constexpr std::uint32_t innerLoopMs = 2;
 
     /**
      * @brief Outer loop FreeRTOS task function.
@@ -324,7 +399,20 @@ private:
      * @param parameters The respective control loop's statistics struct, the change in time from the last loop execution,
      * and the desired loop timing.
      */
+    /// Single fatal path, so the platform reboot call appears once.
+    [[noreturn]] void fatal(const char* what);
+
     static void updateLoopStats(LoopStats &stats, unsigned long dtMicro, unsigned long desiredPeriodMicro);
+
+    /// Measured against the deepest call path in each loop. A stack overflow
+    /// here presents as a watchdog reset with no useful trace, so change these
+    /// only with a high-water-mark measurement to back it up.
+    /// Bounded wait for the control loops: long enough to ride out normal
+    /// contention, short enough that a held lock cannot stall a 500 Hz loop.
+    static constexpr std::chrono::milliseconds kLockTimeout{ 5 };
+
+    static constexpr std::uint32_t kOuterStackBytes = 4096;
+    static constexpr std::uint32_t kInnerStackBytes = 4096;
 };
 
 #endif // ARDU_FLITE_CONTROLLER_H

@@ -9,7 +9,21 @@
 #ifndef ARDUFLITE_TELEMETRY_H
 #define ARDUFLITE_TELEMETRY_H
 
+#include <chrono>
+
 #include "src/telemetry/TelemetryData.h"
+
+/**
+ * @brief The short lock timeout every telemetry backend uses.
+ *
+ * Deliberately a WAIT and not a try-lock: publish() and the writer task both
+ * run at 50 Hz, so brief overlap is normal, and giving up instantly would drop
+ * samples that a 5 ms wait comfortably catches.
+ *
+ * Named here rather than repeated, because it is one decision shared by four
+ * backends.
+ */
+inline constexpr std::chrono::milliseconds kTelemetryLockTimeout{ 5 };
 
 class ArduFliteTelemetry {
 public:

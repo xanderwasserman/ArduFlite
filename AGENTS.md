@@ -45,14 +45,27 @@ ArduFlite follows a strict layered architecture. Respect these boundaries:
    - **ArduFliteAttitudeController**: Outer loop (attitude → rate setpoints)
    - **ArduFliteRateController**: Inner loop (rate setpoints → servo commands)
    - **PID**: Low-level PID implementation with anti-windup
-   - Controllers **must not** directly access hardware — use abstractions (IMU, ServoManager)
+   - Controllers **must not** directly access hardware — they read `ImuState`
+     and emit `AxisCommand`. Both inner controllers are now free of FreeRTOS and
+     Arduino entirely; they take an injected `hal::Mutex` and run in `host_sim`.
 
-3. **Sensor/Actuator Layer** (`src/orientation/`, `src/actuators/`)
-   - **ArduFliteIMU**: Sensor fusion, flight state detection, baro auto-calibration
-   - **ServoManager**: Wing geometry abstraction (CONVENTIONAL, DELTA_WING, V_TAIL)
-   - These classes **own** the hardware interfaces
-   - Use FreeRTOS tasks for time-critical operations (e.g., IMU @ high Hz)
-   - BMP280 barometer sampling is decimated **inside** the IMU task (read every `BARO_DECIMATION_FACTOR` ticks ≈ 50 Hz) and feeds altitude/climb rate into the IMU snapshot. The IMU task is the **sole owner of the I2C bus**; do not add a second task that shares `imuMutex`/`Wire`, as that reintroduces priority inversion and "sensor mutex busy" update skips.
+3. **Estimation and Actuator Layer** (`src/estimation/`, `src/actuators/`)
+   - **InertialSubsystem**: the sampling tick — sample, select, read, offsets,
+     axis transform, filter, validate, altitude, fuse, motion, calibrate,
+     publish. A fixed twelve-step order; see §03 3.8 and ADR-033.
+   - **AirframeMixer**: wing geometry (CONVENTIONAL, DELTA_WING, V_TAIL stub)
+   - Neither owns hardware. Drivers behind `device::` interfaces do, and `Board`
+     hands them out.
+   - **`src/estimation/` must contain NO direct RTOS calls** — it may use
+     `hal::Scheduler` and `hal::Watchdog`, never `xTaskCreate` or `millis()`.
+     `tools/ci/check_layering.sh` enforces this. It is what lets the twelve-step
+     order be tested at all.
+   - **Sensor decimation is derived from the sensor**, via `nativeRate_hz()` on
+     `device::Measurement` — never configured beside it. Two numbers disagreed
+     once and inflated climb rate by 3.3x (ADR-046).
+   - The IMU task remains the **sole owner of the I2C bus**. Do not add a second
+     task sharing it; that reintroduces the priority inversion and the "sensor
+     mutex busy" skips. `check_layering.sh` fails on any `baroTask`.
 
 4. **Communication Layer** (`src/receiver/`, `src/telemetry/`)
    - **Receiver**: Input from pilot (CRSF/PWM) with failsafe callbacks
@@ -70,7 +83,7 @@ ArduFlite follows a strict layered architecture. Respect these boundaries:
    - **CommandSystem**: Thread-safe command queue using FreeRTOS queues
    - **Logging**: Singleton logger with pluggable handlers (`LOG_INF`, `LOG_ERR`, etc.)
    - **Button Managers**: Input handling (HoldButton, MultiTapButton)
-   - **StatusLED**: Visual feedback patterns
+   - **Indicator**: Visual feedback patterns, via `device::Indicator`
 
 6. **CLI Layer** (`src/cli/`)
    - Command-line interface for runtime diagnostics and tuning
@@ -95,41 +108,49 @@ ArduFlite follows a strict layered architecture. Respect these boundaries:
    - REST endpoints: `/api/config`, `/api/system/status`, `/api/flash`
    - Runs in its own FreeRTOS task at priority 1 (lowest, non-blocking)
    - **Compile-time toggle**: `ENABLE_WEB_SERVER` in `include/WebConfiguration.h`
-     - Full build: `./build.sh lolin` (~1.3MB, includes WiFi/HTTP stack)
-     - Lite build: `./build.sh lolin lite` (~620KB, flight-only, no WiFi)
+     - Full build: `./build.sh lolin` (~1.4 MB, includes WiFi/HTTP stack)
+     - Lite build: `./build.sh lolin lite` (~630 KB, flight-only, no WiFi)
      - Builds use per-board/per-variant output directories (`build/lolin-full`, `build/lolin-lite`)
-     - WiFi/TCP/HTTP libraries add ~500KB; lite build excludes them entirely
+     - WiFi/TCP/HTTP libraries add ~780 KB; the lite build excludes them entirely
 
 ### Dependency Rules
 - **Higher layers can depend on lower layers, but NOT vice versa**
-- Controllers depend on IMU/ServoManager, but IMU/ServoManager are independent
+- Controllers depend on `ImuState`; the estimation layer knows nothing of them
+- **Flight code must not include a driver header.** Only `Board` names a
+  concrete chip. Enforced by `check_layering.sh`
+- Board descriptors are data: adding a sensor to a board is one array entry
 - Telemetry observes state but **never** modifies it
 - Use dependency injection: pass pointers to dependencies in constructors
 
 ### Thread Safety
 - ArduFlite uses FreeRTOS extensively with **multiple concurrent tasks**
 - **Always** protect shared state with mutexes or use FreeRTOS queues
-- Use `SemaphoreLock` RAII wrapper (defined in `ArduFlite.h`) for automatic mutex management
+- Lock a `hal::Mutex` with `std::unique_lock` / `std::scoped_lock`. Use the
+  bounded form (`std::unique_lock lock(m, timeout)`) on any control path — an
+  unbounded wait in a 500 Hz loop is a watchdog reset
 - Take snapshots of data structures (like `TelemetryData`) to avoid holding locks too long
 - **Never** block in ISRs or high-priority tasks
-- `ArduFliteIMU` uses a **versioned snapshot** for lock-free reads: the IMU task marks the snapshot version odd while writing and even when complete, while readers retry if the version changes mid-copy
+- `estimation::InertialSubsystem` publishes through a `SeqLock<ImuState>`: the
+  sampling task marks the version odd while writing and even when complete, and
+  readers retry if it changes mid-copy. Read it with `imu.state()` — one call,
+  one coherent snapshot. Taking several separate reads defeats the point
 
 ## Folder Structure Overview
 
 ```
 ArduFlite/
 ├── include/                          # Headers and compile-time constants
-│   ├── ArduFlite.h                   # Main header, SemaphoreLock RAII
+│   ├── ArduFlite.h                   # Main header, entry points
 │   ├── ConfigKeys.h                  # Config key #defines (hierarchical dot notation)
 │   ├── ConfigSchema.h                # Parameter registration with defaults/ranges
 │   ├── ControllerTypes.h             # Shared enums (ControlLoopType)
 │   ├── AircraftConfiguration.h       # Compile-time aircraft type (powered vs glider)
-│   ├── CSRFConfiguration.h           # CRSF receiver pin/channel mapping
-│   ├── PinConfiguration.h            # Pin assignments (compile-time)
-│   ├── ReceiverConfiguration.h       # Receiver type and failsafe config
-│   ├── IMUConfiguration.h            # IMU/Baro type selection macros only
 │   ├── MissionConfiguration.h        # Mission planner parameters
 │   └── WebConfiguration.h            # ENABLE_WEB_SERVER compile-time flag
+│
+│   NOTE: PinConfiguration.h, IMUConfiguration.h, CSRFConfiguration.h and
+│   ReceiverConfiguration.h are GONE. Hardware layout lives in one board
+│   descriptor per board — see src/hal/board/boards/.
 │
 ├── src/
 │   ├── controller/                   # Cascade PID control system
@@ -138,16 +159,37 @@ ArduFlite/
 │   │   ├── ArduFliteRateController.*      # Rate → Servo (inner loop)
 │   │   └── pid.*                     # Generic PID with anti-windup
 │   │
-│   ├── orientation/                  # Sensor fusion and state estimation
-│   │   ├── ArduFliteIMU.*            # IMU wrapper (FastIMU + Madgwick + BMP280)
-│   │   └── FliteQuaternion.*         # Quaternion math helpers
+│   ├── hal/                          # Hardware abstraction — see specs/hal/
+│   │   ├── core/                     # Status, Result, Vec3, SeqLock, AxisTransform, Crc32
+│   │   ├── platform/                 # Clock, Mutex, Scheduler, Watchdog, Buses, Io, Storage
+│   │   ├── device/                   # Sensor, Actuator, RcLink, Peripherals (role interfaces)
+│   │   ├── drivers/                  # Concrete chips: imu/, baro/, rc/, out/, log/, indicator/
+│   │   ├── protocol/                 # Wire formats shared by a driver and an adapter (CRSF)
+│   │   ├── esp32/                    # ESP32 platform implementations
+│   │   └── board/                    # Descriptors + composition root
+│   │       └── boards/               # ONE FILE PER BOARD — all hardware layout
 │   │
-│   ├── actuators/                    # Servo output and mixing
-│   │   └── ServoManager.*            # Wing geometry abstraction
+│   ├── estimation/                   # Sensor fusion and state estimation
+│   │   ├── InertialSubsystem.*       # The sampling tick; no RTOS, host-testable
+│   │   ├── AttitudeEstimator.h       # Fusion behind an interface
+│   │   ├── MadgwickEstimator.*      # Own gradient-descent filter (ADR-056)
+│   │   ├── CalibrationService.*      # Calibration as a state machine, inside the tick
+│   │   ├── SensorSelector.*          # Which instance feeds the estimator
+│   │   ├── MotionDetector.*          # Launch / stable debouncing
+│   │   ├── AltitudeFilter.*          # Barometric altitude and climb rate
+│   │   └── ImuState.h                # The published snapshot
 │   │
-│   ├── receiver/                     # Pilot input (RC link)
-│   │   ├── crsf/                     # CRSF (ELRS/Crossfire) receiver
-│   │   └── pwm/                      # PWM receiver (legacy)
+│   ├── core/                         # Flight-layer vocabulary, no hardware
+│   │   ├── FlightTypes.h             # AttitudeDeg, AngularRateDps, AxisCommand
+│   │   ├── LogRotationPolicy.*       # Log index allocation and purge rules
+│   │   └── ConsoleWriter.h           # Data output, distinct from the logger
+│   │
+│   ├── orientation/                  # Quaternion math
+│   │   └── FliteQuaternion.*
+│   │
+│   ├── actuators/                    # Surface mixing and output
+│   │   ├── AirframeMixer.*           # Axis demand -> per-surface commands
+│   │   └── ControlOutputs.*          # Surfaces resolved by role
 │   │
 │   ├── telemetry/                    # Data output to ground station
 │   │   ├── TelemetryData.h           # Shared data structure
@@ -186,7 +228,6 @@ ArduFlite/
 │       ├── CommandSystem.*           # Thread-safe command queue
 │       ├── ControlMixer.*            # Mode-dependent input mixing
 │       ├── Logging.*                 # Singleton logger with colors
-│       ├── StatusLED.*               # Visual feedback patterns
 │       └── Button*.*                 # Input handling (hold, multi-tap)
 │
 ├── docs/                             # Project documentation
@@ -217,10 +258,11 @@ ArduFlite/
    - After `ConfigRegistry::init()` + `ConfigPersistence::load()`, call `initFromConfig()`
    - Enables global objects while respecting FreeRTOS startup order
 
-3. **Manager Pattern****
-   - `ServoManager`, `HoldButtonManager`, `MultiTapButtonManager`
+3. **Manager Pattern**
+   - `HoldButtonManager`, `MultiTapButtonManager`
    - Managers **own** hardware resources and provide high-level APIs
-   - Encapsulate geometry/mixing logic (e.g., delta wing vs. conventional)
+   - Airframe geometry is NOT a manager: `actuators::AirframeMixer` is a pure
+     function from axis demands to surface demands, so it is host-testable
 
 3. **Command Pattern**
    - `CommandSystem` with FreeRTOS queue for thread-safe inter-task communication
@@ -232,8 +274,9 @@ ArduFlite/
    - Use snapshot pattern: copy data under lock, then process outside lock
 
 5. **RAII for Locks**
-   - `SemaphoreLock` automatically releases mutexes on scope exit
-   - Prevents deadlocks from early returns or exceptions
+   - `std::unique_lock` / `std::scoped_lock` over `hal::Mutex`
+   - Releases on every exit path, including early returns
+   - `hal::WatchdogGuard` does the same for watchdog registration
 
 ## Ongoing Improvements
 
@@ -259,9 +302,13 @@ ArduFlite/
    - **Never** hold locks during network I/O or slow operations
 
 4. **New Sensor Integration**
-   - Add sensor to `ArduFliteIMU` or create a new manager class
-   - Use FreeRTOS tasks for high-rate sensors
-   - Provide thread-safe getter methods
+   - Write a driver in `src/hal/drivers/` implementing the `device::` role
+     interfaces it fills (`Sensor` plus `Accelerometer`, `Barometer`, ...)
+   - Talk to it through `hal::RegisterDevice`, never a bus type directly — that
+     is what keeps it host-testable and bus-agnostic
+   - Declare it in the board descriptor and construct it in `Board::beginSensors()`
+   - Do NOT give it its own task: `InertialSubsystem` samples every declared
+     sensor on one tick, decimated by each part's `nativeRate_hz()`
    - Document calibration procedures in comments and README
 
 5. **Testing**
@@ -289,11 +336,15 @@ ArduFlite/
    - Good: `if (roll > ControlMixerConfig::MAX_ROLL_DEGREES)`
 
 5. **❌ Don't replicate mixing logic**
-   - Bad: Implementing delta-wing mixing in both Controller and ServoManager
-   - Good: ServoManager owns all geometry-specific mixing
+   - Bad: implementing delta-wing mixing in both the controller and the output path
+   - Good: `actuators::AirframeMixer` owns all geometry-specific mixing
 
-6. **❌ Don't ignore FreeRTOS task priorities**
-   - IMU Task (highest priority) → Inner Loop → Outer Loop → Telemetry → CLI
+6. **❌ Don't ignore task priorities**
+   - The ladder is `hal::Priority` in `src/hal/platform/Scheduler.h`, and that
+     enum is authoritative — never a number written into an xTaskCreate call
+   - Inertial (4) > InnerLoop (3) > OuterLoop / RcLink (2) > everything
+     background (1: CLI, Web, Config, Telemetry, Mission, Indicator)
+   - Duplicate values are intentional: those tasks really do share a priority
    - Critical tasks must pre-empt slower ones to maintain loop rates
 
 7. **❌ Don't use `Serial.print` directly**
@@ -314,9 +365,15 @@ ArduFlite/
    - Be mindful of FreeRTOS task stack sizes (typically 4096 bytes)
 
 3. **Float vs. Double**
-   - ESP32 has hardware FPU for `float`, not `double`
-   - Use `float` for performance-critical code
-   - Use `double` only when precision is essential (e.g., GPS coordinates)
+   - **The ESP32-C3 has NO FPU at all.** It is `rv32imc` with a soft-float ABI —
+     verified from the build map, which links `__addsf3`, `__mulsf3` and friends.
+     Both `float` and `double` are emulated in software on the primary target.
+   - The classic ESP32 (FireBeetle) *does* have a single-precision FPU. So the
+     rule differs by board, and the C3 is the one that flies.
+   - Use `float` regardless: on the C3 it is several times cheaper than `double`
+     even though both are emulated, and on the classic ESP32 it is free.
+   - Use `double` only where precision genuinely demands it (e.g. GPS
+     coordinates), and never in the 500 Hz control path.
 
 ### Documentation Standards
 

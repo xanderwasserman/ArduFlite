@@ -216,8 +216,17 @@ still doing its own job.
   the existing `initFromConfig()` pattern exists to work around.
 * Decide `I2cBus::openDevice()` storage and exhaustion (review R15): fixed handle
   array, `kMaxDevices = 8`, `Status::NoSpace` when full.
-* Existing classes take `hal::Clock&` / `hal::Watchdog&` / `hal::Scheduler&`,
-  replacing direct `micros()`, `esp_task_wdt_*` and `xTaskCreate`.
+* **Only classes that SURVIVE the refactor get wired** — applying the same "never do
+  the same work twice" rule that produced revision 2 (review R10). `ServoManager` is
+  deleted in Phase 3 and `ArduFliteIMU` in Phase 6, so migrating their internals to
+  the HAL now is throwaway work. Phase 2 wires `ArduFliteController` (27 locks, 10
+  watchdog calls, 2 tasks — and the class where the loop-timing A/B gate is measured)
+  and `ArduFliteCLI`'s task creation. The rest arrive with their own phases.
+* Surviving classes take `hal::Clock&` / `hal::Watchdog&` / `hal::Scheduler&` /
+  `hal::Mutex&`, replacing direct `micros()`, `esp_task_wdt_*` and `xTaskCreate`.
+* `Board` gains a fixed **mutex pool** — flight-layer classes cannot construct an
+  `Esp32Mutex` without breaking the layering rule, so the composition root hands out
+  `hal::Mutex&` from static storage (ADR-011: no heap after boot).
 * `SemaphoreLock` deleted in favour of `std::unique_lock<hal::Mutex>` (§09).
 * `WatchdogGuard` RAII replaces manual `esp_task_wdt_add`/`_delete` pairs.
 * Task priorities move to the `Priority` enum; stack sizes audited once against the
@@ -310,15 +319,107 @@ existing fusion and filtering code otherwise untouched.
   datasheet's worked compensation example as a numeric fixture;
   `test_sensor_threading`; `test_sample_decimation`.
 
-**De-risking gate — the cross-check harness.** Before cutover, build a bench firmware
-running the new driver *and* FastIMU against the same physical sensor, logging both
-streams. Compare offset, scale and noise while static and through the six
-orientations. **FastIMU is deleted only once this passes.** This turns "did I get the
-scaling right?" from a hope into a measurement.
+**De-risking gate — the cross-check.** Revision 3, after implementation.
 
-**Behaviour change:** none intended — the same numbers from a different code path,
-which is exactly what the cross-check proves.
-**Risk:** high, well-mitigated.
+The original plan was a bench firmware running the new driver *and* FastIMU against
+the same physical sensor simultaneously, with FastIMU deleted only once that passed.
+That is not how it was done, and the reason is worth recording rather than glossing:
+a dual-stack firmware would have had both libraries configuring the same registers on
+the same chip. FastIMU's `init()` writes `PWR_MGMT_1`, the range fields and both LPF
+fields; so does `drivers::Mpu6500::begin()`. Whichever ran second would win, and the
+"comparison" would have been two readers of one configuration — precisely the thing
+the harness was meant to check.
+
+**What replaced it, in two parts:**
+
+1. **Static equivalence, on the host, already done — and it earned its keep.**
+   The register writes and scaling constants were lifted from the libraries being
+   replaced and pinned byte for byte (ADR-031). This is what caught the BMP280
+   configuration diverging from Adafruit's defaults — temperature x2 instead of
+   x16, and the hardware IIR filter switched ON, which would have sat in series
+   with the existing altitude EMA and changed the vario's dynamics. See
+   `test_mpu6500.cpp`:
+   `BeginReproducesTheLegacyRegisterConfiguration` asserts the exact bytes
+   (`SMPLRT_DIV=2`, `DLPF_CFG=3`, `A_DLPF_CFG=3`, FCHOICE_B cleared, 500 dps, 4 g),
+   and `ScalingMatchesTheLegacyValues` asserts `raw * range / 32768` at four points
+   including both full-scale extremes. A scaling or configuration divergence is now a
+   red test, not a flight surprise.
+
+2. **A/B on the bench, outstanding — see the checklist below.** Same protocol as the
+   Phase 2 timing A/B: flash the pre-Phase-5 firmware, record, flash Phase 5, record,
+   compare. One board, one session, no dual-stack firmware needed. Git makes the
+   before-image trivially recoverable.
+
+   The equivalent BMP280 assertion is
+   `BeginReproducesTheLegacyAdafruitConfiguration`: `CTRL_MEAS == 0xB7`,
+   `CONFIG == 0x00`.
+
+**Deferred to Phase 8:** `drivers::Mpu9250` (ADR-029) — no board declares one, no
+hardware to verify against, and the magnetometer path it would feed has never
+executed. It becomes the extensibility proof instead.
+
+**Defects found and fixed during Phase 5 review** — recorded because each was
+invisible to the tests and builds that were passing at the time:
+
+| Defect | Why nothing caught it |
+|---|---|
+| Both drivers had **no power-up delays**; the 100 ms sat in `Board` *before* the reset it was meant to follow (ADR-030) | A fake bus answers instantly; hardware usually gets away with it |
+| BMP280 read its **trimming during the NVM copy** — plausible but wrong coefficients, and every pressure wrong for the flight | The read succeeds; only the values are wrong |
+| BMP280 **configuration diverged** from the flying one (ADR-031) | Nothing compared against the library being replaced |
+| A failed I2C burst left the aircraft **fusing a frozen sample with `isHealthy()` true**, indefinitely | Stale data is finite and in range, so every validity check passed. Inherited from FastIMU, not introduced here |
+| `baroCalibrate()` skipped its yield on a failed read, **spinning the CPU** for the whole calibration window | Only reachable with a dead barometer |
+
+**Behaviour change:** none intended in the sensor data path — the same numbers from
+a different code path, with configuration and scaling proven identical on the host and
+**not yet confirmed against the physical sensor.**
+
+Two behaviour changes ARE intended, both deliberate and both improvements:
+1. The BMP280 is now soft-reset at boot, so a warm reboot no longer inherits the
+   previous run's configuration. Adafruit never reset it.
+2. A failed sensor read now marks the IMU unhealthy instead of silently fusing the
+   last good sample forever. This is a **safety fix**, not a refactor artifact —
+   see the defect table above — and it means a dead I2C bus in flight now surfaces
+   through the existing failsafe path rather than presenting as a frozen attitude.
+**Risk:** high. Mitigated on the host, with one bench measurement outstanding.
+
+**Status:** implemented. 218 host tests pass; both builds clean. Binary shrank
+~10 KB per variant as FastIMU, Adafruit_BMP280, Adafruit_BusIO and
+Adafruit_Unified_Sensor left the build.
+
+### Phase 5 bench checklist
+
+Nothing here needs an airframe or a propeller. The board on USB is enough.
+
+- [ ] **Boot inventory** names the right parts:
+      `MPU-6500 ready (500 dps, 4 g, 333 Hz)` and `BMP280 ready`.
+- [ ] **WHO_AM_I.** If the IMU is disabled at boot, the log now prints the byte the
+      part actually returned. On the prototype airframe this is the one measurement
+      that settles whether the IMU is counterfeit — FastIMU discarded it.
+- [ ] **A/B against pre-Phase-5 firmware, one session, one board:**
+      - [ ] Board level and still. Record accel XYZ and gyro XYZ on both firmwares.
+            Accel should read ~1 g on one axis and ~0 on the others; gyro ~0 on all
+            three. **The two firmwares must agree to within sensor noise** — a
+            constant ratio between them means a scaling error, a constant offset
+            means a configuration one.
+      - [ ] Rotate through the six orientations, resting on each face. Confirm the
+            axis that reads ±1 g and its **sign** match between firmwares. This is
+            what catches a byte-order or two's-complement error, which the
+            level-and-still test cannot see.
+      - [ ] Rotate briskly about each axis in turn; confirm the gyro sign matches.
+      - [ ] Compare baro pressure at rest. Both should read station pressure
+            (~950–1030 hPa depending on altitude and weather). A wrong compensation
+            coefficient shows up here as a plausible but *different* number, so
+            compare against the old firmware rather than against expectation.
+- [ ] **Spare board (no IMU).** Confirm it boots, logs the IMU as absent, and reaches
+      a usable CLI rather than hanging or rebooting.
+- [ ] **Stale-data health check.** With the board running, pull the IMU's SDA or SCL
+      line (or the sensor's power) and confirm the IMU is reported UNHEALTHY within
+      the failure threshold. Before Phase 5 this went undetected: the attitude simply
+      froze at its last value and `isHealthy()` kept returning true. Reconnect and
+      confirm it recovers.
+- [ ] **Altitude drift.** Leave it running 5 minutes on the bench; altitude should
+      stay within a metre or two. A sign error in the compensation shows as steady
+      drift, not as a wrong constant.
 
 ---
 
@@ -356,6 +457,261 @@ which is exactly what the cross-check proves.
 
 **L3 log replay comes online here** and is the phase's primary gate.
 
+### Status — partially implemented
+
+Landed and verified (238 host tests, both builds clean, layering passes):
+
+| Component | Notes |
+|---|---|
+| `Board` sensor **spans** | Replaced the single-pointer accessors from Phase 5. Empty span = not fitted; the interface no longer changes when a board gains a second IMU |
+| `device::Measurement` base | Interface correction — ADR-032 |
+| `estimation::ImuState` | Published snapshot type, `static_assert`-ed trivially copyable. `FlightState` deliberately absent |
+| `AttitudeEstimator` + `AdafruitMadgwickEstimator` | Wraps the library unchanged, `getYaw()`'s `+180.0f` included, so Phase 9 keeps a valid baseline |
+| `MotionDetector` | Extracted verbatim. Its tests previously exercised a **re-implementation** of the thresholds, which could pass indefinitely while the real code diverged; they now drive the real class (11 tests) |
+| `FirstHealthySelector` | 8 tests covering failover, flap, all-dead and empty-span cases — none of which the current hardware can produce |
+| **R18 seqlock ordering** | Fixed in place across all four sites, rather than waiting for the rewrite. See below |
+
+| `CalibrationService` | State machine driven from step 11 of the tick. **The pause protocol is deleted** — ADR-034. 14 tests |
+| Tick-order correction | Offsets are sensor-frame and must be subtracted BEFORE the axis transform. The spec had it backwards, which would have doubled the bias on three axes — ADR-033 |
+| `LowPassVec3`, `AltitudeFilter` | Extracted from nine hand-written EMA lines and the altitude/vario path. 13 tests, mostly on the seeding cases that fabricate a climb rate if got wrong |
+| `InertialSubsystem` | The twelve-step tick, **with no FreeRTOS in it** — 12 tests drive it with fakes and a virtual clock. Rate-aware sampling replaces `BARO_DECIMATION_FACTOR`: each part declares `nativeRate_hz()` and the loop divides |
+
+**Cutover complete.** `ArduFliteIMU` is now a ~430-line adapter over
+`InertialSubsystem`, down from 1394. It owns the task, the calibration blob and
+the `ImuState` → `ImuSnapshot` translation; everything else moved to
+`src/estimation/` and is covered by host tests. Consumers — controller,
+telemetry, CLI, web UI, state machine — compiled unchanged.
+
+| Component | Notes |
+|---|---|
+| Cutover to `InertialSubsystem` | `ArduFliteIMU` 1394 → 433 lines. Burn-down 123 → 114 |
+| `FlightState` out of the estimation layer | Not in `ImuState`; the façade merges it in from an atomic that StateManagement owns. Two owners is how a value drifts |
+| `Esp32SettingsStore` + `crc32` | Calibration in NVS with a CRC, one-way migration from EEPROM — ADR-035. 6 tests |
+| Cross-task offset staging | `setOffsets()` is called from the CLI task while the sampling task ticks. Staged and adopted at the top of the tick; a direct write let the tick observe three new components and three old ones |
+| Contract tests rewritten | The old source-grep test asserted identifiers that have all moved. Replaced with the invariants still worth grepping for — see below |
+
+#### The contract tests that survived, and why
+
+`ProductionContracts.ImuSnapshotAndBarometerStayRealtimeSafe` grepped
+`ArduFliteIMU.cpp` for `snapshotVersion`, `_baroTickCounter`, `publishSnapshot()`
+and so on. Every one of those identifiers moved, and every property they stood
+in for is now covered by a *behavioural* test against the real class — seqlock
+ordering by `test_seqlock`, decimation by `SlowSensorsAreSampledLessOften`, the
+climb-rate seeding by `FirstSampleProducesNoClimbRate`.
+
+Grep was a proxy for properties that could not be tested directly. Where they can
+be, the proxy goes. Three invariants genuinely cannot be, and those were kept and
+sharpened:
+
+- **`BarometerHasNoTaskOfItsOwn`** — no behavioural test can assert the absence
+  of a task nobody created, and a second task on the sensor mutex is what caused
+  the priority inversion and dropped baro samples.
+- **`EstimationLayerContainsNoRtosCalls`** — the property that makes the twelve
+  step ordering testable at all. If `vTaskDelay` or `millis()` appears in
+  `src/estimation/`, the host tests quietly stop meaning what they claim.
+- **`CalibrationDoesNotSuspendTheSamplingTask`** — guards ADR-034 against the
+  pause protocol growing back.
+
+Plus `CalibrationBlobMagicIsUnchanged`: changing `0xDEADBEEF` does not fail
+loudly, it makes every existing aircraft report "no stored calibration" and
+silently recalibrate.
+
+#### `ArduFliteIMU` — deleted
+
+Gone. 1394 lines at the start of Phase 6, then 577, then zero. `ArdufliteApp`
+now owns the estimation layer directly — an `AdafruitMadgwickEstimator`, a
+`FirstHealthySelector` and an `InertialSubsystem` — and every consumer reads
+`ImuState`.
+
+Done in four stages, each independently buildable:
+
+1. **`src/core/FlightTypes.h`.** `Vector3`, `EulerAngles`, `FlightState` and
+   `MotionSignals` were living in the IMU header, which forced anything wanting
+   an attitude setpoint to include a sensor class. They are not the IMU's types:
+   `ControlMixer` builds an `EulerAngles` from stick input and never touches a
+   sensor.
+2. **`StateManagement` owns `FlightState`.** It already decided the transitions;
+   the storage now lives with the authority instead of in the IMU, where it sat
+   only because telemetry already had an IMU handle.
+3. **Consumers migrated to `InertialSubsystem*` and `ImuState`**, compiler-driven.
+4. **Deleted.**
+
+**`Vector3` and `EulerAngles` were deliberately NOT replaced** by `Vec3f` and
+`EulerAnglesDeg`. The original plan said to; looking at the actual uses, that was
+wrong. `EulerAngles` appears in ~60 places as the controller's setpoint and
+command vocabulary, and `setAttitudeControlSetpointRads()` uses it for RADIANS.
+A `Deg` suffix would be a false claim about half its uses, and the diff would
+have been enormous for no gain. They needed a home, not a replacement.
+
+#### What the rename caught
+
+Every field name differs between the two structs — `accel` → `accel_g`,
+`climbRate` → `climbRate_mps` — so a missed call site fails to compile rather
+than silently reading the wrong value. That property is what made a change this
+wide safe to do without hardware.
+
+One collision needed handling first: `ImuSnapshot::orientation` held EULER
+angles while `ImuState::orientation` holds a QUATERNION. Same name, opposite
+meaning. The compiler happened to catch it only because `Quaternion` has no
+`.roll` member — luck, not design. `ImuState::orientation` is now
+`orientation_quat`, so the collision cannot recur.
+
+The sweep also surfaced a real defect it did not cause: the CLI's in-flight
+guard read `if (cliIMU && getFlightState() == INFLIGHT)`. Once flight state
+stopped coming from the IMU, that null check became a hole — on any path where
+the CLI's IMU pointer was never set, a dangerous command would pass the guard
+mid-flight. The guard now tests the flight state alone.
+
+#### Task ownership, and the RTOS boundary
+
+`InertialSubsystem` spawns its own task, through `hal::Scheduler` rather than
+`xTaskCreate`. The "no RTOS in the estimation layer" invariant is about
+depending on the RTOS *directly*, not about never running in a task, and
+`check_layering.sh` enforces exactly that distinction.
+
+It is also default-constructible, with `bind()` supplying dependencies after
+`Board::begin()`. The controller and CLI take its address during static
+initialisation, before Board's sensor spans exist — the same ordering problem
+`Board` solves with `constinit` storage and a `begin()`.
+
+### Phase 6 — COMPLETE
+
+Every spec item implemented and verified: `InertialSubsystem`,
+`AttitudeEstimator` + the Adafruit wrapper (yaw `+180` quirk reproduced),
+`MotionDetector`, `FirstHealthySelector` with `SelectionState` published,
+`CalibrationService`, `ArduFliteIMU` deleted, `FlightState` moved to
+`StateManagement`, calibration offsets in NVS with a CRC, the axis transform
+pseudovector-correct, and **L3 log replay**.
+
+286 host tests, both builds clean, layering passes, burn-down 100.
+
+#### L3 replay — what it proves, and what it does not
+
+Replays FL001 (the maiden flight, 943 rows, ~59 s, roll spanning −177..+22°)
+through `AdafruitMadgwickEstimator`. The FL002 logs are ground recordings —
+log_007 spans two degrees of roll and would exercise nothing.
+
+**It cannot reproduce the original filter state.** The IMU task runs at 500 Hz;
+the flash log writes at a variable ~23 ms, so the real filter took ~11 updates
+per replayed sample, and Madgwick is path-dependent. Exact agreement is neither
+achievable nor asserted.
+
+Measured against this log with defects injected deliberately:
+
+| Injected defect | mean error | detected |
+|---|---:|---|
+| baseline | 1.51° | — |
+| gyro X sign flipped | 6.11° | **yes** |
+| accel X/Y swapped | 1.62° | **no** |
+| gyro 10 % scale error | 1.61° | **no** |
+
+So the tracking bound catches gross gyro sign errors and nothing subtler — the
+accelerometer correction is slow at beta 0.1 and the gyro dominates across 23 ms
+steps. **It is not a substitute for the six-orientation bench check**, which is
+what catches an axis swap.
+
+The second assertion is the one that will matter: a fingerprint over every
+attitude produced across the flight. Any change to the fusion path moves it,
+including the ones above that tracking misses. **This is Phase 9's equivalence
+oracle** — when the own Madgwick lands, a matching fingerprint means bit-for-bit
+equivalence over 833 real samples, and a differing one must be explained and
+re-baselined deliberately.
+
+Also noted: `docs/flight_logs/FL002_2026-05-24/log_006.csv` contains a row whose
+`flight_state` column reads `0.68`. That is a malformed record — column
+misalignment or a truncated write — and predates this work. Worth investigating
+before the flash-telemetry format is trusted for post-incident analysis.
+
+---
+
+**Found during Phase 6, fixed, structural work deferred:** `EulerAngles` carries
+attitude (deg), rates (deg/s) and normalised surface commands (-1..+1) with
+nothing to tell them apart, and that caused a full-deflection transient on IMU
+failure in RATE_MODE. The defect is fixed; splitting the type into three is
+ADR-037 and needs its own phase, because it touches the command path to the
+servos.
+
+### Phase 6 bench checklist
+
+The estimation layer is the aircraft's sense of which way is up. Nothing here
+needs an airframe, but all of it needs doing before the maiden flight.
+
+- [ ] **Calibration survives the upgrade.** Boot the new firmware on a board that
+      already has a stored calibration. The log must say
+      `Migrating calibration from EEPROM to NVS`, and `calibrate imu` must NOT
+      run on its own. Reboot: it should now load silently from NVS.
+- [ ] **Attitude matches pre-Phase-6 firmware.** A/B, one session: hold the board
+      in each of the six orientations and compare roll/pitch/yaw against the old
+      firmware. **Signs must match on every axis** — this is what catches the
+      offsets-before-transform ordering (ADR-033) having gone in backwards.
+- [ ] **Yaw still reads 0–360, not ±180.** The wrapper reproduces
+      `Adafruit_Madgwick::getYaw()`'s `+180` offset deliberately; every log
+      recorded so far carries it.
+- [ ] **`calibrate imu` with nothing paused.** Run it and confirm: telemetry keeps
+      streaming throughout, attitude keeps updating (it used to freeze), the
+      progress reaches 100%, and the resulting offsets are close to the previous
+      ones on the same stationary board.
+- [ ] **Calibration rejects a disturbed run.** Start `calibrate imu` and move the
+      board around. The offsets it produces are garbage by definition — confirm
+      you can simply re-run it, and that the second run is accepted.
+- [ ] **Altitude and climb rate.** At rest, climb rate should sit near zero with
+      no drift. Lift the board a metre and set it down: altitude should track and
+      settle. **No climb-rate spike at boot** — that is the seeding path.
+- [ ] **Launch detection.** A gentle throw motion by hand should set
+      `launchDetected`; sitting still for two seconds should set
+      `stableDetected`. Neither should fire at boot.
+- [ ] **`stats`** — snapshot retry counters should stay near zero. A rising
+      `retryLimitHits` means readers are losing races with the publisher.
+- [ ] **Spare board (no IMU).** Boots, reports the IMU absent, reaches the CLI.
+- [ ] **IMU failure in RATE_MODE does not slam the surfaces.** Arm on the bench in
+      RATE_MODE with a stick deflected, then pull SDA (or unpower the IMU). The
+      surfaces must **centre** and then follow the sticks proportionally as
+      MANUAL_MODE takes over. Before this fix they went hard over on every
+      deflected axis for one ControlMixer period — see ADR-037. Reconnect and
+      confirm the mode restores without a second transient.
+
+#### Why tick() has no FreeRTOS in it
+
+The single most useful structural decision in this phase. `ArduFliteIMU::update()`
+took the mutex, fed the watchdog and ran the task loop's timing, so **none** of
+its logic could be executed anywhere but on hardware, inside a running task. The
+step ordering was therefore unverifiable — every plausible order compiles and
+runs, and a wrong one produces a plausible-looking aircraft.
+
+`tick(dt)` takes its dependencies by reference and touches nothing else, so a
+host test can feed it a fake IMU, a fake barometer, a recording estimator and a
+virtual clock. That is what made ADR-033 checkable: the offsets-before-transform
+test asserts −0.3 where the inverted order gives −0.7.
+
+It is also what makes **L3 log replay** possible rather than aspirational —
+replay is `tick()` driven from recorded samples, with no task, no scheduler and
+no board.
+
+Still to do: `InertialSubsystem` itself, the façade and cutover, `FlightState`
+moving to `StateManagement`, calibration offsets moving from EEPROM to
+`SettingsStore`, and L3 log replay.
+
+#### R18, fixed rather than deferred again
+
+The seqlock write side marked the version odd with a **release store** and placed
+no fence before the payload. A release store constrains what comes *before* it;
+it does nothing to stop the payload writes below from being hoisted *above* it.
+A reader could then observe an even version mid-write and accept a torn snapshot
+as valid — silently, because the version check would agree.
+
+The read side had the mirror error: acquire *loads* around the payload copy,
+where acquire orders only what follows, letting the copy sink past the second
+counter load and escape the check it exists to satisfy.
+
+Both are now relaxed counter accesses with standalone fences, matching
+`hal::SeqLock`. All four sites were wrong, including the *fallback* snapshot —
+the one readers fall back to when the primary is contended, so tearing there
+would first appear only when the system was already under stress.
+
+This cannot manifest on the ESP32-C3: single core, in-order. It comes alive on
+the dual-core ESP32 parts this HAL exists to port to, which is precisely why
+leaving it until "the file gets replaced anyway" was the wrong call twice.
+
 **Done when:** replay of `FL002/log_007.csv` matches the logged quaternion within
 tolerance; the six-orientation bench check reproduces pre-phase accel/gyro signs on
 every axis; calibration migration verified on the actual aircraft; `stats` at
@@ -365,13 +721,215 @@ baseline.
 
 ---
 
+## Phase 6B — One type per quantity on the control path
+
+**Goal:** make it impossible to assign a rate where a surface command is expected.
+
+Implements ADR-037. Split out of Phase 6 deliberately: Phase 6 is the estimation
+layer, this is the command path to the servos, and bundling them would leave a
+bench A/B unable to attribute any change in handling.
+
+### The problem, restated
+
+`EulerAngles` is a bare `{float roll, pitch, yaw;}` carrying three different
+quantities. Nothing distinguishes them; which one a value holds depends on the
+flight mode, read separately. That already produced one full-deflection failsafe
+bug (ADR-037), found by inspection rather than by any test.
+
+### The types
+
+| Type | Unit | Holds |
+|---|---|---|
+| `AttitudeDeg` | degrees | measured attitude, attitude setpoints |
+| `AngularRateDps` | deg/s | gyro readings, rate setpoints, rate commands |
+| `SurfaceCommand` | none, −1…+1 | mixer output, actuator commands |
+
+Each is `{float roll, pitch, yaw;}` — same representation, distinct type. Not a
+units library, no operator overloading, no dimensional analysis. Just three
+names that the compiler will not silently interchange.
+
+**No public radians type.** The only radians value in the flight layer is
+`quaternionToEulerRads()`, a file-static helper whose result is converted three
+lines later. Fold the conversion into it so radians never cross a function
+boundary, and the type is not needed. `deadbandRads` stays a `float` — a scalar
+whose identifier carries its unit is already unambiguous.
+
+### Why types here when the estimation layer uses `Vec3f` + suffixed field names
+
+These look inconsistent and are not. The rule is about **where the unit is
+visible at the point of use**:
+
+- `ImuState::accel_g` is read as `state.accel_g` — you cannot touch the value
+  without reading the unit. A generic vector plus a suffixed field name is
+  sufficient, and this is the convention the project already chose.
+- `actuatorCmd = localRateSetpoint` has **no field name anywhere in it**. Both
+  sides are bare locals whose meaning came from a mode flag read elsewhere. The
+  type is the only thing that can carry the unit across that assignment.
+
+So: **suffixed names where values are read in place; distinct types where they
+cross boundaries and get assigned.** Phase 6B applies the second rule to the one
+part of the system where the first is not enough.
+
+### The decision this will force
+
+`ArduFliteAttitudeController::update()` currently does:
+
+```cpp
+rateOut.yaw = localAttitudeSetpointDegs.yaw;   // angle -> rate
+```
+
+`attitudeSetpointDegs.yaw` is scaled by `maxAttYaw_deg`, an ATTITUDE limit, and is
+then consumed by the rate controller as deg/s. The passthrough itself is
+intentional — there is no heading reference without a magnetometer — but the
+scaling is taken from the wrong config key for the way the value is used.
+
+Under the new types this line does not compile. **This is the point.** Someone
+has to decide whether the yaw stick in ATTITUDE_MODE commands a rate (in which
+case it should scale by `maxRateYaw`) or something else. Do not resolve it with
+a cast.
+
+**Expect two or three more of these.** Every site the compiler rejects is a
+place where the current code is relying on two quantities happening to share a
+representation. Each needs a decision, not a conversion.
+
+### Stages
+
+Each stage builds and passes the suite on its own.
+
+0. **Done already (Phase 6):** `MixerConfig` members carry unit suffixes
+   (`maxAttYaw_deg`, `maxRateYaw_dps`) — ADR-038. The keys had them since
+   Phase 1; the members did not, which is where the unit was being lost.
+1. **Define the types** in `src/core/FlightTypes.h`, alongside explicit named
+   conversions — `toSurfaceCommand(AngularRateDps, ...)` and friends — with each
+   conversion documenting what it assumes. No call sites change yet.
+2. **`SurfaceCommand` first**, from the servos backwards: `AirframeMixer::mix()`,
+   `actuatorCmd`, `ControlMixer::mixManual()`. This is the smallest cluster and
+   the one where a wrong value is most immediately visible on the bench.
+3. **`AngularRateDps`**: rate controller, `pilotRateSetpoint`, `mixRate()`, and
+   the gyro read from `ImuState`.
+4. **`AttitudeDeg`**: attitude controller, `attitudeSetpointDegs`, `mixAttitude()`.
+   The yaw question above lands here.
+5. **`TelemetryData` and the flash log.** Field types change; the on-disk column
+   order and format must NOT — existing logs stay readable and `tools/` keeps
+   parsing them. Verify against a real log file, not by inspection.
+6. **Delete `EulerAngles`**, and `Vector3` with it. Both went: `Vector3` was a
+   second generic triple sitting alongside `Vec3f`, so every read of the IMU
+   state was copied from one into the other for no gain — and the copy
+   DISCARDED the unit that `Vec3f`'s source field name carried
+   (`state().gyro_dps` became an untyped `gyro`). Consumers that only need a
+   magnitude (PreflightCheck, TelemetryData) read `Vec3f` directly now.
+
+### Tests
+
+The compiler does most of the work, but it cannot check the conversions:
+
+- A host test per named conversion, asserting scale and clamping. The
+  rate→surface conversion is the one that produced the failsafe bug; pin it.
+- Extend the existing mixer tests to the new type.
+- A regression test for the ADR-037 failure path: entering the IMU-failure
+  demotion must not produce a non-neutral `SurfaceCommand`.
+
+### Explicitly NOT in scope
+
+- Renaming `Vec3f`, or touching the estimation layer at all.
+- Any change to PID gains, mixer limits or config keys. If the yaw decision above
+  implies a config change, that is a **separate** change with its own bench
+  verification — not folded into a type refactor.
+- Operator overloading or arithmetic on the new types. Add it when something
+  needs it.
+
+**Behaviour change:** none intended. Every conversion the compiler forces should
+reproduce exactly what the untyped code did, except where it exposes a genuine
+ambiguity — and those are decisions to take deliberately and record, not to
+paper over.
+**Risk:** medium. The change is wide and mechanical, but it is on the servo
+command path, and "mechanical" is exactly how a wrong decision gets applied
+sixty times.
+**Mitigation:** stage by quantity, servos-first, and treat every compiler error
+as a question rather than an edit.
+
+### Phase 6B — COMPLETE
+
+All six stages done. `EulerAngles` is deleted; `AttitudeDeg`, `AngularRateDps`
+and `AxisCommand` replace it. 294 host tests, both builds clean, layering
+passes, burn-down 100. lite 633,856 / full 1,429,760 — within 700 bytes of
+Phase 6.
+
+**Verification note.** A post-completion review found the deleted
+`ArduFliteIMU.{h,cpp}` present again in the working tree, referencing types that
+no longer exist, so the tree did not build. The last successful build tree
+contained only `FliteQuaternion` under `src/orientation/`, confirming the
+deletion had taken effect at build time; the files reappeared afterwards (with
+different permissions from the originals). Nothing included them — they were
+orphaned, not wired back in. Removed again and both builds verified from a clean
+build directory.
+
+The lesson for the remaining phases: **"deleted" is not verified until a clean
+build succeeds without the file.** A passing incremental build proves nothing
+about a file that was already compiled.
+
+**Naming correction made during execution:** the new normalised type was first
+called `SurfaceCommand`, one letter from the mixer's existing
+`actuators::SurfaceCommands` (aileronLeft, aileronRight, elevator, rudder). Two
+types one letter apart meaning "roll/pitch/yaw demand" and "what each servo
+does" is exactly the confusion this phase exists to remove. Renamed
+`AxisCommand`, so the pipeline reads
+`AxisCommand -> AirframeMixer::mix() -> SurfaceCommands`.
+
+**Two further defects found, both of the ADR-037 family** — see ADR-039:
+
+1. The flight mode was read **twice** — once by the mixer to pick a scaling,
+   once by `CommandSystem` to pick a setter, with a queue in between. The
+   failsafe pushes its mode and setpoint as separate entries, so a setpoint
+   could be interpreted under the outgoing mode. Fixed by making the command
+   carry a `SetpointKind`.
+2. `pilotRateSetpoint` was **one slot for two quantities** — deg/s in RATE_MODE,
+   −1…+1 in MANUAL_MODE. That slot is ADR-037's root. Split into
+   `pilotManualCommand`, so the bug is no longer representable.
+
+**One deliberate log change:** `rate_sp_*` now reads zero in MANUAL_MODE instead
+of showing stick positions, because the sticks no longer live in the rate slot.
+Manual input is still recorded via `rate_cmd_*`. Anything parsing `rate_sp_*`
+across a manual segment sees different values than before.
+
+The mixer's scaling arithmetic and the PID gains were **not** touched — verified
+by diff. The only changes to those files are type and identifier renames.
+
+### Phase 6B bench checklist
+
+- [ ] **Surface travel unchanged.** Full stick deflection on each axis, all three
+      modes, compared against pre-6B firmware. Same direction, same endpoints.
+- [ ] **The ADR-037 failsafe still behaves.** IMU failure in RATE_MODE with a
+      stick deflected: surfaces centre, then track sticks.
+- [ ] **Yaw in ATTITUDE_MODE** behaves as decided above — and note in the log
+      whether that is a change from before.
+- [ ] **Flash log parses.** Pull a log written by 6B firmware through the
+      existing `tools/` scripts unmodified.
+- [ ] **PID gains are actually applied.** `config get rate.roll.*` and
+      `att.roll.*` at the CLI, and confirm the boot log has NO
+      "Config key not found" lines. Two keys were mismatched for seven phases
+      (ADR-049): every PID ran without I or D, and ATTITUDE_MODE commanded no
+      rate at all. **This is a real change in flight behaviour** — fly
+      ATTITUDE_MODE on the bench first and confirm the surfaces now respond to
+      attitude error, then re-check the tuning before flying.
+- [ ] **`rate_sp_*` reads zero in MANUAL_MODE** and `rate_cmd_*` tracks the
+      sticks. This is the one intended log change; confirm it rather than
+      discovering it later in analysis.
+
+---
+
 ## Phase 7 — Peripherals and I/O
 
-* `drivers::LittleFsLogStore`, `NvsSettingsStore`, `NeoPixelIndicator`, console over
-  `hal::Uart`.
+* `drivers::LittleFsLogStore`, `NvsSettingsStore`, `NeoPixelIndicator`, and a
+  console — over Arduino `Serial`, **not** `hal::Uart` as originally written.
+  On the C3 `Serial` is USB CDC with no pins or baud rate; on the FireBeetle it
+  is a real UART0. See ADR-043.
 * `ArduFliteFlashTelemetry` takes `device::LogStore&`; serial backends and `Logging`
   take `device::Console&`; `StatusLED` becomes `NeoPixelIndicator`; `ButtonBase`
   takes `hal::GpioPin&`.
+* **`ConfigPersistence` moves onto `hal::KeyValueStore`** (ADR-027). It currently
+  includes `<Preferences.h>` directly, which is Arduino-ESP32 and does not travel
+  even to another FreeRTOS target. The interface already exists with no consumers.
 * `device::PowerMonitor` + a driver, replacing the placeholder battery values in
   `ArdufliteCRSFTelemetry`. Small, visible, and the first end-to-end exercise of
   ADR-019's "add a sensor" path.
@@ -379,6 +937,121 @@ baseline.
 
 **Behaviour change:** CRSF battery telemetry starts reporting real values.
 **Risk:** low. Independent of Phases 3–6.
+
+### Status — in progress
+
+| Item | State |
+|---|---|
+| `NvsSettingsStore` | **Done in Phase 6** as `Esp32SettingsStore` (ADR-035) |
+| `ConfigPersistence` → `hal::KeyValueStore` | **Done** — ADR-040. `<Preferences.h>` no longer appears anywhere outside `src/hal/` |
+| `Console` for `Logging` and serial backends | **Done** — ADR-042/ADR-043. The serial telemetry backends reach it transitively through `LOG_N`; none touch `Serial` directly |
+| `NeoPixelIndicator` for `StatusLED` | **Done.** `StatusLED` deleted; `Colors.h` now speaks `device::Rgb`/`BlinkPattern` directly |
+| `ButtonBase` → `hal::GpioPin&` | **Done.** No `digitalRead`/`pinMode` in the button classes |
+| Flash-telemetry rotation/purge policy | **Done** — extracted and host-tested (14 tests). See below |
+| `LittleFsLogStore` (full `device::LogStore`) | **Done.** `LittleFS` no longer appears in flight code; `MemoryLogStore` host fake, 16 tests |
+| `device::PowerMonitor` + driver | **Deferred to the custom PCB — ADR-041.** Fabricated CRSF battery telemetry suppressed meanwhile |
+
+#### Log rotation and purge — extracted and tested
+
+The part of this item that carried the real risk is done. `LogRotationPolicy`
+now holds the two rules that were buried in `ArduFliteFlashTelemetry`:
+
+- **Index allocation** — monotonic growth as (highest + 1) until the space is
+  full, then lowest-gap reuse. Deleting a mid-range log does not reclaim its
+  index while room remains above, so log_007 stays reliably older than log_008.
+- **Auto-purge** — how many of the oldest logs to delete to clear the free-space
+  floor, with a cap against a filesystem that never reports more space.
+
+Both are pure functions over an index list — no filesystem, no I/O — and are
+covered by 14 host tests. **These paths were previously unreachable in testing:**
+the purge branch requires filling a 1.9 MB partition and index exhaustion
+requires a thousand files. They are also the paths that fail on a long flying
+day rather than on the bench, and they fail at `startLogging()` — so the flight
+simply is not recorded, and nobody finds out until they go looking.
+
+Two behaviours are now pinned that were previously implicit:
+
+- **The purge cap is a data-protection measure, not an optimisation.** A corrupt
+  filesystem reporting free space that never rises would otherwise have the loop
+  delete every log on the device chasing a threshold it can never reach.
+- **A store reporting zero reclaim per log purges nothing.** Deleting flight
+  history for no measurable gain is worse than failing to start the log.
+
+The filesystem side re-measures free space after each delete rather than
+trusting the policy's estimate, so it stops as soon as the real figure clears
+and deletes the fewest flights.
+
+#### `LittleFsLogStore` — done, and what it caught
+
+`ArduFliteFlashTelemetry` no longer touches `LittleFS`. All file work goes
+through `device::LogStore`, with `MemoryLogStore` as the host fake (16 tests
+covering the session contract, offset streaming, and the full-medium path).
+
+`ArduFliteWebServer`'s log endpoints — list, usage, download, delete — go
+through the store too. The only remaining mentions of LittleFS in flight code
+are two CLI help strings describing what `flash reset` does to the user.
+
+Two defects surfaced during the migration, neither of which the compiler caught:
+
+1. **`dumpLog` was silently broken.** After the file handle was removed the
+   function still compiled — it printed its BEGIN and END markers with nothing
+   between, because `f` was default-constructed and `f.available()` was always
+   false. A build-clean, test-clean, completely non-functional `dumplog`.
+2. **`readSession` had no offset**, which made streaming impossible and was the
+   reason (1) could not be fixed as written. A flight log runs to hundreds of
+   kilobytes; there is no buffer that size. Fixing (1) properly required
+   correcting the interface — the third time in this refactor that an interface
+   specified from what a thing *sounds like* did not survive its first real
+   consumer (ADR-032, ADR-042).
+
+Also added: a **latched** write-failure report. A full medium previously logged
+an error per row at 50 Hz; it now says so once and marks the log truncated.
+
+**A third gap: no `sessionSize()`.** The web listing shows each log's size, which
+the interface could not answer. Added rather than worked around.
+
+#### A security contract that had to move, not be deleted
+
+`ProductionContracts.WebSecretsFlashAndCaptiveDnsStayProtected` failed on the
+listing endpoint: it asserted `isLogFilename(name)`, which filtered a directory
+walk so a stray file could not be presented to the UI as a flight log.
+
+That filter is gone from the endpoint — because it moved **into the store**.
+`listSessions()` only returns indices it parsed from `log_%03u.csv` with a range
+check, and the name shown to the user is now *synthesised from that integer*
+rather than echoed back from the filesystem. A non-log filename cannot reach the
+response at all, which is stronger than the check it replaced.
+
+The contract was updated to assert the new guard, with that reasoning recorded
+next to it. **The failing assertion was not simply removed** — a security
+contract failing because the protection moved and one failing because the
+protection is gone look identical from the test output, and the difference has
+to be established by reading the code, not by making the test green.
+
+`constinit` caught a third static-init hazard here — `LittleFsLogStore` holds an
+Arduino `File`, whose constructor is not constexpr, so it is held as an
+`optional` and emplaced on first use. The other two were `Esp32I2cBus` and
+`Esp32SettingsStore`.
+
+#### Fixed: telemetry no longer emits through the logger
+
+The serial telemetry backends wrote via `LOG()`/`LOG_N()`, so `setLevel(Off)`
+silenced telemetry and a log line could interleave into the machine-parsed Q
+stream. Both now write through `ConsoleWriter` — data straight to
+`device::Console`, diagnostics still through the logger. See ADR-044.
+
+#### PowerMonitor — deferred to the custom PCB (ADR-041)
+
+Battery sensing will be an ADC input on a future custom PCB. Not built now: the
+`hal::AnalogIn` interface's shape depends on its consumer (raw counts vs
+calibrated millivolts — the ESP32 ADC is non-linear and needs per-chip
+calibration), and the divider ratio and attenuation are properties of a board
+that does not exist.
+
+**Behaviour change made instead:** CRSF was transmitting 0.0 V / 100 % remaining
+as if measured. That frame is now suppressed until a real monitor exists. See
+ADR-041 — a placeholder that is transmitted is not a placeholder, it is a wrong
+reading on the pilot's display.
 
 ---
 
@@ -404,9 +1077,182 @@ baseline.
 
 **Risk:** low. **Done when:** the §00 §4 table is answerable with "one file".
 
+### Status — in progress
+
+| Item | State |
+|---|---|
+| Correct the two FPU claims | **Done.** AGENTS.md now states the C3 has NO FPU (rv32imc, soft-float, verified from the build map) and that the rule differs by board. Both `powf` comments were already corrected when the code moved to `AltitudeFilter` |
+| Delete `BOARD_TYPE` | **Done** — and it was hiding a defect; see below |
+| Redundant-sensor descriptor (proof 3) | **Done — it FAILED and was fixed.** ADR-045 |
+| ICM-42688 driver (proof 1) | **Dropped**, superseded by real hardware |
+| BMI323 driver (SEN0697 10-DOF) | **Done** — ADR-050. 17 tests. Swapping the board's IMU to it is a one-line descriptor change |
+| BMP581 barometer (SEN0697) | **Done** — ADR-051. 13 tests |
+| BMM350 magnetometer (SEN0697) | **Done** — ADR-052. 28 tests, written together with the fusion path that consumes it, as ADR-051 required |
+| Optional nine-axis fusion | **Done** — ADR-052. Decided per tick from the board's magnetometer span; no enable flag |
+| Barometer span counter defect | **Found and fixed** — ADR-053. A BMP581-only board reported no barometer at all |
+| `host_sim` (proof 2) | **Done.** Estimation core runs on a laptop; roll tracks to 0.01 deg. Found the boundary — see below |
+| Delete `PinConfiguration.h` / `IMUConfiguration.h` | **Done.** Both gone; `BOARD_TYPE`, `IMU_TYPE`, `BARO_TYPE` with them |
+| Retire superseded contract assertions | **Done.** Architectural greps moved to `check_layering.sh` (ADR-036); `test_config_helpers.cpp` now calls the real header instead of re-implementing it |
+| AGENTS.md / README structure sections | **Done.** Both rewritten for the HAL layout |
+| File-by-file review | **Done.** Findings in ADR-057 through ADR-061. Every guard added was verified against the defect it exists to catch |
+| Platform-call burn-down | **Done — 90 → 1** (ADR-058). The remaining one is `esp_wifi_set_ps` in `WiFiManager.cpp`, kept deliberately: that file is Arduino-WiFi throughout, so routing one call through a HAL would move the counter without moving the coupling |
+
+**Moving the aircraft to the whole SEN0697 is a three-entry descriptor change** —
+BMI323 at 0x69, BMM350 at 0x15, BMP581 at 0x47, `.sensorCount = 3`. Verified to
+build with no code change, 28 bytes larger than the two-part descriptor because
+all three drivers were already linked. Left disabled because the module is not
+wired yet.
+
+#### The magnetometer changes flight behaviour, and one piece is still missing
+
+Nine-axis fusion now engages by itself on any board that declares a
+magnetometer. Two consequences belong on the bench checklist rather than in a
+changelog:
+
+- **There is no hard-iron calibration, and the reason it matters is not the
+  heading.** Madgwick normalises the accelerometer and magnetometer residuals
+  into one unit gradient, so an uncalibrated magnetic offset never converges and
+  permanently takes correction authority away from the accelerometer — letting
+  **roll and pitch** drift on gyro bias. Those are the axes the control loops
+  fly. Nine-axis fusion is therefore bench-only until hard-iron calibration
+  exists. Full reasoning in ADR-054.
+- **Heading hold, when it comes, goes on the ROLL axis, not yaw.** A fixed wing
+  turns by banking; the rudder coordinates. A heading loop on yaw fights every
+  aileron turn and uncoordinates it. See the correction section of ADR-054.
+- **Resolved: the magnetometer is instrumentation, not a control input**
+  (ADR-055). `imu.fuse_mag` defaults to **false**, so nothing above changes
+  flight behaviour today. The field, a tilt-compensated heading and the field
+  magnitude are logged so the part can be evaluated on a real airframe.
+  Reassess when GNSS navigation lands.
+- **`rate.yaw.ti_s` is now 8.0 s** (ADR-054), up from 0. The old rationale
+  attributed the zero to the wrong loop — the yaw *rate* loop tracks the gyro
+  and never needed a heading reference. 8.0 s is deliberately slower than either
+  other axis. **It only takes effect on wiped flash**: a stored NVS value wins
+  over the schema default, and every board that has run this firmware has 0.0
+  written. Set it from the CLI or erase the key.
+
+On every board without a magnetometer — which is all of them today — nothing
+changes at all: the span is empty, `primaryMag()` returns null, and the tick
+takes the same six-axis path it took before.
+
+Nine-axis fusion engages only after **one second** of unbroken good readings and
+drops on a single bad one (ADR-054). **`TelemetryData` carries no magnetometer
+fields**, so today neither the flash log nor any live backend can answer "how
+much of that flight was actually nine-axis?" — worth adding before the delay is
+tuned against real hardware.
+
+#### Two live config bugs, found by turning the real registry on
+
+Once `ConfigRegistry` became host-buildable (ADR-048), `host_sim` dropped its
+stub and linked the real registry and schema. It immediately logged
+`Config key not found` — warnings the stub had masked, because a stub answers
+every key.
+
+Both were introduced by commit `5c0a907`, the Phase 1 unit-suffix rename, which
+changed 45 key strings and missed `ConfigHelpers::buildPIDConfig()` — which
+builds its keys with `snprintf` rather than the macros, and so is **invisible to
+a grep-driven rename**:
+
+1. `"%s.ti"` / `"%s.td"` stopped matching `…ti_s` / `…td_s`. Every PID in both
+   loops read **0** for its integral and derivative time constants and ran as a
+   pure-P controller.
+2. `"%s.outlimit"` stopped matching the attitude loop's `…outlimit_dps`. The
+   attitude PIDs clamped their own output to **zero** — ATTITUDE_MODE commanded
+   no rate at all.
+
+Neither failed loudly: `get()` warns and returns a default, the PID accepts it,
+every test passed. **A gain of zero and a correctly configured gain are
+indistinguishable except in flight.**
+
+`buildPIDConfig()` now takes the output-limit suffix per loop, because the two
+loops genuinely differ — ADR-037 in configuration rather than in code.
+`tests/unit/test_config_keys.cpp` asserts that every composed key resolves to
+the same value as its macro-spelled counterpart; reverting either fix fails it.
+
+**These change flight behaviour** relative to the last time the aircraft flew,
+and belong on the bench checklist: I and D terms are restored on every PID, and
+ATTITUDE_MODE now actually commands rates.
+
+#### `host_sim` — what it proved, and where it stopped
+
+`tests/host_sim` builds and runs the real `InertialSubsystem`,
+`AdafruitMadgwickEstimator`, `FirstHealthySelector`, `CalibrationService`,
+`AltitudeFilter` and `AirframeMixer` on a laptop. No Arduino, no FreeRTOS, no
+ESP32, no hardware. Simulated sensors implement the same `device::` interfaces
+the real drivers do, so the estimation layer cannot tell the difference.
+
+Result: commanded roll of 30 deg/s for two seconds, estimator tracks to
+**0.01 degrees** — through the mirrored axis map, which correctly inverts the
+sign. Altitude holds 100.00 m. The barometer takes 200 samples to the IMU's
+4000, decimated by its own declared rate.
+
+**The boundary it found.** The control loops could NOT be assembled here:
+
+| Module | Blocker |
+|---|---|
+| `InertialSubsystem`, `AirframeMixer` | none — zero platform calls |
+| `ArduFliteRateController` | one raw `xSemaphoreCreateMutex()` |
+| `ArduFliteAttitudeController` | one raw `xSemaphoreCreateMutex()`, plus `<Arduino.h>` |
+| `ControlMixer` | one raw `xSemaphoreCreateMutex()` |
+| `ArduFliteController` | 13 calls — owns the FreeRTOS tasks; correctly platform-coupled |
+
+**All fixed** — ADR-047 and ADR-048. The three controllers take an injected
+`hal::Mutex`, and `ConfigRegistry` followed (it was the next layer down: the
+loops were portable but `initFromConfig()` was not). `host_sim` now runs the
+complete chain — simulated sensors, estimation, attitude loop, rate loop,
+mixer — with zero FreeRTOS and zero Arduino below `ArduFliteController`.
+
+`ArduFliteController` is a different case and should stay coupled: it owns the
+tasks, and a task owner is exactly what a platform layer is for.
+
+**A defect in the sim itself, worth recording.** The first run had the estimator
+stall at 20 degrees against a truth of 60. The estimator was right; the
+simulated accelerometer was wrong. A world vector in a frame rotating by +phi
+about X transforms by `R_x(-phi)` — giving `(0, +sin phi, cos phi)`, not
+`-sin`. With the wrong sign the accelerometer described a roll opposite to the
+gyroscope, the two fought through the fusion filter, and the result was a
+stable, plausible, wrong number. **A physically impossible sensor pair does not
+look impossible from inside the filter.**
+
+#### `BOARD_TYPE` was hiding a real defect
+
+`#if BOARD_TYPE == BOARD_TYPE_WEMOS` gated every status-LED call. `BOARD_TYPE`
+is hardcoded to `BOARD_TYPE_WEMOS` in `PinConfiguration.h`, so **those blocks
+were always active on every board** — while `ArdufliteApp` constructed the
+NeoPixel on a hardcoded pin 7. The FireBeetle descriptor declares
+`statusLed.pin = kNoPin` because it has no pixel fitted, so that build was
+driving a NeoPixel task against a pin with nothing on it.
+
+Fixed by moving the indicator into `Board`, built from the descriptor's
+`statusLed` entry, with `Board::indicator()` returning nullptr when none is
+fitted. Call sites became `if (auto* led = ...->indicator())`. This is what the
+board descriptor was for; the macro was answering a question the descriptor
+already answers better.
+
 ---
 
 ## Phase 9 — Own Madgwick *(optional, separate)*
+
+### Status — DONE. See ADR-056.
+
+`estimation::MadgwickEstimator` replaces the Adafruit wrapper; the wrapper and
+its library dependency are deleted from the firmware, `host_sim`, the unit-test
+build and both CI workflows. 449 host tests pass; flash **shrank 2.7 KB**.
+
+**Building the equivalence check is what found the real defect.** Adafruit's
+fast inverse square root type-puns a `float` through a `long`, which is 4 bytes
+on both ESP32 targets and 8 on a host — so on a host it reads uninitialised
+memory and returns the **negated** result. The aircraft was never affected. But
+every host measurement of that library, including this plan's "baseline mean
+1.51 deg" and the replay's exact-output fingerprint, described a filter that
+does not run on the aircraft. Asserting equivalence against it would have failed
+a *correct* replacement and invited bending it towards the broken one.
+
+The oracle is now the log's own attitude columns, produced on the aircraft by
+the correct 32-bit path — and the replay test is **unconditional**, where it
+used to be skipped whenever the library was absent.
+
+
 
 Not part of the HAL work; enabled by it. `estimation::MadgwickEstimator` replaces the
 Adafruit wrapper, validated by L3 replay of every logged flight against the wrapped
@@ -417,6 +1263,95 @@ an MIT project — **not** by performance, which measures at ~0.3–0.8 % of the
 float-op count and loop timing measured on hardware; bench session; one short flight.
 **Risk:** high in isolation, low with the replay oracle.
 **Rollback:** one line in `Board.cpp`.
+
+---
+
+## Phase 10 — `PeriodicTelemetryBackend` *(done — ADR-064)*
+
+Four telemetry backends each carry their own copy of the same task and mutex
+lifecycle. `publish()` is byte-identical in all four; so is the idempotency
+guard, the mutex allocation, the spawn-and-roll-back, the destructor, the task
+guard and the snapshot.
+
+That duplication is not theoretical. Migrating the four onto `hal::Task`
+required hand-writing the `_task == nullptr` race guard four times, and the
+first pass silently turned a 5 ms bounded wait into a try-lock — a change that
+drops telemetry samples whenever `publish()` and the writer overlap, which at
+50 Hz each is routine. One implementation makes both impossible.
+
+### Shape
+
+One layer between the interface and the backends:
+`ArduFliteTelemetry` -> `PeriodicTelemetryBackend` -> the four.
+
+```cpp
+class PeriodicTelemetryBackend : public ArduFliteTelemetry {
+public:
+    void publish(const TelemetryData&) final;   // the identical body, once
+    void begin() final;                          // template method
+protected:
+    PeriodicTelemetryBackend(const char* taskName, float frequencyHz,
+                             std::uint32_t stackBytes = 4096);
+
+    virtual bool onBegin() { return true; }      // Flash mounts its LogStore here
+    virtual void runLoop() = 0;                  // the backend's own loop body
+
+    bool  shouldRun()  const;                    // the task guard, in one place
+    bool  snapshot(TelemetryData& out) const;    // bounded lock + copy
+    hal::Mutex* dataMutex() const;
+    float intervalMs()     const;
+};
+```
+
+`begin()` becomes: idempotency guard -> `allocMutex()` -> `onBegin()` ->
+`spawn()`, rolling back on any failure. The trampoline calls `runLoop()`.
+
+### Snapshot timeout: one behaviour, not two
+
+On a snapshot lock timeout the backends currently disagree — Debug and Flash
+reuse the previous copy, QSerial skips the iteration. **Standardising on
+reuse.** Flash's log wants an unbroken row cadence, and QSerial is expected to
+be retired in favour of MAVLink over serial, so its skip semantics are not worth
+carrying into a shared base.
+
+`snapshot()` therefore leaves `out` untouched and returns false on timeout; the
+caller keeps its previous copy. A backend that genuinely needs skip-on-stale can
+check the return value.
+
+### Deliberately NOT in the base
+
+- **CRSF's watchdog and pause handling.** It registers and unregisters itself
+  around a pause, feeds per iteration, sends rate-tiered frames, and sleeps with
+  `sleepFor` rather than `sleepUntil`. Hooks existing for one subclass is the
+  over-abstraction ADR-029 warns about. CRSF inherits the LIFECYCLE and keeps
+  its own `runLoop()`.
+- **Flash's file mutex and log operations.** `onBegin()` is seam enough.
+- **The sleep call itself.** Fixed cadence versus fixed delay is a real
+  per-backend decision.
+
+### Order, with full verification between each
+
+1. Add the base plus host tests against a fake backend. It needs only
+   `hal::Mutex`, `hal::Scheduler` and `HostTask`, all of which exist — so this
+   is the first telemetry lifecycle code that is host-testable at all.
+2. **Debug** — simplest; proves the shape.
+3. **QSerial** — adopts reuse-on-timeout, dropping its skip.
+4. **Flash** — proves `onBegin()` carries the LogStore mount and second mutex.
+5. **CRSF** — lifecycle only, loop untouched.
+
+### Risks
+
+- The base is new code in the telemetry path. Mitigated by being host-testable,
+  which the backends are not — a net gain in coverage.
+- **Flash is the riskiest step**: 617 lines, owns the flight log, two mutexes.
+  Stopping after step 3 is a legitimate outcome if it turns awkward.
+- Virtual dispatch on `runLoop()` replaces a direct call. Irrelevant at 10-50 Hz.
+
+**Also delete:** `ArduFliteTelemetry::reset()` is never called by anything.
+No point inheriting dead interface into a new base.
+
+**Expected:** ~120-150 lines removed. The real return is that four lifecycle
+invariants stop being four copies.
 
 ---
 
@@ -462,7 +1397,12 @@ one branch go stale against `main`.
    and no flight code names `ledc`, `Wire`, `Serial` or a driver type.
 3. Exactly one `#if` selects the board.
 4. Host tests exercise real production code for every driver and algorithm in §05
-   §10 — no mirrored formulas remain.
+   §10. A formula may be reproduced in a test ONLY as an oracle — a reference the
+   production path is asserted to agree with — and only where the production code
+   cannot be called from a host. Three qualify: the control loops' dt clamp (three
+   lines inside a task body), the RC stick shaping, and the axis transform. Each is
+   tied to its subject by a contract test that fails if the two drift apart. A copy
+   with no such tie is a mirrored formula and is not allowed.
 5. CI runs host tests, static checks, and a 2×2 build matrix with size budgets.
 6. A third IMU, a host-sim board and a redundant sensor were each added in under a
    day.
@@ -484,6 +1424,25 @@ airborne. Treat it as a maiden flight of an unproven aircraft, not as a routine 
       specific thing flight testing would have caught.
 - [ ] Six-orientation IMU check: level, inverted, and on each side. Confirm accel and
       gyro signs against the pre-refactor values recorded in Phase 6.
+- [ ] **Stick travel, BEFORE flying (ADR-060).** CRSF scaling now anchors on the
+      protocol endpoints, so full stick produces ~25 % more surface deflection
+      for the same `servo.*.defl`. Check every surface for mechanical binding at
+      full stick, then re-set travel. This is a physical limit, not a tuning
+      preference.
+- [ ] **Yaw reads true (ADR-060).** Nose-forward should report ~0, not 180, and
+      the radio's attitude display should track a turn continuously instead of
+      jumping to negative values a few degrees in.
+- [ ] **Magnetometer motor-interference test (ADR-055).** Wire the SEN0697, log
+      on the bench, and run the motor through its full throttle range while
+      watching `mag_field`. It should be **flat**. Movement with orientation is
+      hard iron and is correctable; movement with throttle is the motor and is
+      not. This ten-minute test decides whether heading hold is worth building
+      at all, and should precede any further magnetometer work.
+- [ ] **`rate.yaw.ti_s` is now 8.0 s by default (ADR-054), where it was 0.** The yaw
+      rate loop has an integrator for the first time. A stored NVS value overrides the
+      schema, so confirm what the aircraft is actually running with `config get
+      rate.yaw.ti_s` rather than assuming the new default took. Check rudder behaviour
+      in RATE_MODE before trusting it in the air.
 - [ ] Servo travel and centre measured and compared against the Phase 3 numbers.
 - [ ] `stats` and `tasks` compared against the Phase 2 A/B baseline.
 - [ ] Boot inventory read and confirmed: every fitted part present, axis map as

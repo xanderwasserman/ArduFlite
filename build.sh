@@ -23,8 +23,10 @@ EXTRA_FLAGS="-DESP32"  # Compatibility for libraries that still key on ESP32
 # Parse board (using no_ota partition: 2MB app + 1.9MB LittleFS for flight logs)
 if [[ "$BOARD" == "fire" ]]; then
     FQBN="esp32:esp32:dfrobot_firebeetle2_esp32e:PartitionScheme=no_ota"
+    EXTRA_FLAGS="$EXTRA_FLAGS -DARDUFLITE_BOARD_FIREBEETLE_ESP32E"
 elif [[ "$BOARD" == "lolin" ]]; then
     FQBN="esp32:esp32:lolin_c3_mini:PartitionScheme=no_ota"
+    EXTRA_FLAGS="$EXTRA_FLAGS -DARDUFLITE_BOARD_LOLIN_C3_MINI"
 else
     echo "Usage: $0 [fire|lolin] [lite]"
     echo ""

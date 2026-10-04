@@ -10,11 +10,11 @@
 #define COMMAND_SYSTEM_H
 
 #include "src/controller/ArduFliteController.h"
-#include "src/orientation/ArduFliteIMU.h"
-#include "src/receiver/crsf/ArdufliteCRSFReceiver.h"
-#include "src/telemetry/crsf/ArdufliteCRSFTelemetry.h"
+#include "src/core/FlightTypes.h"
+#include "src/estimation/InertialSubsystem.h"
+#include "src/state/StateManagement.h"
+#include "src/hal/device/RcLink.h"
 
-#include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
@@ -58,7 +58,21 @@ struct SystemCommand
     ArduFliteMode                   mode;
 
     // for CMD_SET_SETPOINT* commands
-    EulerAngles                     setpoint;
+    /**
+     * @brief What the mixer produced, and WHICH quantity it is.
+     *
+     * The kind travels with the value on purpose. If the mixer picked a
+     * scaling from the flight mode and CommandSystem re-read the mode to pick a
+     * setter, that would be two reads of something that can change in between —
+     * and a rate-scaled setpoint could reach the attitude setter. The value
+     * says what it is, and the mode is consulted once.
+     */
+    enum class SetpointKind : std::uint8_t { Attitude, Rate, Manual };
+
+    SetpointKind                    setpointKind = SetpointKind::Attitude;
+    float                           setpointRoll  = 0.0f;
+    float                           setpointPitch = 0.0f;
+    float                           setpointYaw   = 0.0f;
 
     // for any generic value
     float                           value;
@@ -73,7 +87,7 @@ struct SystemCommand
  * Any module can push a SystemCommand onto this queue.
  * The main loop (or another designated part of your code) should periodically call
  * processCommands() to handle and execute any pending commands, using the provided
- * pointers to ArduFliteController and ArduFliteIMU.
+ * pointers to ArduFliteController and arduflite::estimation::InertialSubsystem.
  * 
  * Use CommandSystem::instance() to access the one and only instance.
  */
@@ -109,7 +123,7 @@ public:
      *
      * Dequeues pending commands (non-blocking) and executes them, draining at most
      * MAX_COMMANDS_PER_TICK per call to bound per-tick latency; any remainder is handled
-     * on subsequent calls. Accepts pointers to an ArduFliteController and ArduFliteIMU so
+     * on subsequent calls. Accepts pointers to an ArduFliteController and arduflite::estimation::InertialSubsystem so
      * that command processing may invoke methods on these objects.
      *
      * @note Single-consumer only: must be called from exactly one task (the main loop).
@@ -117,13 +131,11 @@ public:
      *       processCommands() call.
      *
      * @param controller Pointer to the ArduFliteController instance.
-     * @param imu Pointer to the ArduFliteIMU instance.
-     * @param receiver Pointer to the CRSF receiver for preflight checks (may be nullptr).
-     * @param crsfTelemetry Pointer to CRSF telemetry for pause during calibration (may be nullptr).
+     * @param imu Pointer to the arduflite::estimation::InertialSubsystem instance.
+     * @param rcLink Pointer to the RC link, for preflight checks (may be nullptr).
      */
-    void processCommands(ArduFliteController *controller, ArduFliteIMU *imu, 
-                         ArdufliteCRSFReceiver *receiver = nullptr,
-                         ArdufliteCRSFTelemetry *crsfTelemetry = nullptr);
+    void processCommands(ArduFliteController *controller, arduflite::estimation::InertialSubsystem *imu,
+                         arduflite::device::RcLink *rcLink = nullptr);
 
 private:
     QueueHandle_t commandQueue_;  ///< FreeRTOS queue handle

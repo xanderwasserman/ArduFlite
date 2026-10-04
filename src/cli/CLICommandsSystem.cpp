@@ -6,6 +6,7 @@
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
+#include "src/hal/board/Board.h"
 #include "src/cli/CLICommands.h"
 #include "src/cli/CLICommandContext.h"
 #include "src/cli/CLICommandUtils.h"
@@ -28,7 +29,7 @@ void cmdReset(const String &args)
     if (rejectUnsafeGroundCommand("reset")) return;
 
     LOG("Resetting system...");
-    ESP.restart();
+    arduflite::board::Board::instance().system().reboot();
 }
 
 void cmdStats(const String &args)
@@ -53,16 +54,17 @@ void cmdStats(const String &args)
 
 void cmdTasks(const String &args)
 {
-    // vTaskList writes ~40-50 bytes per task and has no length parameter.
-    // Guard against overflow by checking the task count before calling it.
-    const UBaseType_t taskCount = uxTaskGetNumberOfTasks();
     static char taskListBuffer[3072];
-    if (taskCount * 50 > sizeof(taskListBuffer))
+
+    const arduflite::Status status =
+        arduflite::board::Board::instance().system().taskReport(
+            taskListBuffer, sizeof(taskListBuffer));
+
+    if (status != arduflite::Status::Ok)
     {
-        LOG_ERR("Task buffer too small for %u tasks — increase taskListBuffer!", (unsigned)taskCount);
+        LOG_ERR("Task list unavailable (%s)", arduflite::toString(status));
         return;
     }
-    vTaskList(taskListBuffer);
     LOG("Task List:");
     LOG("%s", taskListBuffer);
 }

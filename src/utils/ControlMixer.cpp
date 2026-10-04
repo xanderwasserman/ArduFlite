@@ -13,21 +13,19 @@
 #include "src/utils/ConfigRegistry.h"
 #include "include/ConfigKeys.h"
 
-EulerAngles          ControlMixer::s_raw{};
+AxisCommand          ControlMixer::s_raw{};
 ArduFliteController* ControlMixer::s_ctrl = nullptr;
 MixerConfig          ControlMixer::s_config{};
-SemaphoreHandle_t    ControlMixer::s_configMutex = nullptr;
+arduflite::hal::Mutex* ControlMixer::s_configMutex = nullptr;
 
-void ControlMixer::init(ArduFliteController& ctrl)
+void ControlMixer::init(ArduFliteController& ctrl, arduflite::hal::Mutex* configMutex)
 {
     // Create the mutex and load config BEFORE publishing s_ctrl. handleChannelInput()
     // bails while s_ctrl is null, so assigning it last guarantees no callback can mix
     // against a default-zero config or a not-yet-created mutex.
+    s_configMutex = configMutex;
     if (!s_configMutex) {
-        s_configMutex = xSemaphoreCreateMutex();
-        if (!s_configMutex) {
-            LOG_ERR("ControlMixer: failed to create config mutex");
-        }
+        LOG_ERR("ControlMixer: no config mutex supplied - mixing disabled");
     }
     reloadConfig();
     s_ctrl = &ctrl;
@@ -39,12 +37,12 @@ void ControlMixer::reloadConfig()
 
     // Build new config outside the lock (ConfigRegistry has its own mutex).
     MixerConfig newCfg;
-    newCfg.maxAttRoll  = reg.get<float>(CONFIG_KEY_MIX_MAX_ATT_ROLL_DEG);
-    newCfg.maxAttPitch = reg.get<float>(CONFIG_KEY_MIX_MAX_ATT_PITCH_DEG);
-    newCfg.maxAttYaw   = reg.get<float>(CONFIG_KEY_MIX_MAX_ATT_YAW_DEG);
-    newCfg.maxRateRoll  = reg.get<float>(CONFIG_KEY_MIX_MAX_RATE_ROLL_DPS);
-    newCfg.maxRatePitch = reg.get<float>(CONFIG_KEY_MIX_MAX_RATE_PITCH_DPS);
-    newCfg.maxRateYaw   = reg.get<float>(CONFIG_KEY_MIX_MAX_RATE_YAW_DPS);
+    newCfg.maxAttRoll_deg  = reg.get<float>(CONFIG_KEY_MIX_MAX_ATT_ROLL_DEG);
+    newCfg.maxAttPitch_deg = reg.get<float>(CONFIG_KEY_MIX_MAX_ATT_PITCH_DEG);
+    newCfg.maxAttYaw_deg   = reg.get<float>(CONFIG_KEY_MIX_MAX_ATT_YAW_DEG);
+    newCfg.maxRateRoll_dps  = reg.get<float>(CONFIG_KEY_MIX_MAX_RATE_ROLL_DPS);
+    newCfg.maxRatePitch_dps = reg.get<float>(CONFIG_KEY_MIX_MAX_RATE_PITCH_DPS);
+    newCfg.maxRateYaw_dps   = reg.get<float>(CONFIG_KEY_MIX_MAX_RATE_YAW_DPS);
     newCfg.mixRollFromYaw   = reg.get<float>(CONFIG_KEY_MIX_ROLL_FROM_YAW);
     newCfg.mixPitchFromRoll = reg.get<float>(CONFIG_KEY_MIX_PITCH_FROM_ROLL);
     newCfg.mixYawFromRoll   = reg.get<float>(CONFIG_KEY_MIX_YAW_FROM_ROLL);
@@ -52,8 +50,8 @@ void ControlMixer::reloadConfig()
     // Publish atomically under the config mutex.
     if (s_configMutex)
     {
-        SemaphoreLock lock(s_configMutex);
-        if (!lock.acquired()) {
+        std::unique_lock lock(*s_configMutex);
+        if (!lock.owns_lock()) {
             LOG_WARN("ControlMixer: config reload skipped; mutex busy");
             return;
         }
@@ -63,8 +61,8 @@ void ControlMixer::reloadConfig()
     {
         s_config = newCfg;  // Pre-FreeRTOS init path (no tasks yet)
     }
-    LOG_DBG("ControlMixer: config reloaded (maxAttRoll=%.1f, maxRateRoll=%.1f)",
-            newCfg.maxAttRoll, newCfg.maxRateRoll);
+    LOG_DBG("ControlMixer: config reloaded (maxAttRoll_deg=%.1f, maxRateRoll_dps=%.1f)",
+            newCfg.maxAttRoll_deg, newCfg.maxRateRoll_dps);
 }
 
 void ControlMixer::handleChannelInput(uint8_t ch, float v)
@@ -93,53 +91,74 @@ void ControlMixer::handleChannelInput(uint8_t ch, float v)
       case CH_YAW:   s_raw.yaw   = v;  break;
       default: return;
     }
-    // grab mode & mix
+    // Read the mode ONCE, then mix AND dispatch for that mode. Reading it here
+    // to pick a scaling and again in CommandSystem to pick a setter would let a
+    // mode change in between deliver a rate-scaled value to the attitude
+    // setter, so the kind travels with the value instead.
+    //
+    // On a config-reload lock miss the mixer cannot produce a valid setpoint;
+    // skip the frame rather than commanding a spurious centre. The next channel
+    // update re-mixes.
     bool ok = true;
-    EulerAngles sp = mix(s_raw, s_ctrl->getMode(), &ok);
-    // On a config-reload lock-miss the mixer can't produce a valid setpoint; skip this
-    // frame rather than commanding a spurious zero/center. The next channel update re-mixes.
-    if (ok)
+    switch (s_ctrl->getMode())
     {
-        sendSetpoint(sp);
+        case ATTITUDE_MODE:
+        {
+            const AttitudeDeg sp = mixAttitude(s_raw, &ok);
+            if (ok) { sendSetpoint(SystemCommand::SetpointKind::Attitude, sp.roll, sp.pitch, sp.yaw); }
+            break;
+        }
+        case RATE_MODE:
+        {
+            const AngularRateDps sp = mixRate(s_raw, &ok);
+            if (ok) { sendSetpoint(SystemCommand::SetpointKind::Rate, sp.roll, sp.pitch, sp.yaw); }
+            break;
+        }
+        default:
+        {
+            const AxisCommand sp = mixManual(s_raw);
+            sendSetpoint(SystemCommand::SetpointKind::Manual, sp.roll, sp.pitch, sp.yaw);
+            break;
+        }
     }
 }
 
-EulerAngles ControlMixer::mixAttitude(const EulerAngles &raw, bool* ok)
+AttitudeDeg ControlMixer::mixAttitude(const AxisCommand &raw, bool* ok)
 {
     MixerConfig cfg;
     if (s_configMutex) {
-        SemaphoreLock lock(s_configMutex, 0);
-        if (!lock.acquired()) { if (ok) *ok = false; return {0.0f, 0.0f, 0.0f}; }
+        std::unique_lock lock(*s_configMutex, std::try_to_lock);
+        if (!lock.owns_lock()) { if (ok) *ok = false; return {0.0f, 0.0f, 0.0f}; }
         cfg = s_config;
     } else {
         cfg = s_config;
     }
     if (ok) *ok = true;
 
-    EulerAngles sp;
-    sp.roll  = raw.roll  * cfg.maxAttRoll;
-    sp.pitch = raw.pitch * cfg.maxAttPitch;
-    sp.yaw   = raw.yaw   * cfg.maxAttYaw;
+    AttitudeDeg sp;
+    sp.roll  = raw.roll  * cfg.maxAttRoll_deg;
+    sp.pitch = raw.pitch * cfg.maxAttPitch_deg;
+    sp.yaw   = raw.yaw   * cfg.maxAttYaw_deg;
 
   #ifdef ENABLE_MIXING
     // SAFE-style cross-mixing
-    sp.roll  += cfg.mixRollFromYaw   * (raw.yaw   * cfg.maxAttRoll);
-    sp.pitch += cfg.mixPitchFromRoll * (fabsf(raw.roll) * cfg.maxAttPitch);
-    sp.yaw   += cfg.mixYawFromRoll   * (raw.roll  * cfg.maxAttYaw);
+    sp.roll  += cfg.mixRollFromYaw   * (raw.yaw   * cfg.maxAttRoll_deg);
+    sp.pitch += cfg.mixPitchFromRoll * (fabsf(raw.roll) * cfg.maxAttPitch_deg);
+    sp.yaw   += cfg.mixYawFromRoll   * (raw.roll  * cfg.maxAttYaw_deg);
   #endif
 
-    sp.roll  = constrain(sp.roll,  -cfg.maxAttRoll,  cfg.maxAttRoll);
-    sp.pitch = constrain(sp.pitch, -cfg.maxAttPitch, cfg.maxAttPitch);
-    sp.yaw   = constrain(sp.yaw,   -cfg.maxAttYaw,   cfg.maxAttYaw);
+    sp.roll  = constrain(sp.roll,  -cfg.maxAttRoll_deg,  cfg.maxAttRoll_deg);
+    sp.pitch = constrain(sp.pitch, -cfg.maxAttPitch_deg, cfg.maxAttPitch_deg);
+    sp.yaw   = constrain(sp.yaw,   -cfg.maxAttYaw_deg,   cfg.maxAttYaw_deg);
     return sp;
 }
 
-EulerAngles ControlMixer::mixRate(const EulerAngles &raw, bool* ok)
+AngularRateDps ControlMixer::mixRate(const AxisCommand &raw, bool* ok)
 {
     MixerConfig cfg;
     if (s_configMutex) {
-        SemaphoreLock lock(s_configMutex, 0);
-        if (!lock.acquired()) { if (ok) *ok = false; return {0.0f, 0.0f, 0.0f}; }
+        std::unique_lock lock(*s_configMutex, std::try_to_lock);
+        if (!lock.owns_lock()) { if (ok) *ok = false; return {0.0f, 0.0f, 0.0f}; }
         cfg = s_config;
     } else {
         cfg = s_config;
@@ -149,36 +168,26 @@ EulerAngles ControlMixer::mixRate(const EulerAngles &raw, bool* ok)
     // Clamp to ±maxRate for parity with mixAttitude(): a stick value outside [-1,1]
     // (e.g. a future Raw/Custom channel) must not produce an out-of-range rate setpoint.
     return {
-        constrain(raw.roll  * cfg.maxRateRoll,  -cfg.maxRateRoll,  cfg.maxRateRoll),
-        constrain(raw.pitch * cfg.maxRatePitch, -cfg.maxRatePitch, cfg.maxRatePitch),
-        constrain(raw.yaw   * cfg.maxRateYaw,   -cfg.maxRateYaw,   cfg.maxRateYaw)
+        constrain(raw.roll  * cfg.maxRateRoll_dps,  -cfg.maxRateRoll_dps,  cfg.maxRateRoll_dps),
+        constrain(raw.pitch * cfg.maxRatePitch_dps, -cfg.maxRatePitch_dps, cfg.maxRatePitch_dps),
+        constrain(raw.yaw   * cfg.maxRateYaw_dps,   -cfg.maxRateYaw_dps,   cfg.maxRateYaw_dps)
     };
 }
 
-EulerAngles ControlMixer::mixManual(const EulerAngles &raw)
+AxisCommand ControlMixer::mixManual(const AxisCommand &raw)
 {
     // raw is already in –1…+1, so we just pass it through
     return raw;
 }
 
-EulerAngles ControlMixer::mix(const EulerAngles &raw, ArduFliteMode mode, bool* ok)
-{
-    // Default to a valid result; only the config-reload lock-miss inside the
-    // attitude/rate readers clears it. MANUAL and the safe-zero default always succeed.
-    if (ok) *ok = true;
-    switch (mode)
-    {
-      case ATTITUDE_MODE: return mixAttitude(raw, ok);
-      case RATE_MODE:     return mixRate(raw, ok);
-      case MANUAL_MODE:   return mixManual(raw);
-      default:            return {0,0,0};
-    }
-}
-
-void ControlMixer::sendSetpoint(const EulerAngles &sp)
+void ControlMixer::sendSetpoint(SystemCommand::SetpointKind kind,
+                                float roll, float pitch, float yaw)
 {
     SystemCommand cmd{};
-    cmd.type     = CMD_SET_SETPOINT;
-    cmd.setpoint = sp;
+    cmd.type          = CMD_SET_SETPOINT;
+    cmd.setpointKind  = kind;
+    cmd.setpointRoll  = roll;
+    cmd.setpointPitch = pitch;
+    cmd.setpointYaw   = yaw;
     CommandSystem::instance().pushCommand(cmd);
 }

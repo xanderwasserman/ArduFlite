@@ -12,7 +12,7 @@
 namespace
 {
 ArduFliteController* cliController = nullptr;
-ArduFliteIMU* cliIMU = nullptr;
+arduflite::estimation::InertialSubsystem* cliIMU = nullptr;
 ArduFliteFlashTelemetry* cliFlashTelemetry = nullptr;
 }
 
@@ -21,7 +21,7 @@ void setCliController(ArduFliteController* controller)
     cliController = controller;
 }
 
-void setCliIMU(ArduFliteIMU* imu)
+void setCliIMU(arduflite::estimation::InertialSubsystem* imu)
 {
     cliIMU = imu;
 }
@@ -36,7 +36,7 @@ ArduFliteController* getCliController()
     return cliController;
 }
 
-ArduFliteIMU* getCliIMU()
+arduflite::estimation::InertialSubsystem* getCliIMU()
 {
     return cliIMU;
 }
@@ -54,7 +54,11 @@ bool rejectUnsafeGroundCommand(const char* action)
         return true;
     }
 
-    if (cliIMU && cliIMU->getFlightState() == INFLIGHT)
+    // Deliberately NOT guarded on cliIMU being non-null. The flight state is
+    // owned by StateManagement and is valid regardless of whether the CLI holds
+    // an IMU handle; keeping the old `cliIMU &&` would let a dangerous command
+    // through in flight on any path where that pointer was never set.
+    if (getFlightState() == INFLIGHT)
     {
         LOG_ERR("Cannot %s while INFLIGHT.", action);
         return true;

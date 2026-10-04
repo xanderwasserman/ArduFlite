@@ -8,10 +8,9 @@
  *
  * @brief DFRobot FireBeetle 2 ESP32-E.
  *
- * @warning UNTESTED. The legacy PinConfiguration.h marked the CRSF pins //TODO and
- *          simply copied the Wemos values. Rather than carry that guess forward,
- *          the RC link is RcPart::Unknown and the board is BoardMaturity::Untested,
- *          which relaxes the "fitted parts must be wired" assertion and makes the
+ * @warning UNTESTED. The CRSF pins are not known, so the RC link is
+ *          RcPart::Unknown and the board is BoardMaturity::Untested — which
+ *          relaxes the "fitted parts must be wired" assertion and makes the
  *          firmware warn loudly at boot. Put a meter on the board, fill in the
  *          pins, then promote it to Supported.
  */
@@ -63,11 +62,9 @@ inline constexpr BoardDescriptor kBoard{
                 ActuatorOutputDesc{ .role = "aileron_left",  .pin = 17 },
                 ActuatorOutputDesc{ .role = "elevator",      .pin = 4  },
                 ActuatorOutputDesc{ .role = "rudder",        .pin = 12 },
-                // Legacy PinConfiguration.h had THROTTLE_PIN = 9 with the author's
-                // own "//TODO: make sure this is correct!". It is not: GPIO 9 is
-                // inside the classic ESP32's SPI-flash range (GPIO 6-11), so it
-                // cannot drive a servo. Validation caught exactly what the TODO
-                // suspected. Left unassigned until the board is metered.
+                // Unassigned until the board is metered. GPIO 9 is inside the
+                // classic ESP32's SPI-flash range (GPIO 6-11) and cannot drive a
+                // servo, so it is not a safe guess to carry here.
                 ActuatorOutputDesc{ .role = "throttle",      .pin = kNoPin },
             } },
             .outputCount = 5,

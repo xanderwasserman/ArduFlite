@@ -9,7 +9,9 @@
 #ifndef BARO_TESTS_H
 #define BARO_TESTS_H
 
-#include "src/orientation/ArduFliteIMU.h"
+#include "src/core/FlightTypes.h"
+#include "src/estimation/InertialSubsystem.h"
+#include "src/state/StateManagement.h"
 
 /**
  * @brief Field-safe regression test for the inline barometer + lock-free snapshot.
@@ -23,8 +25,8 @@
  * Read-only and actuator-free. Call once, ~5 s after boot (post filter warm-up and
  * baro seed) while the aircraft is STATIONARY on the ground.
  *
- * @param imu Reference to the running ArduFliteIMU.
+ * @param imu Reference to the running arduflite::estimation::InertialSubsystem.
  */
-void runBaroTest_seedAndSnapshotHealth(ArduFliteIMU &imu);
+void runBaroTest_seedAndSnapshotHealth(arduflite::estimation::InertialSubsystem &imu);
 
 #endif // BARO_TESTS_H

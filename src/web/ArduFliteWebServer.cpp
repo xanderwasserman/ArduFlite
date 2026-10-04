@@ -18,12 +18,14 @@
 #include "src/utils/CommandSystem.h"
 #include "src/utils/Logging.h"
 #include "src/controller/ArduFliteController.h"
-#include "src/orientation/ArduFliteIMU.h"
+#include "src/core/FlightTypes.h"
+#include "src/estimation/InertialSubsystem.h"
+#include "src/state/StateManagement.h"
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
 #include "include/ConfigKeys.h"
 
 #include <ArduinoJson.h>
-#include <LittleFS.h>
+#include "src/hal/board/Board.h"
 #include <esp_system.h>
 
 namespace
@@ -56,7 +58,7 @@ ArduFliteWebServer::ArduFliteWebServer()
 }
 
 bool ArduFliteWebServer::begin(ArduFliteController* controller,
-                                ArduFliteIMU* imu,
+                                arduflite::estimation::InertialSubsystem* imu,
                                 ArduFliteFlashTelemetry* flashTelemetry)
 {
     if (_running)
@@ -68,9 +70,10 @@ bool ArduFliteWebServer::begin(ArduFliteController* controller,
     _controller = controller;
     _imu = imu;
     _flashTelemetry = flashTelemetry;
+    auto& system = arduflite::board::Board::instance().system();
     snprintf(_csrfToken, sizeof(_csrfToken), "%08lX%08lX",
-             static_cast<unsigned long>(esp_random()),
-             static_cast<unsigned long>(esp_random()));
+             static_cast<unsigned long>(system.randomWord()),
+             static_cast<unsigned long>(system.randomWord()));
 
     // Create server on heap
     _server = new WebServer(HTTP_PORT);
@@ -85,22 +88,21 @@ bool ArduFliteWebServer::begin(ArduFliteController* controller,
     setupRoutes();
 
     // Start server task
-    BaseType_t res = xTaskCreate(
-        serverTask,
-        "Web",
-        TASK_STACK_SIZE,
-        this,
-        TASK_PRIORITY,
-        &_taskHandle
-    );
+    arduflite::hal::TaskConfig taskConfig;
+    taskConfig.name       = "Web";
+    taskConfig.stackBytes = TASK_STACK_SIZE;
+    taskConfig.priority   = arduflite::hal::Priority::Web;
 
-    if (res != pdPASS)
+    auto task = arduflite::board::Board::instance().scheduler().spawn(
+        taskConfig, &serverTask, this);
+    if (!task)
     {
         LOG_ERR("Failed to create WebServer task");
         delete _server;
         _server = nullptr;
         return false;
     }
+    _taskHandle = task.value();
 
     _running = true;
     LOG_INF("WebServer started on port %d", HTTP_PORT);
@@ -114,9 +116,10 @@ void ArduFliteWebServer::stop()
     LOG_INF("Stopping WebServer");
     _running = false;
 
-    if (_taskHandle)
+    // Cooperative: _running is already false above, and the loop checks it.
+    if (_taskHandle != nullptr)
     {
-        vTaskDelete(_taskHandle);
+        _taskHandle->requestStop();
         _taskHandle = nullptr;
     }
 
@@ -139,14 +142,16 @@ void ArduFliteWebServer::run()
     LOG_INF("WebServer task started");
     _server->begin();
 
+    auto& scheduler = arduflite::board::Board::instance().scheduler();
+
     while (_running)
     {
         WiFiManager::instance().processDns();
         _server->handleClient();
-        vTaskDelay(pdMS_TO_TICKS(5));
+        scheduler.sleepFor(std::chrono::milliseconds{ 5 });
     }
 
-    vTaskDelete(nullptr);
+    // Just return: the scheduler's trampoline ends the task (ADR-058).
 }
 
 void ArduFliteWebServer::setupRoutes()
@@ -473,7 +478,7 @@ void ArduFliteWebServer::handleConfigSet()
             success = reg.set<bool>(key.c_str(), doc["value"].as<bool>());
             break;
         case ConfigType::STRING:
-            success = reg.set<String>(key.c_str(), doc["value"].as<String>());
+            success = reg.set<std::string>(key.c_str(), std::string(doc["value"].as<const char*>() ? doc["value"].as<const char*>() : ""));
             break;
     }
 
@@ -573,8 +578,9 @@ void ArduFliteWebServer::handleConfigReboot()
     sendJson(200, "{\"ok\":true,\"message\":\"Rebooting...\"}");
 
     // Delay to allow response to be sent
-    vTaskDelay(pdMS_TO_TICKS(500));
-    ESP.restart();
+    auto& board = arduflite::board::Board::instance();
+    board.scheduler().sleepFor(std::chrono::milliseconds{ 500 });
+    board.system().reboot();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -586,11 +592,14 @@ void ArduFliteWebServer::handleSystemStatus()
     JsonDocument doc;
 
     // Basic system info
-    doc["uptime_ms"] = millis();
-    doc["free_heap"] = ESP.getFreeHeap();
-    doc["min_heap"] = ESP.getMinFreeHeap();
-    doc["chip_model"] = ESP.getChipModel();
-    doc["sdk_version"] = ESP.getSdkVersion();
+    auto& board  = arduflite::board::Board::instance();
+    auto& system = board.system();
+    doc["uptime_ms"]   = static_cast<std::uint32_t>(
+        board.clock().now().time_since_epoch().count() / 1000);
+    doc["free_heap"]   = system.freeHeapBytes();
+    doc["min_heap"]    = system.minFreeHeapBytes();
+    doc["chip_model"]  = system.platformName();
+    doc["sdk_version"] = system.sdkVersion();
 
     // Controller state (if available)
     if (_controller)
@@ -603,12 +612,11 @@ void ArduFliteWebServer::handleSystemStatus()
     // IMU state (if available)
     if (_imu)
     {
-        ImuSnapshot snapshot = _imu->getSnapshot();
-        ImuSnapshotHealth snapshotHealth = _imu->getSnapshotHealth();
-        doc["imu_healthy"] = _imu->isHealthy();
-        doc["flight_state"] = static_cast<int>(snapshot.flightState);
-        doc["imu_snapshot_retries"] = snapshotHealth.totalReadRetries;
-        doc["imu_snapshot_max_retries"] = snapshotHealth.maxReadRetries;
+        const auto snapshotHealth = _imu->snapshotHealth();
+        doc["imu_healthy"] = _imu->healthy();
+        doc["flight_state"] = static_cast<int>(getFlightState());
+        doc["imu_snapshot_retries"] = snapshotHealth.totalRetries;
+        doc["imu_snapshot_max_retries"] = snapshotHealth.maxRetries;
         doc["imu_snapshot_retry_limit_hits"] = snapshotHealth.retryLimitHits;
     }
 
@@ -631,25 +639,26 @@ void ArduFliteWebServer::handleTelemetry()
     // IMU orientation and state
     if (_imu)
     {
-        ImuSnapshot snapshot = _imu->getSnapshot();
-        ImuSnapshotHealth snapshotHealth = _imu->getSnapshotHealth();
+        // One lock-free read for the whole frame.
+        const arduflite::estimation::ImuState snapshot = _imu->state();
+        const auto snapshotHealth = _imu->snapshotHealth();
 
-        auto euler = snapshot.orientation;
+        auto euler = snapshot.euler_deg;
         doc["roll"] = euler.roll;
         doc["pitch"] = euler.pitch;
         doc["yaw"] = euler.yaw;
 
-        auto gyro = snapshot.gyro;
+        auto gyro = snapshot.gyro_dps;
         doc["roll_rate"] = gyro.x;
         doc["pitch_rate"] = gyro.y;
         doc["yaw_rate"] = gyro.z;
 
-        doc["altitude"] = snapshot.altitude;
-        doc["climb_rate"] = snapshot.climbRate;
-        doc["imu_healthy"] = _imu->isHealthy();
-        doc["flight_state"] = static_cast<int>(snapshot.flightState);
-        doc["imu_snapshot_retries"] = snapshotHealth.totalReadRetries;
-        doc["imu_snapshot_max_retries"] = snapshotHealth.maxReadRetries;
+        doc["altitude"] = snapshot.altitude_m;
+        doc["climb_rate"] = snapshot.climbRate_mps;
+        doc["imu_healthy"] = _imu->healthy();
+        doc["flight_state"] = static_cast<int>(getFlightState());
+        doc["imu_snapshot_retries"] = snapshotHealth.totalRetries;
+        doc["imu_snapshot_max_retries"] = snapshotHealth.maxRetries;
         doc["imu_snapshot_retry_limit_hits"] = snapshotHealth.retryLimitHits;
     }
 
@@ -661,8 +670,10 @@ void ArduFliteWebServer::handleTelemetry()
         doc["throttle_cut"] = _controller->isThrottleCut();
     }
 
-    doc["uptime_ms"] = millis();
-    doc["free_heap"] = ESP.getFreeHeap();
+    auto& statusBoard = arduflite::board::Board::instance();
+    doc["uptime_ms"] = static_cast<std::uint32_t>(
+        statusBoard.clock().now().time_since_epoch().count() / 1000);
+    doc["free_heap"] = statusBoard.system().freeHeapBytes();
 
     String response;
     serializeJson(doc, response);
@@ -705,46 +716,41 @@ void ArduFliteWebServer::handleFlashList()
         return;
     }
 
-    // List files in LittleFS
-    if (!LittleFS.begin(false))
+    auto& store = arduflite::board::Board::instance().logs();
+    if (store.begin() != arduflite::Status::Ok)
     {
         sendError(500, "Filesystem not mounted");
-        return;
-    }
-
-    File root = LittleFS.open("/");
-    if (!root || !root.isDirectory())
-    {
-        sendError(500, "Cannot open root directory");
         return;
     }
 
     JsonDocument doc;
     JsonArray arr = doc["files"].to<JsonArray>();
 
-    File file = root.openNextFile();
-    while (file)
+    // Enumerated through the store rather than by walking the directory: the
+    // store only knows about log sessions, so a stray file cannot appear in the
+    // UI's log list at all.
+    constexpr size_t kMaxListed = 64;
+    uint16_t indices[kMaxListed];
+    const size_t count = store.listSessions(indices, kMaxListed);
+
+    for (size_t i = 0; i < count; ++i)
     {
-        if (!file.isDirectory())
-        {
-            // LittleFS returns names with a leading '/' — strip it before comparing.
-            String name = String(file.name());
-            if (name.startsWith("/")) name = name.substring(1);
+        char name[32];
+        snprintf(name, sizeof(name), "log_%03u.csv", (unsigned)indices[i]);
 
-            if (isLogFilename(name))
-            {
-                JsonObject obj = arr.add<JsonObject>();
-                obj["name"] = name;
-                obj["size"] = file.size();
-            }
-        }
-        file = root.openNextFile();
+        uint32_t bytes = 0;
+        (void)store.sessionSize(indices[i], bytes);
+
+        JsonObject obj = arr.add<JsonObject>();
+        obj["name"] = name;
+        obj["size"] = bytes;
     }
-    root.close();
 
-    // Include filesystem usage so the UI can show a space indicator.
-    doc["used"]  = LittleFS.usedBytes();
-    doc["total"] = LittleFS.totalBytes();
+    // Usage, so the UI can show a space indicator.
+    uint32_t used = 0, total = 0;
+    (void)store.usage(used, total);
+    doc["used"]  = used;
+    doc["total"] = total;
 
     String response;
     serializeJson(doc, response);
@@ -781,35 +787,45 @@ void ArduFliteWebServer::handleFlashGet()
         return;
     }
 
-    String filename = "/" + name;  // Add leading / for LittleFS
+    // The filename was validated above; recover the index it names.
+    unsigned index = 0;
+    if (sscanf(name.c_str(), "log_%03u.csv", &index) != 1 || index > 999u)
+    {
+        sendError(400, "Invalid filename");
+        return;
+    }
 
-    if (!LittleFS.exists(filename))
+    auto& store = arduflite::board::Board::instance().logs();
+    uint32_t size = 0;
+    if (store.sessionSize((uint16_t)index, size) != arduflite::Status::Ok)
     {
         sendError(404, "File not found");
         return;
     }
 
-    File file = LittleFS.open(filename, "r");
-    if (!file)
-    {
-        sendError(500, "Cannot open file");
-        return;
-    }
-
-    _server->setContentLength(file.size());
-    _server->sendHeader("Content-Disposition", "attachment; filename=\"" + String(file.name()) + "\"");
+    _server->setContentLength(size);
+    _server->sendHeader("Content-Disposition", "attachment; filename=\"" + name + "\"");
     _server->send(200, "text/csv", "");
 
-    // Stream file in chunks
+    // Stream in chunks. The offset walk is why device::LogStore::readSession
+    // takes one — a flight log is far larger than any buffer here.
     uint8_t buf[512];
-    while (file.available() && _server->client().connected())
+    size_t  offset = 0;
+    while (_server->client().connected())
     {
-        size_t len = file.read(buf, sizeof(buf));
-        _server->client().write(buf, len);
-        vTaskDelay(pdMS_TO_TICKS(1));
-    }
+        size_t length = 0;
+        if (store.readSession((uint16_t)index, buf, sizeof(buf), offset, length)
+                != arduflite::Status::Ok)
+        {
+            break;
+        }
+        if (length == 0) { break; }   // end of data
 
-    file.close();
+        _server->client().write(buf, length);
+        offset += length;
+        arduflite::board::Board::instance().scheduler().sleepFor(
+            std::chrono::milliseconds{ 1 });
+    }
 }
 
 void ArduFliteWebServer::handleFlashDelete()
@@ -846,13 +862,15 @@ void ArduFliteWebServer::handleFlashDelete()
 
     String filename = "/" + name;
 
-    if (!LittleFS.exists(filename))
+    unsigned index = 0;
+    if (sscanf(name.c_str(), "log_%03u.csv", &index) != 1 || index > 999u)
     {
-        sendError(404, "File not found");
+        sendError(400, "Invalid filename");
         return;
     }
+    auto& store = arduflite::board::Board::instance().logs();
 
-    if (LittleFS.remove(filename))
+    if (store.removeSession((uint16_t)index) == arduflite::Status::Ok)
     {
         sendJson(200, "{\"ok\":true}");
     }

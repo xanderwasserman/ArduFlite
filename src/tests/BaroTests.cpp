@@ -25,15 +25,16 @@ static constexpr float QUAT_NORM_TOL         = 0.1f;
  * Logs the full state and a PASS / FAIL verdict via the Logger. Call once ~5 s after
  * start-up while STATIONARY on the ground (see header).
  *
- * @param imu Reference to the running ArduFliteIMU.
+ * @param imu Reference to the running arduflite::estimation::InertialSubsystem.
  */
-void runBaroTest_seedAndSnapshotHealth(ArduFliteIMU &imu)
+void runBaroTest_seedAndSnapshotHealth(arduflite::estimation::InertialSubsystem &imu)
 {
     LOG_INF("=== Baro seed + snapshot health test ===");
 
     // 1) Boot-seed postcondition: finite altitude, and no false climb-rate spike on the ground.
-    const float alt   = imu.getAltitude();
-    const float climb = imu.getClimbRate();
+    const arduflite::estimation::ImuState state = imu.state();
+    const float alt   = state.altitude_m;
+    const float climb = state.climbRate_mps;
     const bool altOk   = !isnan(alt)   && !isinf(alt);
     const bool climbOk = !isnan(climb) && !isinf(climb) && fabsf(climb) <= CLIMB_RATE_GROUND_TOL;
     LOG_INF("Altitude=%.2f m  climbRate=%.3f m/s", alt, climb);
@@ -43,9 +44,9 @@ void runBaroTest_seedAndSnapshotHealth(ArduFliteIMU &imu)
     bool coherent = true;
     for (int i = 0; i < SNAPSHOT_PROBE_READS; ++i)
     {
-        ImuSnapshot s = imu.getSnapshot();
-        const float n = s.quat.w * s.quat.w + s.quat.x * s.quat.x +
-                        s.quat.y * s.quat.y + s.quat.z * s.quat.z;
+        const arduflite::estimation::ImuState s = imu.state();
+        const auto& q = s.orientation_quat;
+        const float n = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
         if (isnan(n) || fabsf(n - 1.0f) > QUAT_NORM_TOL)
         {
             coherent = false;
@@ -54,10 +55,10 @@ void runBaroTest_seedAndSnapshotHealth(ArduFliteIMU &imu)
     }
 
     // 3) Snapshot read health: the stale-coherent fallback should never have been needed.
-    const ImuSnapshotHealth h = imu.getSnapshotHealth();
+    const auto h = imu.snapshotHealth();
     LOG_INF("Snapshot health: totalRetries=%lu maxRetries=%lu retryLimitHits=%lu",
-            (unsigned long)h.totalReadRetries,
-            (unsigned long)h.maxReadRetries,
+            (unsigned long)h.totalRetries,
+            (unsigned long)h.maxRetries,
             (unsigned long)h.retryLimitHits);
     const bool healthOk = (h.retryLimitHits == 0);
 

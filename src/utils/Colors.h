@@ -2,10 +2,11 @@
 #pragma once
 #include <cstdint>
 
-/// Simple RGB container.
-struct Color {
-    uint8_t r, g, b;
-};
+#include "src/hal/device/Peripherals.h"
+
+/// The palette speaks the HAL's colour type directly, so nothing converts
+/// between two identical RGB structs on the way to the indicator.
+using Color = arduflite::device::Rgb;
 
 /// A small palette of named colours.
 namespace Colors {
@@ -19,22 +20,21 @@ namespace Colors {
     // …add more as necessary
 }
 
-/// A blink pattern: { r, g, b, on_ms, off_ms }
-struct Pattern { uint8_t r,g,b; uint16_t on_ms, off_ms; };
+using Pattern = arduflite::device::BlinkPattern;
 
 namespace Patterns {
 
     /// Solid yellow (on boot)
-    constexpr Pattern Boot  { Colors::Yellow.r, Colors::Yellow.g, Colors::Yellow.b,    0,   0   };
+    constexpr Pattern Boot  { Colors::Yellow, 0, 0 };
 
     /// Fast red blink for errors
-    constexpr Pattern Error { Colors::Red.r,    Colors::Red.g,    Colors::Red.b, 100, 100 };
+    constexpr Pattern Error { Colors::Red, 100, 100 };
 
     /// Slow green blink for “all good” in Assist Mode
-    constexpr Pattern Assist    { Colors::Green.r,  Colors::Green.g,  Colors::Green.b, 500, 500 };
+    constexpr Pattern Assist    { Colors::Green, 500, 500 };
 
     /// Slow white blink for “all good” in Stabilised Mode
-    constexpr Pattern Stabilized    { Colors::White.r,  Colors::White.g,  Colors::White.b, 500, 500 };
+    constexpr Pattern Stabilized    { Colors::White, 500, 500 };
 
     
 }

@@ -23,7 +23,8 @@ public:
      * @param autoReset    If true, after callback triggers, reset so it can trigger again
      * @param debounceMs   Software debounce period in ms
      */
-    HoldButton(int pin,
+    HoldButton(arduflite::hal::GpioPin& pin,
+               const arduflite::hal::Clock& clock,
                unsigned long holdTimeMs,
                HoldButtonCallback callback,
                bool usePullup    = true,

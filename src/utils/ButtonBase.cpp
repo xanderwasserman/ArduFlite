@@ -8,18 +8,31 @@
  */
 #include "src/utils/ButtonBase.h"
 
-ButtonBase::ButtonBase(int pin, bool usePullup, unsigned long debounceMs)
+#include "src/utils/Logging.h"
+
+ButtonBase::ButtonBase(arduflite::hal::GpioPin& pin, const arduflite::hal::Clock& clock,
+                       bool usePullup, unsigned long debounceMs)
   : _pin(pin)
+  , _clock(clock)
   , _usePullup(usePullup)
   , _debounceMs(debounceMs)
 {
 }
 
+unsigned long ButtonBase::nowMs() const
+{
+    return static_cast<unsigned long>(_clock.now().time_since_epoch().count() / 1000);
+}
+
 void ButtonBase::begin() {
-    if (_usePullup) {
-        pinMode(_pin, INPUT_PULLUP);
-    } else {
-        pinMode(_pin, INPUT);
+    const arduflite::Status status =
+        _pin.setMode(_usePullup ? arduflite::hal::PinMode::InputPullUp
+                                : arduflite::hal::PinMode::Input);
+    if (status != arduflite::Status::Ok) {
+        // The button will read as never pressed. Say so: silently dead controls
+        // are indistinguishable from a user who is not pressing anything.
+        LOG_ERR("Button: pin setMode failed (%s) - input will not respond",
+                arduflite::toString(status));
     }
     reset();
 }
@@ -36,11 +49,13 @@ void ButtonBase::reset() {
 }
 
 void ButtonBase::readAndDebounce() {
-    unsigned long now = millis();
+    unsigned long now = nowMs();
 
     // 1) Read raw
-    bool currentRaw = _usePullup ? (digitalRead(_pin) == LOW)
-                                 : (digitalRead(_pin) == HIGH);
+    // A pulled-up button reads LOW when pressed, so the active level follows
+    // the mode. That coupling was implicit in the two digitalRead() branches.
+    const bool level = _pin.read();
+    const bool currentRaw = _usePullup ? !level : level;
 
     // 2) If it changed, reset the debounce timer
     if (currentRaw != _rawPressed) {

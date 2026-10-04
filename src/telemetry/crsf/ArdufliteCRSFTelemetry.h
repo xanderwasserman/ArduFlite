@@ -14,9 +14,10 @@
 #ifndef ARDUFLITE_CRSF_TELEMETRY_H
 #define ARDUFLITE_CRSF_TELEMETRY_H
 
+#include "src/hal/platform/Buses.h"
 #include <Arduino.h>
 #include <atomic>
-#include "src/telemetry/ArduFliteTelemetry.h"
+#include "src/telemetry/PeriodicTelemetryBackend.h"
 #include "src/telemetry/TelemetryData.h"
 
 /**
@@ -26,7 +27,7 @@
  *
  * @details Supports Link‐Stats, Attitude, Flight Mode, Battery, GPS, and Vario frames.
  */
-class ArdufliteCRSFTelemetry : public ArduFliteTelemetry {
+class ArdufliteCRSFTelemetry final : public PeriodicTelemetryBackend {
 public:
     /**
      * @brief Construct a new CRSF telemetry publisher.
@@ -34,30 +35,14 @@ public:
      * @param[in] freqHz      Overall send frequency in Hz (default 1 Hz).
      * @note  UART must be initialized by receiver's begin() before this class is started.
      */
-    ArdufliteCRSFTelemetry(HardwareSerial& serialPort,
+    ArdufliteCRSFTelemetry(arduflite::hal::Uart& serialPort,
                            float          freqHz = 1.0f);
 
     /**
      * @brief Destroy the CRSF telemetry object.
      *        Stops the task and deletes the mutex.
      */
-    virtual ~ArdufliteCRSFTelemetry();
-
-    /**
-     * @brief Start telemetry task (UART already configured by receiver).
-     */
-    void begin() override;
-
-    /**
-     * @brief Supply a fresh snapshot of telemetry data.
-     * @param[in] telem  Latest sensor & state data.
-     */
-    void publish(const TelemetryData& telem) override;
-
-    /**
-     * @brief Reset telemetry state (no-op).
-     */
-    void reset() override {}
+    ~ArdufliteCRSFTelemetry() override;
 
     /**
      * @brief Pause the telemetry task (unsubscribes from WDT).
@@ -71,23 +56,14 @@ public:
     void resumeTask();
 
 private:
-    HardwareSerial&   _serial;        /**< UART port for CRSF (shared with receiver). */
-    float             _intervalMs;    /**< Delay between batches, in milliseconds. */
-    TaskHandle_t      _taskHandle{};  /**< FreeRTOS task handle. */
-    SemaphoreHandle_t _lock{};        /**< Protects _pendingData. */
-    TelemetryData     _pendingData;   /**< Last-published TelemetryData. */
-    std::atomic<bool> _paused{false}; /**< When true, task skips work and WDT is unsubscribed. */
+    arduflite::hal::Uart& _serial;    /**< Shared with the RC link: it reads, this writes. */
 
-    /**
-     * @brief FreeRTOS task entry point.
-     * @param pv  Pointer to this instance.
-     */
-    static void telemetryTask(void* pv);
+    /// When set, the loop does no work and unsubscribes itself from the
+    /// watchdog — calibration can outlast the watchdog window.
+    std::atomic<bool> _paused{false};
 
-    /**
-     * @brief Main loop: pulls the latest snapshot, sends all frames, delays.
-     */
-    void run();
+    /// Pulls the latest snapshot, sends rate-tiered frames, delays.
+    void runLoop() override;
 
     // CRSF addressing & frame‐type constants:
     static constexpr uint8_t AddrFC    = 0xC8;  /**< Flight controller address (FC→TX direction). */

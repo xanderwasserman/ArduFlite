@@ -6,6 +6,9 @@
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
+#include <chrono>
+
+#include "src/hal/board/Board.h"
 #include "src/cli/CLICommands.h"
 #include "src/cli/CLICommandContext.h"
 #include "src/cli/CLICommandUtils.h"
@@ -22,7 +25,7 @@
  */
 void cmdStream(const String &args)
 {
-    ArduFliteIMU* imu = getCliIMU();
+    arduflite::estimation::InertialSubsystem* imu = getCliIMU();
     if (!imu)
     {
         LOG_ERR("IMU not set!");
@@ -54,51 +57,60 @@ void cmdStream(const String &args)
     const unsigned long intervalMs = static_cast<unsigned long>(1000.0f / freqHz);
 
     LOG("Streaming telemetry at %.1f Hz. Press any key to stop...\n", freqHz);
-    vTaskDelay(pdMS_TO_TICKS(500)); // Brief pause before clearing screen
+
+    auto&       board     = arduflite::board::Board::instance();
+    auto&       scheduler = board.scheduler();
+    const auto& clock     = board.clock();
+
+    scheduler.sleepFor(std::chrono::milliseconds{ 500 });  // let the line be read
 
     // Drain any pending input
-    while (Serial.available()) Serial.read();
+    { auto& c = arduflite::board::Board::instance().console();
+      while (c.available()) { (void)c.readByte(); } }
 
     for (;;)
     {
-        unsigned long startMs = millis();
+        const auto startTime = clock.now();
 
-        ImuSnapshot snap = imu->getSnapshot();
-        ImuSnapshotHealth snapshotHealth = imu->getSnapshotHealth();
+        const arduflite::estimation::ImuState snap = imu->state();
+        const auto snapshotHealth = imu->snapshotHealth();
 
         // Clear screen and move cursor to home position
         LOG_N("\033[2J\033[H");
 
-        const char* stateStr = snap.flightState == UNKNOWN_STATE ? "UNKNOWN" :
-                               snap.flightState == PREFLIGHT     ? "PREFLIGHT" :
-                               snap.flightState == INFLIGHT      ? "INFLIGHT" : "LANDED";
+        const char* stateStr = getFlightState() == UNKNOWN_STATE ? "UNKNOWN" :
+                               getFlightState() == PREFLIGHT     ? "PREFLIGHT" :
+                               getFlightState() == INFLIGHT      ? "INFLIGHT" : "LANDED";
         LOG_N("Flight State: %s\n", stateStr);
 
-        LOG_N("Altitude: %.2f m | Climb Rate: %.2f m/s\n", snap.altitude, snap.climbRate);
-        LOG_N("Accel: %.3f, %.3f, %.3f g\n", snap.accel.x, snap.accel.y, snap.accel.z);
-        LOG_N("Gyro: %.3f, %.3f, %.3f deg/s\n", snap.gyro.x, snap.gyro.y, snap.gyro.z);
-        LOG_N("Quat: %.4f, %.4f, %.4f, %.4f\n", snap.quat.w, snap.quat.x, snap.quat.y, snap.quat.z);
+        LOG_N("Altitude: %.2f m | Climb Rate: %.2f m/s\n", snap.altitude_m, snap.climbRate_mps);
+        LOG_N("Accel: %.3f, %.3f, %.3f g\n", snap.accel_g.x, snap.accel_g.y, snap.accel_g.z);
+        LOG_N("Gyro: %.3f, %.3f, %.3f deg/s\n", snap.gyro_dps.x, snap.gyro_dps.y, snap.gyro_dps.z);
+        LOG_N("Quat: %.4f, %.4f, %.4f, %.4f\n", snap.orientation_quat.w, snap.orientation_quat.x, snap.orientation_quat.y, snap.orientation_quat.z);
         LOG_N("Orientation (P/R/Y): %.2f, %.2f, %.2f deg\n",
-              snap.orientation.pitch, snap.orientation.roll, snap.orientation.yaw);
+              snap.euler_deg.pitch, snap.euler_deg.roll, snap.euler_deg.yaw);
         LOG_N("IMU Snapshot: retries=%lu | max=%lu | limit hits=%lu\n",
-              (unsigned long)snapshotHealth.totalReadRetries,
-              (unsigned long)snapshotHealth.maxReadRetries,
+              (unsigned long)snapshotHealth.totalRetries,
+              (unsigned long)snapshotHealth.maxRetries,
               (unsigned long)snapshotHealth.retryLimitHits);
 
         LOG_N("\nPress any key to stop...\n\n");
 
-        if (Serial.available())
+        if (arduflite::board::Board::instance().console().available())
         {
-            while (Serial.available()) Serial.read();  // Drain buffer
+            { auto& c = arduflite::board::Board::instance().console();
+      while (c.available()) { (void)c.readByte(); } }  // Drain buffer
             LOG_N("\033[2J\033[H");  // Clear screen
             LOG("Streaming stopped.");
             return;
         }
 
-        unsigned long elapsed = millis() - startMs;
-        if (elapsed < intervalMs)
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            clock.now() - startTime);
+        const std::chrono::milliseconds interval{ static_cast<std::int64_t>(intervalMs) };
+        if (elapsed < interval)
         {
-            vTaskDelay(pdMS_TO_TICKS(intervalMs - elapsed));
+            scheduler.sleepFor(interval - elapsed);
         }
     }
 }

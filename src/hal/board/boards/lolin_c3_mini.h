@@ -38,8 +38,9 @@ inline constexpr BoardDescriptor kBoard{
     .consoleUart = { .port = 0, .rx = kNoPin, .tx = kNoPin, .baud = 115200, .invertRx = false },
 
     .sensors = { {
-        // Mirrored map (det = -1) — the transform the prototype currently flies
-        // with, ported verbatim from applyOrientation(). See specs/hal 00 2.3.
+        // Mirrored map (det = -1): this is what the prototype is trimmed
+        // against. Changing it changes every attitude sign — see the
+        // six-orientation bench check before touching it.
         SensorMount{ .part = SensorPart::Mpu6500, .bus = BusKind::I2c, .address = 0x68,
                      .axes = { SignedAxis::PlusX, SignedAxis::MinusY, SignedAxis::PlusZ },
                      .label = "imu0" },
@@ -47,6 +48,11 @@ inline constexpr BoardDescriptor kBoard{
                      .axes = {}, .label = "baro0" },
     } },
     .sensorCount = 2,
+    // To fit the DFRobot SEN0697 10-DOF instead: imu0 becomes SensorPart::Bmi323
+    // at 0x69, baro0 becomes SensorPart::Bmp581 at 0x47, and a third entry adds
+    // SensorPart::Bmm350 at 0x15 with the SAME axis map as imu0 — they share a
+    // board, so a different map would be wrong. Descriptor only; the estimation
+    // layer picks the magnetometer up from the span (ADR-052).
 
     .rcLink = RcPart::Crsf,
 

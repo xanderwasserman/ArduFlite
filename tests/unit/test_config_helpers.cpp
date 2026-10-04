@@ -8,20 +8,31 @@
  *
  * Unit tests for the PID-gain conversion helpers defined in ConfigHelpers.h.
  *
- * ConfigHelpers.h includes ConfigRegistry.h which pulls in NVS/Preferences
- * (Arduino-specific).  To keep this a pure host-side test, the mathematical
- * formulas are reproduced here verbatim from ConfigHelpers.h rather than
- * including the header directly.  Any change to the production formulas must
- * be mirrored here.
+ * These call the real ConfigHelpers rather than reproducing its formulas, so a
+ * change in production breaks the test instead of silently diverging from it.
+ * The header compiles on a host because ConfigRegistry holds a hal::Mutex and a
+ * std::string rather than Arduino types (ADR-048).
+ *
+ * The duplication was not harmless while it lasted. A test that re-implements
+ * its subject keeps passing while the subject drifts — the same trap the motion
+ * detector's tests were in before Phase 6, and the reason test_config_keys.cpp
+ * now asserts key RESOLUTION rather than key spelling.
  */
 #include <gtest/gtest.h>
 #include <cmath>
+
+#include "src/utils/ConfigHelpers.h"
 
 // ── Formulas under test (mirrors ConfigHelpers.h exactly) ────────────────────
 
 /// @brief Maximum integrator clamp derived from output limit and ki.
 /// Matches ConfigHelpers::calcMaxIntegral.
 static float calcMaxIntegral(float outLimit, float ki, float headroom = 0.9f)
+{
+    return ConfigHelpers::calcMaxIntegral(outLimit, ki, headroom);
+}
+
+static float calcMaxIntegral_reference(float outLimit, float ki, float headroom)
 {
     return (ki > 0.0f ? (outLimit / ki) * headroom : 0.0f);
 }

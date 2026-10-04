@@ -20,12 +20,11 @@
 #ifndef ARDUFLITE_PREFLIGHT_CHECK_H
 #define ARDUFLITE_PREFLIGHT_CHECK_H
 
-#include <Arduino.h>
 
 // Forward declarations
-class ArduFliteIMU;
+namespace arduflite::estimation { class InertialSubsystem; }
 class ArduFliteController;
-class ArdufliteCRSFReceiver;
+namespace arduflite::device { class RcLink; }
 
 /**
  * @brief Context for an arm request — determines which checks are enforced.
@@ -87,26 +86,26 @@ namespace PreflightCheck
      *                 because the aircraft is airborne. These fields are set to
      *                 `true` (bypassed) in the returned result.
      * 
-     * @param imu        Pointer to the ArduFliteIMU instance
+     * @param imu        Pointer to the arduflite::estimation::InertialSubsystem instance
      * @param controller Pointer to the ArduFliteController instance
-     * @param receiver   Pointer to the ArdufliteCRSFReceiver instance (may be nullptr)
+     * @param receiver   Pointer to the RcLink (may be nullptr)
      * @param context    ArmContext::GROUND_ARM (default) or ArmContext::INFLIGHT_REARM
      * @return PreflightResult with individual check results
      */
     PreflightResult runAllChecks(
-        ArduFliteIMU* imu,
+        arduflite::estimation::InertialSubsystem* imu,
         ArduFliteController* controller,
-        ArdufliteCRSFReceiver* receiver,
+        arduflite::device::RcLink* rcLink,
         ArmContext context = ArmContext::GROUND_ARM
     );
 
     /**
      * @brief Check if IMU is healthy and returning valid data.
      * 
-     * @param imu Pointer to the ArduFliteIMU instance
+     * @param imu Pointer to the arduflite::estimation::InertialSubsystem instance
      * @return true if IMU is healthy
      */
-    bool checkIMUHealth(ArduFliteIMU* imu);
+    bool checkIMUHealth(arduflite::estimation::InertialSubsystem* imu);
 
     /**
      * @brief Check if gyro bias is within acceptable limits.
@@ -114,10 +113,10 @@ namespace PreflightCheck
      * Reads current gyro values and verifies they are below GYRO_BIAS_MAX_DPS.
      * Aircraft should be stationary during this check.
      * 
-     * @param imu Pointer to the ArduFliteIMU instance
+     * @param imu Pointer to the arduflite::estimation::InertialSubsystem instance
      * @return true if gyro bias is acceptable
      */
-    bool checkGyroStability(ArduFliteIMU* imu);
+    bool checkGyroStability(arduflite::estimation::InertialSubsystem* imu);
 
     /**
      * @brief Check if accelerometer is reading approximately 1g.
@@ -125,20 +124,20 @@ namespace PreflightCheck
      * When stationary and level, the accelerometer should read close to 1g.
      * This validates the sensor is working correctly.
      * 
-     * @param imu Pointer to the ArduFliteIMU instance
+     * @param imu Pointer to the arduflite::estimation::InertialSubsystem instance
      * @return true if accelerometer reading is within expected range
      */
-    bool checkAccelerometer(ArduFliteIMU* imu);
+    bool checkAccelerometer(arduflite::estimation::InertialSubsystem* imu);
 
     /**
      * @brief Check if receiver link quality is sufficient for flight.
      * 
-     * Requires link quality >= MIN_LINK_QUALITY_ARM from configuration.
+     * Requires link quality >= failsafe.min_lq_arm_pct from ConfigRegistry.
      * 
-     * @param receiver Pointer to the ArdufliteCRSFReceiver instance
+     * @param receiver Pointer to the RcLink
      * @return true if link quality is acceptable (or no CRSF receiver configured)
      */
-    bool checkReceiverLink(ArdufliteCRSFReceiver* receiver);
+    bool checkReceiverLink(arduflite::device::RcLink* rcLink);
 
     /**
      * @brief Check if throttle is at minimum position.

@@ -5,12 +5,11 @@
  *
  * Licensed under the MIT License. See LICENSE file for details.
  *
- * Tests for arduflite::AxisTransform — the replacement for
- * ArduFliteIMU::applyOrientation().
+ * Tests for arduflite::AxisTransform.
  *
- * The load-bearing test is LegacyOrientationIsReproducedExactly: it pins the
- * transform the aircraft currently flies with. If it fails, Phase 6 would change
- * flight behaviour.
+ * The load-bearing test is ShippingOrientationIsExact: it pins the transform the
+ * aircraft is trimmed against. If it fails, attitude signs have changed and the
+ * six-orientation bench check is the only way to find out how.
  */
 #include <gtest/gtest.h>
 
@@ -25,9 +24,9 @@ using arduflite::Vec3f;
 
 namespace {
 
-/// The legacy transform, copied verbatim from ArduFliteIMU::applyOrientation()
+/// Reference transform, written out longhand as an oracle
 /// at commit 9ca8484, for ORIENTATION_SENSOR_FLIPPED_YZ.
-struct LegacyOrientation
+struct ShippingOrientation
 {
     static Vec3f accel(Vec3f a) { return { a.x, -a.y, a.z }; }
     static Vec3f gyro (Vec3f g) { return { -g.x, g.y, -g.z }; }
@@ -39,7 +38,7 @@ constexpr AxisMap kFlightMap{ SignedAxis::PlusX, SignedAxis::MinusY, SignedAxis:
 
 // ── The map the aircraft flies with ─────────────────────────────────────────
 
-TEST(AxisTransform, LegacyOrientationIsReproducedExactly)
+TEST(AxisTransform, ShippingOrientationIsExact)
 {
     const AxisTransform t{ kFlightMap };
 
@@ -50,8 +49,8 @@ TEST(AxisTransform, LegacyOrientationIsReproducedExactly)
     const Vec3f accelOut = t.applyMeasurement(accelIn);
     const Vec3f gyroOut  = t.applyAngularRate(gyroIn);
 
-    const Vec3f accelExpected = LegacyOrientation::accel(accelIn);
-    const Vec3f gyroExpected  = LegacyOrientation::gyro(gyroIn);
+    const Vec3f accelExpected = ShippingOrientation::accel(accelIn);
+    const Vec3f gyroExpected  = ShippingOrientation::gyro(gyroIn);
 
     // Exact equality: with zero trim the matrix holds only +/-1 and 0.
     EXPECT_EQ(accelOut, accelExpected) << "accel path diverges from flying behaviour";

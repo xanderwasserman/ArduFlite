@@ -308,6 +308,15 @@ const COLUMN_META = {
     gyro_x:        { group: 'Gyroscope',      color: '#a855f7', unit: '°/s' },
     gyro_y:        { group: 'Gyroscope',      color: '#ec4899', unit: '°/s' },
     gyro_z:        { group: 'Gyroscope',      color: '#14b8a6', unit: '°/s' },
+    // Magnetometer — instrumentation only; nothing steers by these
+    mag_x:         { group: 'Magnetometer',   color: '#0ea5e9', unit: 'uT'  },
+    mag_y:         { group: 'Magnetometer',   color: '#06b6d4', unit: 'uT'  },
+    mag_z:         { group: 'Magnetometer',   color: '#0891b2', unit: 'uT'  },
+    mag_heading:   { group: 'Magnetometer',   color: '#f472b6', unit: 'deg' },
+    // Magnitude is the interference diagnostic: it should be FLAT. Movement
+    // with attitude means hard iron; movement with throttle means the motor.
+    mag_field:     { group: 'Magnetometer',   color: '#e879f9', unit: 'uT'  },
+    mag_valid:     { group: 'Magnetometer',   color: '#a1a1aa' },
     // Quaternion
     quat_w:        { group: 'Quaternion',     color: '#64748b' },
     quat_x:        { group: 'Quaternion',     color: '#94a3b8' },

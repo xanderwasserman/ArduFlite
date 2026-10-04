@@ -10,24 +10,25 @@
 #include "src/utils/ButtonCallbacks.h"
 #include "src/utils/CommandSystem.h"
 #include "src/controller/ArduFliteController.h"
-#include "src/utils/StatusLED.h"
+#include "src/hal/board/Board.h"
+#include "src/hal/device/Peripherals.h"
+#include "src/utils/Colors.h"
 #include "src/utils/Logging.h"
 
-extern StatusLED                statusLED;
 extern ArduFliteController      controller;
-extern ArduFliteIMU             myIMU;
+extern arduflite::estimation::InertialSubsystem myIMU;
 
  // Callback for calibrate button.
 void onCalibrateHold(void)
 {
-#if BOARD_TYPE == BOARD_TYPE_WEMOS
-    statusLED.setPattern({0,0,255, 100,100});// fast blue blink
-#endif
+    if (auto* led = arduflite::board::Board::instance().indicator())
+    {
+        led->setPattern(Pattern{ Colors::Blue, 100, 100 });   // fast blue blink
+    }
     LOG_INF("Calibrating IMU (via CommandSystem)...");
-    // Route through CommandSystem so the handler also pauses CRSF telemetry,
-    // matching the full pause/resume sequence used by the CLI calibrate command.
-    // Direct calls to controller.pauseTasks() / myIMU.selfCalibrate() here would
-    // bypass that step and violate the CommandSystem contract (AGENTS.md §1).
+    // Queue it rather than calibrating here. This runs in a button callback;
+    // calibration must happen on the command task, and going straight to the
+    // controller or the estimator from here bypasses that (AGENTS.md §1).
     SystemCommand cmd;
     cmd.type = CMD_CALIBRATE;
     CommandSystem::instance().pushCommand(cmd);

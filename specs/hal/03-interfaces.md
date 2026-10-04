@@ -574,7 +574,15 @@ public:
     virtual SensorHealth health() const = 0;
 };
 
-// ── Measurement interfaces. Independent; no common base. ───────────────────
+// ── Measurement interfaces. Common base Measurement, carrying health(). ─────
+// CORRECTED in Phase 6 — these were specified with no common base, which made
+// SensorSelector unimplementable and got the ownership of health() wrong. See
+// ADR-032.
+class Measurement {
+public:
+    virtual ~Measurement() = default;
+    [[nodiscard]] virtual SensorHealth health() const = 0;   // per MEASUREMENT
+};
 // read() returns the value cached by the last sample(). It never touches the
 // bus, is const, and is safe to call from any task.
 
@@ -1233,7 +1241,7 @@ Two implementations, in this order:
 
 | Phase | Class | Notes |
 |---|---|---|
-| 6 | `AdafruitMadgwickEstimator` | Wraps `Adafruit_Madgwick` unchanged. **Must replicate its quirks exactly**, including `getYaw()`'s `+180.0f` offset and the `anglesComputed` caching semantics — otherwise the Phase 7 replay comparison has no valid baseline |
+| 6 | `MadgwickEstimator` | Own implementation since Phase 9 (ADR-056). Reproduces the historical `+180` yaw offset deliberately, because every log and backend carries it; does NOT reproduce the stale-angle caching, which was unobservable |
 | 9 | `MadgwickEstimator` | Own implementation (ADR-017). Validated by replaying `FL001`/`FL002` through both and comparing quaternions |
 
 Selection is one line in `Board.cpp` / `InertialSubsystem` construction, so Phase 9
@@ -1262,6 +1270,7 @@ struct ImuState {
     Vec3f       accel_g;         // body frame, calibrated, filtered
     Vec3f       gyro_dps;        // body frame, calibrated, filtered
     Vec3f       mag_ut;          // body frame; zero if no magnetometer
+    bool        magnetometerFused;  // did THIS tick fuse a heading reference?
     Quaternion  orientation;
     EulerAngles euler_deg;
     float       altitude_m;      // above the calibrated ground reference
@@ -1305,18 +1314,56 @@ public:
 
 1. feed the watchdog
 2. rate-aware `sample()` pass (§3.1) — the only bus access in the system
-3. `read()` from the selected instances — cached, no bus
-4. apply each sensor's `AxisTransform` (`applyMeasurement` / `applyAngularRate`)
-5. subtract calibration offsets
-6. low-pass filter bank
+3. `read()` from the selected instances — cached, no bus. The magnetometer is
+   read here too when one is selected and healthy, and its reading is marked
+   valid only if the field magnitude clears a floor (see step 9)
+4. **subtract calibration offsets — in SENSOR frame, before any transform**
+5. apply each sensor's `AxisTransform`. `applyMeasurement` for the
+   accelerometer **and the magnetometer** — the field is a true vector, so a
+   mirrored mount must not negate it; `applyAngularRate` for the gyroscope only
+6. low-pass filter bank. The magnetometer's filter is advanced **only** on ticks
+   with a valid reading, so a dropped read cannot walk the field towards zero
 7. validate (NaN/Inf, range) → update health
 8. on baro ticks only: altitude EMA and climb-rate derivative
-9. `estimator.update(gyro_dps, accel_g, dt_s)`
+9. `estimator.updateWithMagnetometer(...)` when this tick produced a valid
+   magnetic reading, `estimator.update(gyro_dps, accel_g, dt_s)` otherwise
 10. `motionDetector.update(...)`
 11. service any pending calibration request (below)
 12. `_state.publish(...)` — one seqlock write, last
 
-Step 4 happens **before** selection is meaningful: each instance is transformed with
+> **Steps 4 and 5 were originally specified the other way round, and that was a
+> defect.** Calibration offsets are stored in the SENSOR's own frame — that is
+> the frame `CalibrationService` averages them in, and the frame every offset
+> blob in NVS on every existing aircraft is already written in.
+>
+> Applying the axis transform first and *then* subtracting a sensor-frame offset
+> subtracts it from an axis that may have been negated. For the shipping map
+> (`accelY`, `gyroX`, `gyroZ` negated) the correction is applied with the wrong
+> sign on those three axes, so instead of removing a bias it **doubles** it.
+>
+> A gyro bias of a few tenths of a degree per second, doubled rather than
+> removed, is not visible on a bench and does not look like a bug in flight — it
+> looks like slow attitude drift, which reads as a tuning or trim problem.
+>
+> The transform is linear, so `T(raw − offset) = T(raw) − T(offset)`: the other
+> order is only valid if the stored offsets are transformed too. Keeping offsets
+> in sensor frame and subtracting first avoids migrating stored calibration data
+> and matches what has been flying.
+
+> **Step 9 branches per tick, not per boot (ADR-052).** Six-axis is the default
+> and the only path any shipping board takes; nine-axis engages when — and only
+> when — a magnetometer was selected, reported healthy, returned `Ok`, and gave
+> a field above 1 µT. Deciding once at `begin()` would be simpler and wrong: a
+> magnetometer that fails in flight would keep the heading pinned to wherever it
+> was pointing when it died, instead of degrading to gyro integration on the
+> next tick.
+>
+> There is no configuration key for this. The board descriptor is the single
+> source of truth, exactly as it is for sample-rate decimation (ADR-046) — an
+> enable flag would be a second place for the same fact to be recorded, and
+> therefore a second place for it to be wrong.
+
+Step 5 happens **before** selection is meaningful: each instance is transformed with
 its own map, so a failover between differently-mounted sensors still yields body-frame
 data. (The transient this causes is review finding R14 — deferred, not solved.)
 
@@ -1353,6 +1400,11 @@ public:
     [[nodiscard]] virtual Accelerometer* primaryAccel() = 0;
     [[nodiscard]] virtual Gyroscope*     primaryGyro()  = 0;
     [[nodiscard]] virtual Barometer*     primaryBaro()  = 0;
+
+    // Null when the board declares no magnetometer — the normal case, not an
+    // error. Callers branch on it rather than assume a heading reference
+    // exists (ADR-052).
+    [[nodiscard]] virtual Magnetometer*  primaryMag()   = 0;
 
     [[nodiscard]] virtual SelectionState state() const = 0;
 

@@ -6,7 +6,7 @@
  *
  * Licensed under the MIT License. See LICENSE file for details.
  *
- * @brief Sensor-to-body alignment. Replaces ArduFliteIMU::applyOrientation().
+ * @brief Sensor-to-body alignment.
  *
  * A signed axis MAP rather than a rotation, because the aircraft currently flies
  * with a transform whose determinant is -1 (see specs/hal/00-current-state.md 2.3),
@@ -28,6 +28,7 @@
 #include <cmath>
 #include <cstdint>
 
+#include "src/hal/core/Units.h"
 #include "src/hal/core/Vec3.h"
 
 namespace arduflite {
@@ -262,18 +263,17 @@ private:
         if (_trim.isZero())
         {
             // Exact +/-1 and 0 entries — bit-identical to a sign flip, which is
-            // what the tests assert against the legacy applyOrientation().
+            // what the tests assert against.
             for (int i = 0; i < 9; ++i) { _m[i] = mapM[i]; }
             return;
         }
 
-        constexpr float kDegToRad = 0.017453292519943295f;
-        const float cr = std::cos(_trim.roll_deg  * kDegToRad);
-        const float sr = std::sin(_trim.roll_deg  * kDegToRad);
-        const float cp = std::cos(_trim.pitch_deg * kDegToRad);
-        const float sp = std::sin(_trim.pitch_deg * kDegToRad);
-        const float cy = std::cos(_trim.yaw_deg   * kDegToRad);
-        const float sy = std::sin(_trim.yaw_deg   * kDegToRad);
+        const float cr = std::cos(_trim.roll_deg  * units::kDegToRad);
+        const float sr = std::sin(_trim.roll_deg  * units::kDegToRad);
+        const float cp = std::cos(_trim.pitch_deg * units::kDegToRad);
+        const float sp = std::sin(_trim.pitch_deg * units::kDegToRad);
+        const float cy = std::cos(_trim.yaw_deg   * units::kDegToRad);
+        const float sy = std::sin(_trim.yaw_deg   * units::kDegToRad);
 
         // Rz(yaw) * Ry(pitch) * Rx(roll), row-major.
         const float trimM[9] = {

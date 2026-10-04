@@ -6,8 +6,8 @@
  *
  * Licensed under the MIT License. See LICENSE file for details.
  *
- * @brief Declarative board description. Replaces PinConfiguration.h's five
- *        #if BOARD_TYPE blocks, and makes pin defects compile errors.
+ * @brief Declarative board description, validated at compile time so a pin
+ *        defect is a build error rather than a boot-time surprise.
  */
 #ifndef ARDUFLITE_HAL_BOARD_BOARDDESCRIPTOR_H
 #define ARDUFLITE_HAL_BOARD_BOARDDESCRIPTOR_H
@@ -55,7 +55,13 @@ struct LedDesc    { Pin pin = kNoPin; std::uint16_t pixelCount = 0;
 
 enum class SensorPart : std::uint8_t
 {
-    None, Mpu6500, Mpu9250, Bmp280, UbloxGnss, Ina226, Sim,
+    None,
+    Mpu6500, Mpu9250,        ///< InvenSense
+    Bmp280,                  ///< Bosch barometer
+    Bmi323,                  ///< Bosch 6-axis    — DFRobot SEN0697 10-DOF
+    Bmm350,                  ///< Bosch magnetometer — SEN0697
+    Bmp581,                  ///< Bosch barometer    — SEN0697
+    UbloxGnss, Ina226, Sim,
 };
 
 enum class BusKind : std::uint8_t { None, I2c, Spi, Uart };

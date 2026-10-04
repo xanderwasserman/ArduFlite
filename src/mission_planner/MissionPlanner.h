@@ -9,8 +9,9 @@
 #ifndef MISSION_PLANNER_H
 #define MISSION_PLANNER_H
 
-#include <Arduino.h>
 #include <vector>
+#include "src/hal/platform/Mutex.h"
+#include "src/hal/platform/Scheduler.h"
 #include "src/controller/ArduFliteController.h"
 
 /**
@@ -53,8 +54,8 @@ private:
     size_t                _currentIndex;
     uint32_t              _stepStartMs;
     bool                  _running;
-    TaskHandle_t          _taskHandle;
-    SemaphoreHandle_t     _mutex;
+    arduflite::hal::Task*  _task  = nullptr;   ///< Owned by the scheduler
+    arduflite::hal::Mutex* _mutex = nullptr;   ///< Guards every public API
 };
 
 

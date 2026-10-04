@@ -12,6 +12,7 @@
 #ifndef ARDUFLITE_WEB_SERVER_H
 #define ARDUFLITE_WEB_SERVER_H
 
+#include "src/hal/platform/Scheduler.h"
 #include "include/WebConfiguration.h"
 
 #if ENABLE_WEB_SERVER
@@ -23,7 +24,7 @@
 
 // Forward declarations
 class ArduFliteController;
-class ArduFliteIMU;
+namespace arduflite::estimation { class InertialSubsystem; }
 class ArduFliteFlashTelemetry;
 
 /**
@@ -52,7 +53,7 @@ public:
      * @return true if started successfully
      */
     bool begin(ArduFliteController* controller = nullptr,
-               ArduFliteIMU* imu = nullptr,
+               arduflite::estimation::InertialSubsystem* imu = nullptr,
                ArduFliteFlashTelemetry* flashTelemetry = nullptr);
 
     /**
@@ -114,12 +115,12 @@ private:
 
     // State
     WebServer*              _server = nullptr;
-    TaskHandle_t            _taskHandle = nullptr;
+    arduflite::hal::Task*   _taskHandle = nullptr;   ///< Owned by the scheduler
     bool                    _running = false;
 
     // Dependencies (optional, for status info)
     ArduFliteController*    _controller = nullptr;
-    ArduFliteIMU*           _imu = nullptr;
+    arduflite::estimation::InertialSubsystem*           _imu = nullptr;
     ArduFliteFlashTelemetry* _flashTelemetry = nullptr;
     char                    _csrfToken[17]{};
 

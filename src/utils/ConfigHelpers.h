@@ -14,7 +14,6 @@
 
 #include "src/controller/pid.h"
 #include "src/utils/ConfigRegistry.h"
-#include <Arduino.h>
 
 namespace ConfigHelpers {
 
@@ -32,15 +31,22 @@ inline float calcMaxIntegral(float outLimit, float ki, float headroom = 0.9f) {
 
 /**
  * @brief Build a PIDConfig from stored Ti/Td parameters.
- * 
+ *
  * Converts time-constant form (Kp, Ti, Td) to gain form (Kp, Ki, Kd):
  *   Ki = Kp / Ti (if Ti > 0)
  *   Kd = Kp * Td
- * 
- * @param keyPrefix Key prefix (e.g., "rate.roll" or "att.pitch")
+ *
+ * @param keyPrefix       key prefix, e.g. "rate.roll" or "att.pitch"
+ * @param outLimitSuffix  the output-limit key's suffix, WITHOUT a leading dot.
+ *                        It differs per loop and must: the rate loop's limit is
+ *                        a dimensionless -1..+1 surface command ("outlimit"),
+ *                        the attitude loop's is a rate in deg/s
+ *                        ("outlimit_dps"). A wrong suffix resolves to no key,
+ *                        which silently yields a limit of ZERO — a PID that
+ *                        clamps its own output to nothing.
  * @return PIDConfig with computed gains
  */
-inline PIDConfig buildPIDConfig(const char* keyPrefix) {
+inline PIDConfig buildPIDConfig(const char* keyPrefix, const char* outLimitSuffix = "outlimit") {
     char key[32];
     auto& reg = ConfigRegistry::instance();
     
@@ -48,13 +54,18 @@ inline PIDConfig buildPIDConfig(const char* keyPrefix) {
     snprintf(key, sizeof(key), "%s.kp", keyPrefix);
     float kp = reg.get<float>(key);
     
-    snprintf(key, sizeof(key), "%s.ti", keyPrefix);
+    // "_s" — these are TIME constants in seconds, and Phase 1's unit-suffix
+    // rename (schema v2) renamed the schema keys without updating this
+    // composer. The registry then reported "key not found" and handed back a
+    // default of 0 for every PID's integral and derivative term, on every
+    // controller, silently turning them into pure-P loops.
+    snprintf(key, sizeof(key), "%s.ti_s", keyPrefix);
     float ti = reg.get<float>(key);
     
-    snprintf(key, sizeof(key), "%s.td", keyPrefix);
+    snprintf(key, sizeof(key), "%s.td_s", keyPrefix);
     float td = reg.get<float>(key);
     
-    snprintf(key, sizeof(key), "%s.outlimit", keyPrefix);
+    snprintf(key, sizeof(key), "%s.%s", keyPrefix, outLimitSuffix);
     float outLimit = reg.get<float>(key);
     
     snprintf(key, sizeof(key), "%s.headroom", keyPrefix);

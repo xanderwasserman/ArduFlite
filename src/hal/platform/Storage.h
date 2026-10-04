@@ -28,6 +28,13 @@ public:
     virtual Status read (const char* key, void* dst, std::size_t capacity, std::size_t& outLen) = 0;
     virtual Status write(const char* key, const void* src, std::size_t len) = 0;
     virtual Status erase(const char* key) = 0;
+
+    /// Wipe every key in this store's namespace. Needed by "factory reset";
+    /// erase(key) alone cannot express it, because the caller does not
+    /// necessarily know every key that was ever written — older firmware
+    /// versions may have left some behind.
+    virtual Status eraseAll() = 0;
+
     virtual Status commit() = 0;
 };
 
@@ -80,6 +87,40 @@ public:
     [[nodiscard]] virtual std::uint32_t freeHeapBytes()     const = 0;
     [[nodiscard]] virtual std::uint32_t minFreeHeapBytes()  const = 0;
     [[nodiscard]] virtual const char*   uniqueId()          const = 0;
+
+    /// Chip/board identity and SDK version, for a diagnostics endpoint. Never
+    /// parsed — display only.
+    [[nodiscard]] virtual const char*   platformName()      const = 0;
+    [[nodiscard]] virtual const char*   sdkVersion()        const = 0;
+
+    /**
+     * @brief A random 32-bit word from the platform's entropy source.
+     *
+     * Exists because the web server builds its CSRF token from two of these.
+     * That makes it a SECURITY primitive, not a convenience: an implementation
+     * backed by rand() or by a boot-time-seeded PRNG would make tokens
+     * predictable across reboots, and a device that always boots to the same
+     * token is a device with no CSRF protection at all. Implementations must
+     * use a hardware entropy source.
+     */
+    [[nodiscard]] virtual std::uint32_t randomWord() = 0;
+
+    /**
+     * @brief Human-readable per-task report, for a CLI diagnostic.
+     *
+     * Sits alongside resetCause() and freeHeapBytes() because it answers the
+     * same kind of question — "what is the platform doing?" — and because the
+     * alternative was `vTaskList()` called directly from the CLI, which pinned
+     * that command to FreeRTOS.
+     *
+     * @param buffer   destination, always NUL-terminated on success
+     * @param capacity size of @p buffer in bytes
+     * @return NotSupported where the platform has no such notion. The caller
+     *         reports that; it is not an error worth failing a command over.
+     *
+     * @note The report's LAYOUT is platform-defined and not parsed anywhere.
+     */
+    [[nodiscard]] virtual Status taskReport(char* buffer, std::size_t capacity) const = 0;
 
     [[noreturn]] virtual void reboot() = 0;
 };

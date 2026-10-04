@@ -9,6 +9,7 @@
 #ifndef ARDU_FLITE_CLI_H
 #define ARDU_FLITE_CLI_H
 
+#include "src/hal/platform/Scheduler.h"
 #include <Arduino.h>
 #include "src/controller/ArduFliteController.h"
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
@@ -19,7 +20,11 @@ public:
      * @brief Constructs the CLI.
      * @param controller A pointer to the controller, whose statistics and state we want to query.
     */
-    ArduFliteCLI(ArduFliteController* controller, ArduFliteIMU* imu, ArduFliteFlashTelemetry* flashTelemetry);
+    ArduFliteCLI(ArduFliteController* controller, arduflite::estimation::InertialSubsystem* imu, ArduFliteFlashTelemetry* flashTelemetry);
+
+    /// Inject the scheduler. Deferred like the controller's setPlatform(),
+    /// because this is a global and the Board needs FreeRTOS running.
+    void setScheduler(arduflite::hal::Scheduler& scheduler) { _scheduler = &scheduler; }
 
     /**
      * @brief Starts the CLI task.
@@ -33,8 +38,13 @@ public:
     static void cliTask(void* parameters);
 
 private:
+    arduflite::hal::Scheduler* _scheduler = nullptr;
+
+    /// Sized for the deepest command handler, not the average.
+    static constexpr std::uint32_t kStackBytes = 4096;
+
     ArduFliteController* controller;
-    ArduFliteIMU* imu;
+    arduflite::estimation::InertialSubsystem* imu;
     ArduFliteFlashTelemetry* flashTelemetry;
 };
 

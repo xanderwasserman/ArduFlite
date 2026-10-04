@@ -8,7 +8,7 @@
  *
  * @brief Compile-time board validation.
  *
- * Applied to the legacy BOARD_TYPE_WEMOS pin table, these turn four real defects
+ * These turn whole classes of pin defect
  * (see specs/hal/00-current-state.md 2.4) into build errors:
  *   - GPIO 32 assigned on a chip whose GPIOs stop at 21
  *   - throttle input and throttle output both on GPIO 10

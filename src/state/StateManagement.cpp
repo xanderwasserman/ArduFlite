@@ -8,21 +8,41 @@
  */
 
 #include "src/state/StateManagement.h"
+
+#include <atomic>
 #include "src/controller/ArduFliteController.h"
-#include "src/orientation/ArduFliteIMU.h"
+#include "src/core/FlightTypes.h"
+#include "src/hal/board/Board.h"
+#include "src/estimation/InertialSubsystem.h"
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
-#include "include/PinConfiguration.h"
 #include "include/AircraftConfiguration.h"
-#include "src/utils/StatusLED.h"
+#include "src/hal/device/Peripherals.h"
+#include "src/utils/Colors.h"
 #include "src/utils/Logging.h"
 
+namespace {
+
+/// The aircraft's belief about what it is doing. Written only by
+/// updateFlightState() below; read from the controller, CLI and telemetry tasks.
+std::atomic<int> g_flightState{ PREFLIGHT };
+
+} // namespace
+
+FlightState getFlightState()
+{
+    return static_cast<FlightState>(g_flightState.load(std::memory_order_acquire));
+}
+
+void setFlightState(FlightState state)
+{
+    g_flightState.store(static_cast<int>(state), std::memory_order_release);
+}
+
 extern ArduFliteController      controller;
-extern ArduFliteIMU             myIMU;
+extern arduflite::estimation::InertialSubsystem myIMU;
 extern ArduFliteFlashTelemetry  flashTelemetry;
 
-#if BOARD_TYPE == BOARD_TYPE_WEMOS
-extern StatusLED            statusLED;
-#endif
+
 
 void handleModeState()
 {
@@ -35,14 +55,16 @@ void handleModeState()
         switch (currentMode)
         {
             case ATTITUDE_MODE:
-                #if BOARD_TYPE == BOARD_TYPE_WEMOS
-                statusLED.setPattern(Patterns::Assist);
-                #endif
+                if (auto* led = arduflite::board::Board::instance().indicator())
+                {
+                    led->setPattern(Patterns::Assist);
+                }
                 break;
             case RATE_MODE:
-                #if BOARD_TYPE == BOARD_TYPE_WEMOS
-                statusLED.setPattern(Patterns::Stabilized);
-                #endif
+                if (auto* led = arduflite::board::Board::instance().indicator())
+                {
+                    led->setPattern(Patterns::Stabilized);
+                }
                 break;
             default:
                 break;
@@ -55,7 +77,8 @@ void handleModeState()
  * @brief Owns the FlightState machine, applying an arm guard on INFLIGHT transitions.
  *
  * Reads debounced motion signals from the IMU each loop tick and applies state
- * transitions. The IMU no longer owns FlightState; it only produces signals.
+ * transitions. The estimation layer only produces signals; it does not own
+ * FlightState.
  *
  * Transitions:
  *   PREFLIGHT / LANDED → INFLIGHT  : launchDetected AND armed
@@ -74,7 +97,7 @@ void handleFlightState()
     static FlightState currentState    = PREFLIGHT;
     static bool        lastLaunchSeen  = false;   // tracks rising edge for one-shot warnings
 
-    MotionSignals motion = myIMU.getMotionSignals();
+    MotionSignals motion = myIMU.state().motion;
     FlightState   newState = currentState;
 
     switch (currentState)
@@ -131,7 +154,7 @@ void handleFlightState()
     if (newState != currentState)
     {
         currentState = newState;
-        myIMU.setFlightState(currentState);
+        setFlightState(currentState);
 
         switch (currentState)
         {

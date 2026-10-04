@@ -9,12 +9,36 @@ on:
 
 jobs:
   host-tests:
-    name: Host unit tests (C++20)
+    name: Host unit tests (${{ matrix.abi }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: LP64
+            flag: ""
+          # The firmware is ILP32 on both ESP32 targets while the host is LP64.
+          # Running the suite BOTH ways is the guard: any result that differs
+          # between them is an ABI dependency, and a host-only pass would then
+          # be describing a program that is not the one flying. ADR-056 records
+          # what that cost when it went unchecked.
+          - abi: ILP32
+            flag: "--m32"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install 32-bit toolchain
+        if: matrix.abi == 'ILP32'
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
+      - name: Build and run the suite
+        run: ./tests/run_tests.sh ${{ matrix.flag }}
+
+  sanitizers:
+    name: Host unit tests under ASan + UBSan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build and run the suite
-        run: ./tests/run_tests.sh
+      - name: Build and run the suite with sanitizers
+        run: ./tests/run_tests.sh --san --no-checks
 
   static-checks:
     name: Layering and vendor-type checks
@@ -36,3 +60,17 @@ jobs:
         run: |
           printf '#include "src/hal/board/BoardSelect.h"\nint main(){return 0;}\n' > /tmp/bs.cpp
           g++ -std=c++20 -I. -D${{ matrix.board }} -c /tmp/bs.cpp -o /tmp/bs.o
+
+  size-budget:
+    name: Firmware size within budget
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install core and libraries
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+          arduino-cli lib install "Adafruit NeoPixel" "ArduinoJson"
+      - name: Build and check size
+        run: ./tools/ci/check_size.sh

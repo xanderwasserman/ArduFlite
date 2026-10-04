@@ -9,10 +9,13 @@
 #ifndef ARDU_FLITE_RATE_CONTROLLER_H
 #define ARDU_FLITE_RATE_CONTROLLER_H
 
-#include <Arduino.h>
+#include <mutex>
+
+#include "src/hal/platform/Mutex.h"
+
 #include "src/controller/pid.h"
 #include "include/ControllerTypes.h"
-#include "src/orientation/ArduFliteIMU.h"
+#include "src/core/FlightTypes.h"
 
 /**
  * @brief The ArduFliteRateController class implements an inner loop
@@ -26,6 +29,10 @@
 class ArduFliteRateController
 {
 public:
+    /// Supply the lock guarding this controller's state. Must be called before
+    /// any other method; every one of them becomes a no-op until it is.
+    void setMutex(arduflite::hal::Mutex* mutex) { rateMutex = mutex; }
+
     /**
      * @brief Default constructor with uninitialized PIDs.
      *        Call initFromConfig() before use.
@@ -39,7 +46,7 @@ public:
     void initFromConfig();
 
     // Set the desired angular rates (roll, pitch, yaw). Units can be degrees per second.
-    void setRateControlSetpoint(const EulerAngles &setpoint);
+    void setRateControlSetpoint(const AngularRateDps& setpoint);
 
     // Main update function:
     //   measuredRate: measured angular rates from the IMU (x=roll, y=pitch, z=yaw).
@@ -49,7 +56,15 @@ public:
     // Uses a non-blocking lock: if the mutex is contended this call returns early
     // WITHOUT modifying actuatorOut, so the caller's previous command is held. The
     // caller must persist actuatorOut across iterations to rely on this fail-soft.
-    void update(Vector3 measuredRate, float dt, EulerAngles &actuatorOut);
+    /**
+     * @param measuredRate gyro reading, deg/s, body frame
+     * @param actuatorOut  normalised -1..+1 per-axis demand for the mixer
+     *
+     * @note The types differ because the quantities differ: a rate goes in, a
+     *       dimensionless command comes out. The PID gains are what carry the
+     *       conversion, which is why there is no named converter for this step.
+     */
+    void update(const AngularRateDps& measuredRate, float dt, AxisCommand& actuatorOut);
 
     // Reset the PID controllers' integrators.
     void reset();
@@ -81,15 +96,18 @@ public:
 
 private:
     // Desired angular rates (set by the outer loop)
-    EulerAngles setpointRate        {0.0f};
-    EulerAngles filteredRateOutput  {0.0f};
+    AngularRateDps setpointRate{};
+    AxisCommand    filteredRateOutput{};
     float outputAlpha               = 0.1f;
 
     // PID controllers for each axis.
     PID pidRoll, pidPitch, pidYaw;
 
     // Mutex for protecting access to class state.
-    SemaphoreHandle_t rateMutex;
+    /// Injected via setMutex(), not created here. Owning a raw FreeRTOS handle
+    /// was the one thing keeping this class on the target: it is otherwise pure
+    /// arithmetic, and now runs in host_sim.
+    arduflite::hal::Mutex* rateMutex = nullptr;
 };
 
 #endif // ARDU_FLITE_RATE_CONTROLLER_H

@@ -7,7 +7,7 @@
  * Licensed under the MIT License. See LICENSE file for details.
  *
  * @brief Bus-agnostic register access. A driver written against this works over
- *        I2C or SPI unchanged — the one part of AP_HAL::Device worth copying.
+ *        I2C or SPI unchanged.
  */
 #ifndef ARDUFLITE_HAL_PLATFORM_REGISTERDEVICE_H
 #define ARDUFLITE_HAL_PLATFORM_REGISTERDEVICE_H
@@ -34,6 +34,11 @@ public:
 
     /// Bus-wide mutex. A driver needing several atomic transactions takes
     /// std::unique_lock(dev.busLock()); single transactions lock internally.
+    ///
+    /// @warning MUST be RECURSIVE. readRegs()/writeRegs() lock internally, so a
+    ///          driver holding busLock() and then issuing a transaction would
+    ///          self-deadlock on a plain mutex. This guarantee is the whole
+    ///          reason the grouping idiom above is usable.
     [[nodiscard]] virtual Mutex& busLock() = 0;
 
     /// e.g. "i2c0@0x68" — for logs and the boot inventory.

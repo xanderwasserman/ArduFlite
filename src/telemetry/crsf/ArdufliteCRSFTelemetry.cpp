@@ -14,11 +14,13 @@
  */
 
 #include "src/telemetry/crsf/ArdufliteCRSFTelemetry.h"
+#include "src/hal/protocol/CrsfProtocol.h"
 #include "src/controller/ArduFliteController.h"
 #include "src/utils/Logging.h"
-#include "include/ArduFlite.h"
 
-#include <esp_task_wdt.h>  // Hardware watchdog
+#include <mutex>
+
+#include "src/hal/board/Board.h"
 #include <math.h> 
 #include <cstring> 
 
@@ -26,112 +28,39 @@
 /// @param[in] ser     Reference to a HardwareSerial port for CRSF (shared with receiver).
 /// @param[in] freqHz  Frame-send frequency, in Hz (default 10Hz).
 /// @note  UART is configured by receiver's begin() - this class uses it for TX.
-ArdufliteCRSFTelemetry::ArdufliteCRSFTelemetry(HardwareSerial& ser,
+ArdufliteCRSFTelemetry::ArdufliteCRSFTelemetry(arduflite::hal::Uart& ser,
                                                float          freqHz)
-  : _serial(ser)
-  , _intervalMs(1000.0f / freqHz)
+  : PeriodicTelemetryBackend("CrsfTelem", freqHz)
+  , _serial(ser)
 {
-    _lock = xSemaphoreCreateMutex();
-    if (!_lock) 
-    {
-        LOG_ERR("CRSF Telemetry: failed to create mutex");
-    } 
-    else 
-    {
-        LOG_DBG("CRSF Telemetry: mutex created");
-    }
+    // No platform resource here: this may be constructed before Board::begin()
+    // has run. The mutex is taken in begin() (ADR-030).
 }
 
 /// @brief Destructor: stops the telemetry task and deletes the mutex.
 ArdufliteCRSFTelemetry::~ArdufliteCRSFTelemetry()
 {
-    if (_taskHandle) 
-    {
-        vTaskDelete(_taskHandle);
-        LOG_INF("CRSF Telemetry: task deleted");
-    }
-    if (_lock) 
-    {
-        vSemaphoreDelete(_lock);
-    }
+    requestTaskStop();
+    LOG_INF("CRSF Telemetry: task stop requested");
 }
 
 /// @brief Pause the telemetry task (unsubscribes from WDT).
 void ArdufliteCRSFTelemetry::pauseTask()
 {
-    if (!_taskHandle) return;
-    
+    // Only the flag is set here; the TASK changes its own watchdog
+    // subscription when it notices. Unsubscribing another task from here would
+    // race with that task feeding a subscription that just vanished.
     _paused.store(true, std::memory_order_release);
-    
-    // Unsubscribe from WDT so we don't trigger during long calibration
-    esp_task_wdt_delete(_taskHandle);
-    
-    LOG_INF("CRSF Telemetry: task paused (WDT unsubscribed)");
+
+    LOG_INF("CRSF Telemetry: pause requested");
 }
 
 /// @brief Resume the telemetry task (re-subscribes to WDT).
 void ArdufliteCRSFTelemetry::resumeTask()
 {
-    if (!_taskHandle) return;
-    
-    // Re-subscribe to WDT before resuming work
-    esp_task_wdt_add(_taskHandle);
-    
     _paused.store(false, std::memory_order_release);
-    
-    LOG_INF("CRSF Telemetry: task resumed (WDT subscribed)");
-}
 
-/// @brief Starts the telemetry FreeRTOS task (UART already configured by receiver).
-void ArdufliteCRSFTelemetry::begin()
-{
-    LOG_INF("CRSF Telemetry: starting task (UART shared with receiver)");
-
-    if (_taskHandle) 
-    {
-        LOG_WARN("CRSF Telemetry: begin() called but task already running");
-        return;  ///< already running
-    }
-
-    BaseType_t res = xTaskCreate(
-        telemetryTask,
-        "CrsfTelem",
-        /*stack depth*/ 4096,
-        this,
-        tskIDLE_PRIORITY + 1,
-        &_taskHandle
-    );
-    if (res != pdPASS) 
-    {
-        LOG_ERR("CRSF Telemetry: failed to start task (pdPASS=%d)", pdPASS);
-    } 
-    else 
-    {
-        LOG_INF("CRSF Telemetry: task started (interval %.1f ms)", _intervalMs);
-    }
-}
-
-/// @brief Publishes new telemetry snapshot.
-/// @param[in] telem  Fresh sensor & state data.
-/// @note  Uses a mutex to safely swap in the pending buffer.
-void ArdufliteCRSFTelemetry::publish(const TelemetryData& telem)
-{
-    if (!_lock) return;
-
-    {
-        SemaphoreLock lock(_lock);
-        if (!lock.acquired()) return;
-        _pendingData = telem;
-    }
-}
-
-/// @brief FreeRTOS task entrypoint.
-/// @param[in] pv  Pointer to the ArdufliteCRSFTelemetry instance.
-void ArdufliteCRSFTelemetry::telemetryTask(void* pv)
-{
-    auto* self = static_cast<ArdufliteCRSFTelemetry*>(pv);
-    LOG_INF("CRSF Telemetry: task entry");
-    self->run();
+    LOG_INF("CRSF Telemetry: resume requested");
 }
 
 /// @brief Main loop: pulls the latest buffer, sends all frames, then delays.
@@ -140,44 +69,63 @@ void ArdufliteCRSFTelemetry::telemetryTask(void* pv)
 ///   - Fast (every loop ~10Hz): Attitude, Link Stats, Vario
 ///   - Medium (~5Hz): Battery, Baro Altitude
 ///   - Slow (~1Hz): GPS, Flight Mode
-void ArdufliteCRSFTelemetry::run()
+void ArdufliteCRSFTelemetry::runLoop()
 {
     // Rate tiering interval (milliseconds)
     constexpr uint32_t MEDIUM_INTERVAL_MS = 200;   // ~5 Hz
 
     LOG_DBG("CRSF Telemetry: run() loop begin");
 
-    // Register this task with hardware watchdog
-    esp_task_wdt_add(NULL);  // NULL = current task
+    auto&       board      = arduflite::board::Board::instance();
+    auto&       scheduler  = board.scheduler();
+    auto&       watchdog   = board.watchdog();
+    const auto& boardClock = board.clock();
+
+    // Registration happens here, from INSIDE the task, because that is the only
+    // place "current task" means this one.
+    (void)watchdog.registerCurrentTask();
+    bool watched = true;
+
+    const auto nowMs = [&]() -> std::uint32_t {
+        return static_cast<std::uint32_t>(
+            boardClock.now().time_since_epoch().count() / 1000);
+    };
 
     // Rate tiering: track last send time
-    uint32_t lastMediumTime = millis();
+    std::uint32_t lastMediumTime = nowMs();
     TelemetryData td{};
 
-    while (true) 
+    while (shouldRun())
     {
-        // Check if paused (during calibration)
+        // Paused during calibration, which can outlast the watchdog window, so
+        // the task unsubscribes itself while idle.
         if (_paused.load(std::memory_order_acquire))
         {
-            // Skip work and WDT reset - we're unsubscribed from WDT
-            vTaskDelay(pdMS_TO_TICKS(10));
+            if (watched)
+            {
+                (void)watchdog.unregisterCurrentTask();
+                watched = false;
+            }
+            scheduler.sleepFor(std::chrono::milliseconds{ 10 });
             continue;
         }
 
-        // Reset hardware watchdog - proves this task is alive
-        esp_task_wdt_reset();
+        if (!watched)
+        {
+            (void)watchdog.registerCurrentTask();
+            watched = true;
+        }
 
-        uint32_t now = millis();
+        // Proves this task is alive.
+        watchdog.feed();
+
+        const std::uint32_t now = nowMs();
 
         // 1) grab a snapshot
-        if (_lock) 
-        {
-            SemaphoreLock lock(_lock);
-            if (lock.acquired())
-            {
-                td = _pendingData;
-            }
-        }
+        // Reuse the previous frame on a timeout: the radio wants a continuous
+        // stream, and a repeated attitude is better than a gap it reads as a
+        // lost sensor.
+        (void)snapshot(td);
 
         // 2) FAST frames: send every loop (~10 Hz)
         //    These are critical for real-time display
@@ -188,7 +136,13 @@ void ArdufliteCRSFTelemetry::run()
         // 3) MEDIUM frames: send at ~5 Hz
         if (now - lastMediumTime >= MEDIUM_INTERVAL_MS) 
         {
-            sendBattery   (td);
+            // Only when something actually measured it. Sending 0.0 V and
+            // 100 % remaining — which is what the placeholders produced — puts
+            // fabricated numbers on the pilot's battery display, in a field
+            // pilots use to decide whether to land. A radio showing no battery
+            // telemetry is unambiguous; one showing a confident wrong value is
+            // not. Restore this call when device::PowerMonitor exists.
+            if (td.battery_valid) { sendBattery(td); }
             sendBaroAlt   (td);
             sendGps       (td);  // Moved from 1Hz - prevents sensor lost warnings
             sendFlightMode(td);
@@ -196,7 +150,8 @@ void ArdufliteCRSFTelemetry::run()
         }
 
         // 5) wait until next burst
-        vTaskDelay(pdMS_TO_TICKS(_intervalMs));
+        scheduler.sleepFor(
+            std::chrono::milliseconds{ static_cast<std::int64_t>(intervalMs()) });
     }
 }
 
@@ -240,11 +195,17 @@ void ArdufliteCRSFTelemetry::sendFrame(uint8_t type, const uint8_t* payload, uin
     uint8_t crc = crc8(crcBuf, len + 1);
 
     // Send frame: [sync=0xEA] [length] [type] [payload...] [crc]
-    _serial.write(AddrRX);  // 0xEA = receiver address for FC→RX telemetry
-    _serial.write(flen);
-    _serial.write(type);
-    _serial.write(payload, len);
-    _serial.write(crc);
+    // hal::Uart writes byte buffers, not single bytes: assemble the frame then
+    // emit it in one call. That is also better on a shared UART — a partial
+    // frame interleaved with the receiver's traffic would confuse the link.
+    std::uint8_t frame[64];
+    std::size_t  n = 0;
+    frame[n++] = AddrRX;   // 0xEA = receiver address for FC->RX telemetry
+    frame[n++] = flen;
+    frame[n++] = type;
+    for (std::size_t i = 0; i < len && n < sizeof(frame) - 1; ++i) { frame[n++] = payload[i]; }
+    frame[n++] = crc;
+    (void)_serial.write(frame, n);
 }
 
 /// @brief Sends the 6-byte attitude frame (pitch, roll, yaw).
@@ -292,8 +253,14 @@ void ArdufliteCRSFTelemetry::sendFlightMode(const TelemetryData& t)
         "????"    // UNKNOWN_MODE (3)
     };
     
-    uint8_t idx = (t.flight_mode < FLIGHT_MODE_LENGTH) ? uint8_t(t.flight_mode) : UNKNOWN_MODE;
-    const char* modeName = modeNames[idx];
+    // Bounded on BOTH sides. flight_mode is a plain int, so a negative value
+    // would pass a "< LENGTH" test and then index the array at uint8_t(-1).
+    // Nothing produces one today; the cost of ruling it out is one comparison,
+    // and the cost of being wrong is a read far outside a 4-entry table.
+    const int modeIndex = (t.flight_mode >= 0 && t.flight_mode < FLIGHT_MODE_LENGTH)
+                              ? t.flight_mode
+                              : static_cast<int>(UNKNOWN_MODE);
+    const char* modeName = modeNames[modeIndex];
     
     // Build mode string with prefix based on state
     char modeStr[16];
@@ -412,19 +379,19 @@ void ArdufliteCRSFTelemetry::sendBaroAlt(const TelemetryData& t)
 /// @param[in] t  Latest telemetry (link fields populated).
 void ArdufliteCRSFTelemetry::sendLinkStats(const TelemetryData& t)
 {
-    crsfLinkStatistics_t s = {
-        .uplink_RSSI_1         = uint8_t(t.link_rssi1),
-        .uplink_RSSI_2         = uint8_t(t.link_rssi2),
-        .uplink_Link_quality   = t.link_quality,
-        .uplink_SNR            = t.link_snr,
-        .active_antenna        = t.link_antenna,
-        .rf_Mode               = t.link_rf_mode,
-        .uplink_TX_Power       = t.link_tx_power,
-        .downlink_RSSI         = uint8_t(t.dl_rssi),
-        .downlink_Link_quality = t.dl_quality,
-        .downlink_SNR          = t.dl_snr
+    arduflite::drivers::CrsfLinkStatistics s = {
+        .uplinkRssi1         = uint8_t(t.link_rssi1),
+        .uplinkRssi2         = uint8_t(t.link_rssi2),
+        .uplinkLinkQuality   = t.link_quality,
+        .uplinkSnr           = t.link_snr,
+        .activeAntenna       = t.link_antenna,
+        .rfMode              = t.link_rf_mode,
+        .uplinkTxPower       = t.link_tx_power,
+        .downlinkRssi        = uint8_t(t.dl_rssi),
+        .downlinkLinkQuality = t.dl_quality,
+        .downlinkSnr         = t.dl_snr
     };
 
-    LOG_DBG("CRSF Telemetry: Link RSSI1=%d RSSI2=%d Q=%u SNR=%d ANT=%u", s.uplink_RSSI_1, s.uplink_RSSI_2, s.uplink_Link_quality, s.uplink_SNR, s.active_antenna);
+    LOG_DBG("CRSF Telemetry: Link RSSI1=%d RSSI2=%d Q=%u SNR=%d ANT=%u", s.uplinkRssi1, s.uplinkRssi2, s.uplinkLinkQuality, s.uplinkSnr, s.activeAntenna);
     sendFrame(T_LINK, reinterpret_cast<const uint8_t*>(&s), sizeof(s));
 }

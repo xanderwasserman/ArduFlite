@@ -107,26 +107,68 @@ public:
 
 // ── Storage and console ─────────────────────────────────────────────────────
 
+/**
+ * @brief Numbered append-only session storage. Flight logs.
+ *
+ * @note Sessions are identified by an INDEX chosen by the caller, not by a name
+ *       or a prefix the store invents. The interface originally had
+ *       `startSession(const char* prefix)` returning an allocated index, which
+ *       put the allocation rule inside the store — and that rule (monotonic,
+ *       then lowest-gap; see core/LogRotationPolicy.h) is pure logic worth
+ *       testing without a filesystem. Keeping it out leaves the store dumb
+ *       enough that an in-memory implementation is a faithful stand-in.
+ *
+ * Writes are append-only within a session, and exactly one session may be open
+ * at a time.
+ */
 class LogStore : private NonCopyable
 {
 public:
     virtual ~LogStore() = default;
 
+    /// Mount, formatting if the mount fails. Safe to call twice.
     virtual Status begin() = 0;
-    virtual Result<std::uint16_t> startSession(const char* prefix) = 0;
-    virtual Status appendLine(const char* line, std::size_t len) = 0;
-    virtual Status endSession() = 0;
-    [[nodiscard]] virtual bool isRecording() const = 0;
 
-    virtual std::size_t listSessions(hal::FileInfo* out, std::size_t maxEntries) = 0;
+    /// @param out receives the indices in use, unordered.
+    /// @return how many were written, capped at maxEntries.
+    virtual std::size_t listSessions(std::uint16_t* out, std::size_t maxEntries) = 0;
+
+    /// Create or truncate the session with this index and open it for writing.
+    virtual Status openSession(std::uint16_t index) = 0;
+
+    /// Append to the open session. Returns NotPresent if none is open.
+    virtual Status append(const char* data, std::size_t len) = 0;
+
+    /// Push buffered bytes to the medium. Called on a cadence, not per row.
+    virtual Status flush() = 0;
+
+    virtual Status closeSession() = 0;
+    [[nodiscard]] virtual bool isOpen() const = 0;
+
+    /**
+     * @param offset byte offset to read from
+     * @param outLen receives the byte count actually read; 0 at end of data
+     *
+     * @note The offset exists because a flight log is far too large to read
+     *       whole — dumping one to the console streams it in buffer-sized
+     *       chunks. An offset-less version compiled fine and made dumping
+     *       impossible.
+     */
     virtual Status readSession(std::uint16_t index, void* dst, std::size_t maxLen,
-                               std::size_t& outLen) = 0;
+                               std::size_t offset, std::size_t& outLen) = 0;
+
+    /// Byte length of a stored session. NotPresent if it does not exist.
+    virtual Status sessionSize(std::uint16_t index, std::uint32_t& bytes) = 0;
+
     virtual Status removeSession(std::uint16_t index) = 0;
+
+    /// Bytes used and total capacity. Both zero if unknown.
     virtual Status usage(std::uint32_t& used, std::uint32_t& total) = 0;
+
     virtual Status formatAll() = 0;
 };
 
-/// Calibration blobs. Replaces raw EEPROM, and adds a CRC.
+/// Calibration blobs, CRC-protected.
 class SettingsStore : private NonCopyable
 {
 public:
@@ -144,8 +186,28 @@ public:
     virtual ~Console() = default;
 
     virtual std::size_t write(const char* s, std::size_t len) = 0;
-    /// Returns 0 if no complete line is available. Never blocks.
-    [[nodiscard]] virtual std::size_t readLine(char* dst, std::size_t maxLen) = 0;
+
+    /// Bytes ready to read. Never blocks.
+    [[nodiscard]] virtual std::size_t available() const = 0;
+
+    /// One byte, or -1 if none are ready. Never blocks.
+    [[nodiscard]] virtual int readByte() = 0;
+
+    /**
+     * @brief Push buffered output to the wire.
+     *
+     * On the C3 this port is USB CDC and writes are buffered, so a watchdog
+     * reset or a panic can discard whatever has not drained — including the
+     * lines that explain the reset. Logging flushes after every Error for
+     * exactly that reason.
+     */
+    virtual void flushOutput() = 0;
+
+    /**
+     * @note Byte-level, not line-level. Line assembly carries echo and
+     *       backspace policy with it, and that belongs to the consumer: the CLI
+     *       echoes, the telemetry drain does not.
+     */
 };
 
 } // namespace arduflite::device

@@ -24,18 +24,48 @@ compressed to 8,976 B (22.3 %).
 > buffers sized at link time and is useful only as a **relative** number between
 > builds — do not read it as "free RAM".
 
-### CI budget
+### CI budget — revised after Phase 4
 
-Fail the build if either binary exceeds baseline by more than **3 %**:
+The original 3 % ceiling was set against the pre-HAL baseline on the assumption
+that the HAL would add only ~2 KB of vtables. That was the wrong shape: the HAL
+legitimately adds *code*, not just dispatch, and by Phase 4 the lite build sat
+3.3 KB from tripping a limit that has nothing to do with the hardware.
 
-| Variant | Baseline | CI ceiling |
-|---|---:|---:|
-| `lolin-full` | 1,418,832 | 1,461,397 |
-| `lolin-lite` | 630,464 | 649,378 |
+**The real limit is the app partition**, from `build/*/partitions.csv`:
 
-ADR-002 predicts ~2 KB of vtable growth (≈0.3 % of the lite build), so 3 % is
-generous headroom that still catches a real regression. Tighten it after Phase 2
-once the actual cost is known.
+```
+app0, app, ota_0, 0x10000, 0x200000     ->  2,097,152 bytes
+```
+
+Two checks instead of one:
+
+| Check | lolin-lite | lolin-full | Rationale |
+|---|---:|---:|---|
+| **Hard limit** (fail) | 2,097,152 | 2,097,152 | Exceeding this cannot be flashed |
+| **Regression budget** (fail) | 800,000 | 1,750,000 | Catches unintended growth well before the hard limit |
+| Measured at end of Phase 4 | 646,064 | 1,441,264 | 31 % / 69 % of partition |
+| Measured at end of Phase 5 | 635,648 | 1,431,456 | 30 % / 68 % of partition |
+| Measured at end of Phase 6 | 633,216 | 1,429,072 | 30 % / 68 % of partition |
+| Measured at end of Phase 6B | 633,936 | 1,429,856 | 30 % / 68 % of partition |
+
+Phase 6 came out **smaller** than Phase 5 on both variants, by ~2.4 KB. The
+estimation layer's structure, the CRC and the NVS store cost about 3 KB;
+dropping the EEPROM backend, its migration path and the ArduFliteIMU façade gave
+back more than that.
+
+Phase 5 *reduced* both builds by ~10 KB. Replacing FastIMU and Adafruit_BMP280
+with two own drivers also dropped Adafruit_BusIO and Adafruit_Unified_Sensor,
+which came in as transitive dependencies. Writing the drivers cost less flash
+than depending on libraries that abstract over hardware this project does not
+have.
+
+The full build is the one to watch: at 69 % of the partition it has ~656 KB of
+real headroom, but it carries the WiFi/HTTP stack. The lite build — the one that
+flies — uses under a third of the partition and is not a concern.
+
+**Do not tighten these to track the current size.** A budget that ratchets down
+after every phase turns into a tripwire that fires on legitimate work; the point
+is to catch a *surprise*, not to enforce a diet.
 
 ---
 
@@ -93,9 +123,9 @@ same phase would make an overflow impossible to attribute.
 
 | Metric | Value |
 |---|---|
-| Tests | 115 passed, 1 disabled |
+| Tests | 115 passed, 1 disabled (218 after Phase 5; 286 after Phase 6; 294 after Phase 6B; 317 mid-Phase-7) |
 | Disabled | `ProductionContracts.DISABLED_ConfigRegistryRejectsWeakApPasswordAtSetTime` — never passed; see the comment in `test_production_contracts.cpp` |
 | Standard | C++17 (raised to C++20 in Phase 0 — ADR-021) |
-| Production files compiled | 2 (`pid.cpp`, `FliteQuaternion.cpp`) |
+| Production files compiled | 2 (`pid.cpp`, `FliteQuaternion.cpp`) — 7 after Phase 5 |
 
 That last row is the number Phase 0 onwards should move.

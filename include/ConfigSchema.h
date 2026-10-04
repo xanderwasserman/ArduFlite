@@ -45,7 +45,7 @@ CONFIG_FLOAT(CONFIG_KEY_RATE_PITCH_ALPHA,    0.10f,  0.01f,  1.0f,   "Pitch rate
 
 // Yaw
 CONFIG_FLOAT(CONFIG_KEY_RATE_YAW_KP,       0.05f,  0.0f,   1.0f,   "Yaw rate P gain");
-CONFIG_FLOAT(CONFIG_KEY_RATE_YAW_TI_S,       0.0f,   0.0f,   10.0f,  "Yaw rate I time constant (s) - 0 disables, prevents drift without magnetometer");
+CONFIG_FLOAT(CONFIG_KEY_RATE_YAW_TI_S,       8.0f,   0.0f,   10.0f,  "Yaw rate I time constant (s) - slow by design; see ADR-054. 0 disables");
 CONFIG_FLOAT(CONFIG_KEY_RATE_YAW_TD_S,       0.30f,  0.0f,   1.0f,   "Yaw rate D time constant (s)");
 CONFIG_FLOAT(CONFIG_KEY_RATE_YAW_OUTLIMIT, 1.00f,  0.1f,   1.0f,   "Yaw rate output limit");
 CONFIG_FLOAT(CONFIG_KEY_RATE_YAW_HEADROOM, 0.80f,  0.5f,   1.0f,   "Yaw rate anti-windup headroom");
@@ -151,6 +151,11 @@ CONFIG_FLOAT(CONFIG_KEY_IMU_GYRO_ALPHA,     0.4f,   0.001f, 1.0f,   "Gyroscope l
 CONFIG_FLOAT(CONFIG_KEY_IMU_MAG_ALPHA,      0.04f,  0.001f, 1.0f,   "Magnetometer low-pass filter alpha");
 CONFIG_FLOAT(CONFIG_KEY_IMU_ALTI_ALPHA,     0.10f,  0.001f, 0.50f, "Altimeter low-pass filter alpha (at 50 Hz baro rate; 0.10 → τ≈200ms)");
 CONFIG_FLOAT(CONFIG_KEY_IMU_MADGWICK_BETA,  0.1f,   0.01f, 1.0f,   "Madgwick filter beta (gyro/accel trust)");
+// Off by design, not pending. A magnetometer that is FITTED is a board fact;
+// whether it is TRUSTED in the fusion loop is a separate judgement, and today
+// the answer is no - nothing consumes heading, while an uncalibrated field
+// steals accelerometer authority from roll and pitch. See ADR-055.
+CONFIG_BOOL(CONFIG_KEY_IMU_FUSE_MAG,       false,          "Fuse magnetometer into attitude (9-axis). Needs hard-iron calibration first");
 CONFIG_FLOAT(CONFIG_KEY_IMU_MAX_ACCEL_G,    16.0f,  4.0f,  16.0f,  "Max valid accelerometer magnitude (g)");
 CONFIG_FLOAT(CONFIG_KEY_IMU_MAX_GYRO_DPS,   2000.0f, 250.0f, 2000.0f, "Max valid gyroscope rate (deg/s)");
 CONFIG_UINT8(CONFIG_KEY_IMU_FAIL_THRESHOLD, 5,      1,     20,     "Consecutive failures before unhealthy");

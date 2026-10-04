@@ -6,13 +6,17 @@
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
+#include <chrono>
+
 #include "src/cli/ArduFliteCLI.h"
+
+#include "src/hal/board/Board.h"
 #include "src/cli/CLICommandContext.h"
 #include "src/cli/CLICommandUtils.h"
 #include "src/cli/CLICommands.h"
 #include "src/utils/Logging.h"
 
-ArduFliteCLI::ArduFliteCLI(ArduFliteController* controller, ArduFliteIMU* imu, ArduFliteFlashTelemetry* flashTelemetry)
+ArduFliteCLI::ArduFliteCLI(ArduFliteController* controller, arduflite::estimation::InertialSubsystem* imu, ArduFliteFlashTelemetry* flashTelemetry)
     : controller(controller), imu(imu), flashTelemetry(flashTelemetry)
 {
     // Set the global pointers for CLI commands.
@@ -22,8 +26,22 @@ ArduFliteCLI::ArduFliteCLI(ArduFliteController* controller, ArduFliteIMU* imu, A
 }
 
 void ArduFliteCLI::startTask() {
-    // Create the CLI task.
-    xTaskCreate(cliTask, "CLI Task", 4096, this, 1, nullptr);
+    if (_scheduler == nullptr) {
+        LOG_ERR("CLI startTask() before setScheduler() - CLI will not run.");
+        return;
+    }
+
+    // Priority::Cli is 1, NOT 0. AGENTS.md's prose says 0; the ladder in
+    // Scheduler.h is authoritative, and dropping the CLI a level below the
+    // other background tasks would starve it behind telemetry.
+    const arduflite::hal::TaskConfig cfg{
+        "CLITask", kStackBytes, arduflite::hal::Priority::Cli, -1
+    };
+
+    auto task = _scheduler->spawn(cfg, cliTask, this);
+    if (!task) {
+        LOG_ERR("CLI task creation failed: %s", arduflite::toString(task.status()));
+    }
 }
 
 void ArduFliteCLI::cliTask(void* parameters) {
@@ -34,8 +52,11 @@ void ArduFliteCLI::cliTask(void* parameters) {
 
     while (true) {
         // Read input from Serial.
-        while (Serial.available() > 0) {
-            char c = Serial.read();
+        auto& console = arduflite::board::Board::instance().console();
+        while (console.available() > 0) {
+            const int byte = console.readByte();
+            if (byte < 0) { break; }
+            char c = static_cast<char>(byte);
             if (c == '\n' || c == '\r') {
                 // Process the command line if non-empty.
                 if (inputLine.length() > 0) {
@@ -60,6 +81,7 @@ void ArduFliteCLI::cliTask(void* parameters) {
             }
         }
         // Short delay to yield.
-        vTaskDelay(pdMS_TO_TICKS(10));
+        arduflite::board::Board::instance().scheduler().sleepFor(
+            std::chrono::milliseconds{ 10 });
     }
 }

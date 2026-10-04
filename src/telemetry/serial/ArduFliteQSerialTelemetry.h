@@ -9,8 +9,7 @@
 #ifndef ARDUFLITE_Q_SERIAL_TELEMETRY_H
 #define ARDUFLITE_Q_SERIAL_TELEMETRY_H
 
-#include <Arduino.h>
-#include "src/telemetry/ArduFliteTelemetry.h"
+#include "src/telemetry/PeriodicTelemetryBackend.h"
 #include "src/telemetry/TelemetryData.h"
 
 /**
@@ -23,21 +22,12 @@
  * For full-fidelity CSV flight logging to on-board flash, use
  * ArduFliteFlashTelemetry instead.
  */
-class ArduFliteQSerialTelemetry : public ArduFliteTelemetry {
+class ArduFliteQSerialTelemetry final : public PeriodicTelemetryBackend {
     public:
-        ArduFliteQSerialTelemetry(float frequencyHz = 10.0f);
-        ~ArduFliteQSerialTelemetry();
-
-        void begin() override;
-        void publish(const TelemetryData& telemData) override;
+        explicit ArduFliteQSerialTelemetry(float frequencyHz = 10.0f);
 
     private:
-        static void telemetryTask(void* pvParameters);
-
-        float             _intervalMs;
-        TaskHandle_t      _taskHandle  = nullptr;   ///< Handle for telemetryTask; stored to allow clean teardown
-        TelemetryData     _pendingData{};
-        SemaphoreHandle_t _mutex = nullptr; ///< Protects _pendingData; nullptr until begin() succeeds
+        void runLoop() override;
     };
 
 #endif //ARDUFLITE_Q_SERIAL_TELEMETRY_H

@@ -10,23 +10,18 @@
 #ifndef ARDUFLITE_FLASH_TELEMETRY_H
 #define ARDUFLITE_FLASH_TELEMETRY_H
 
-#include "src/telemetry/ArduFliteTelemetry.h"
-#include "include/ArduFlite.h"
+#include "src/telemetry/PeriodicTelemetryBackend.h"
 #include "src/utils/Logging.h"
 
-#include <Arduino.h>
-#include <FS.h>
-#include <LittleFS.h>
 #include <atomic>
+#include <chrono>
+#include <mutex>
 
-class ArduFliteFlashTelemetry : public ArduFliteTelemetry
+class ArduFliteFlashTelemetry final : public PeriodicTelemetryBackend
 {
 public:
     explicit ArduFliteFlashTelemetry(float frequencyHz = 10.0f);
-    ~ArduFliteFlashTelemetry();
-
-    void begin() override;
-    void publish(const TelemetryData& telemData) override;
+    ~ArduFliteFlashTelemetry() override;
 
     // Call on launch/landing.
     /// @brief Begin recording a new flight log.
@@ -51,7 +46,7 @@ public:
     void dumpLog(int index);
     void deleteLog(int index);
 
-    /// @brief Erase the entire LittleFS filesystem. Stops logging first. Use with care.
+    /// @brief Erase all stored logs. Stops logging first. Use with care.
     void reset() override
     {
         // Stop any active logging session before formatting to prevent the telemetry
@@ -62,35 +57,61 @@ public:
             return;
         }
 
-        if (!_fileMutex) return;
+        if (_fileMutex == nullptr) { return; }
 
-        // Use portMAX_DELAY so the format only begins after any in-progress write
-        // completes. The format itself takes up to several seconds; the telemetry
-        // task will gracefully time out on _fileMutex during this period and skip
-        // write cycles (acceptable \u2014 the FS is being erased anyway).
-        SemaphoreLock lock(_fileMutex, portMAX_DELAY);
-        if (!lock.acquired()) return;
-        if (!LittleFS.format()) { LOG_ERR("LittleFS format failed"); }
+        // An UNBOUNDED wait, so the format only begins after any in-progress
+        // write completes. The format itself takes several seconds; the
+        // telemetry task times out on _fileMutex meanwhile and skips write
+        // cycles, which is acceptable because the filesystem is being erased.
+        std::unique_lock lock(*_fileMutex);
+        if (!_store || _store->formatAll() != arduflite::Status::Ok)
+        {
+            LOG_ERR("Log store format failed");
+        }
     }
 
 private:
-    static void telemetryTask(void* pvParameters);
+    /// Mounts the log store and takes the file mutex, before the task starts.
+    bool onBegin() override;
+    void runLoop() override;
 
     // Helpers — caller must hold _fileMutex before calling either function.
     /// @note Caller must hold _fileMutex. Traverses LittleFS root once; returns
     ///       (max_index + 1), or 0 when the filesystem contains no log files.
     int  findNextFlightLogIndex();
+
+    /// Cap on how many log indices one directory scan will track.
+    static constexpr size_t kMaxTrackedLogs = 50;
+
+    /// Reads the indices present on the filesystem. The RULE for choosing and
+    /// purging them lives in drivers::LogRotationPolicy, where it is testable
+    /// without a filesystem.
+    size_t collectLogIndices(int* out, size_t maxEntries);
+
+    /// Storage, owned by Board. All file work goes through it.
+    arduflite::device::LogStore* _store = nullptr;
+
+    /// Latches on the first failed append so a full medium reports once,
+    /// not fifty times a second. Cleared by startLogging().
+    bool _writeFailed = false;
     static void formatCSVHeader(char* buf, size_t bufSize);
     static size_t formatCSVRow(char* buf, size_t bufSize, unsigned long ts, const TelemetryData& d);
 
-    float             _intervalMs;
-    TaskHandle_t      _taskHandle = nullptr; ///< Handle for telemetryTask; stored to allow clean teardown
-    SemaphoreHandle_t _dataMutex;       ///< Protects _pendingData (fast operations)
-    SemaphoreHandle_t _fileMutex;       ///< Protects file I/O (slow operations)
-    TelemetryData     _pendingData{};   ///< Updated by publish()
-    TelemetryData     _writeBuffer{};   ///< Used by task for writing
-    unsigned long     _lastFlushMs;
-    File              _logFile;
+    /// How long a diagnostic command will wait for the file lock. Generous:
+    /// these run from the CLI on the ground, where waiting beats failing.
+    static constexpr std::chrono::milliseconds kDiagLockTimeout{ 2000 };
+    /// How long start/stop will wait. Shorter: these can be hit in flight.
+    static constexpr std::chrono::milliseconds kControlLockTimeout{ 500 };
+
+    /// Protects file I/O, which is slow. The base's mutex guards the published
+    /// sample and is taken only briefly, so the two are kept separate: a CLI
+    /// command holding this one for seconds must not block publish().
+    arduflite::hal::Mutex* _fileMutex = nullptr;
+    TelemetryData     _writeBuffer{};   ///< The task's working copy
+    /// Monotonic microseconds from hal::Clock, not Arduino millis(). The clock
+    /// is 64-bit, so unlike millis() it does not wrap after 49 days — which is
+    /// longer than any flight but not longer than a bench session left running.
+    std::uint64_t     _lastFlushUs = 0;
     std::atomic<bool> _isLogging;
     char              _currentFilename[32]{}; ///< Current log filename, e.g. "/log_000.csv"
 };

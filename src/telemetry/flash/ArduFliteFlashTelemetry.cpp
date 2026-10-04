@@ -8,194 +8,121 @@
 
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
 #include "src/utils/Logging.h"
-#include "include/ArduFlite.h"
 
 #include <FS.h>
-#include <LittleFS.h>
+
+#include <algorithm>
+#include <mutex>
+
+#include "src/core/LogRotationPolicy.h"
+#include "src/hal/board/Board.h"
 
 namespace FlashTelemetryConfig {
-    constexpr unsigned long FLUSH_INTERVAL_MS = 500;   ///< Flush to flash every 500ms
+    constexpr std::uint64_t FLUSH_INTERVAL_US = 500'000;   ///< Flush to flash every 500 ms
     constexpr size_t MAX_ROW_BUFFER = 600;             ///< Max CSV row size in bytes
 }
 
 ArduFliteFlashTelemetry::ArduFliteFlashTelemetry(float frequencyHz)
-  : _intervalMs(1000.0f / constrain(frequencyHz, 0.1f, 200.0f)),
-    _dataMutex(nullptr),
-    _fileMutex(nullptr),
-    _lastFlushMs(0),
+  : PeriodicTelemetryBackend("FlashTelTask", frequencyHz, 8192),
     _isLogging(false)
 {
 }
 
 ArduFliteFlashTelemetry::~ArduFliteFlashTelemetry()
 {
-    // Delete the background task first so it cannot access _logFile or the mutexes
-    // after they are destroyed below. On single-core ESP32-C3 vTaskDelete() removes
-    // the task from the scheduler immediately — it will not run again, and since only
-    // one task runs at a time it cannot be mid-write here.
-    //
-    // SINGLE-CORE ASSUMPTION (load-bearing): on a dual-core port (ESP32-S3/classic),
-    // vTaskDelete() of a task pinned to the OTHER core is not synchronous, so the
-    // telemetry task could still be inside its _fileMutex write scope when we close
-    // _logFile below — a use-after-free. Revisit this teardown before any dual-core
-    // port (e.g. join via a "task exited" flag the task sets just before returning).
-    // Note also that vTaskDelete() does not unwind the deleted task's C++ stack, so a
-    // SemaphoreLock it held is never given back — harmless here only because we delete
-    // the mutexes next.
-    if (_taskHandle)
+    // Ask the loop to leave BEFORE closing anything. Taking _fileMutex below is
+    // what orders this against a write already in progress.
+    requestTaskStop();
+
+    if (_fileMutex != nullptr)
     {
-        vTaskDelete(_taskHandle);
-        _taskHandle = nullptr;
+        // Unbounded: a flight log worth closing is worth waiting for.
+        std::unique_lock lock(*_fileMutex);
+        if (_isLogging && _store != nullptr)
+        {
+            (void)_store->flush();
+            (void)_store->closeSession();
+            _isLogging = false;
+        }
     }
 
-    if (_fileMutex)
-    {
-        // The telemetryTask was deleted above, so _fileMutex is uncontested.
-        // Access _isLogging and _logFile directly without acquiring a lock.
-        if (_isLogging)
-        {
-            _logFile.flush();
-            _logFile.close();
-        }
-        vSemaphoreDelete(_fileMutex);
-    }
-    if (_dataMutex)
-    {
-        vSemaphoreDelete(_dataMutex);
-    }
+    // Pool-owned; nothing reclaims entries (ADR-011, no heap after boot).
+    _fileMutex = nullptr;
 }
 
-void ArduFliteFlashTelemetry::begin()
+bool ArduFliteFlashTelemetry::onBegin()
 {
-    // Idempotency guard — a second begin() call would leak the existing mutexes
-    // and spawn a second task that races on the same _pendingData / _logFile.
-    if (_dataMutex)
+    _store = &arduflite::board::Board::instance().logs();
+    if (_store->begin() != arduflite::Status::Ok)
     {
-        LOG_WARN("FlashTelemetry::begin() called more than once — ignoring");
-        return;
+        LOG_ERR("Log store failed to mount - flash logging disabled");
+        _store = nullptr;
+        return false;
     }
 
-    if (!LittleFS.begin())
+    auto fileMutex = arduflite::board::Board::instance().allocMutex();
+    if (!fileMutex)
     {
-        LOG_ERR("LittleFS mount failed; formatting...");
-        if (!LittleFS.format())
-        {
-            LOG_ERR("LittleFS format failed — cannot mount");
-            return;
-        }
-        if (!LittleFS.begin())
-        {
-            LOG_ERR("LittleFS mount failed after format!");
-            return;
-        }
+        LOG_ERR("FlashTelemetry: no file mutex available - flash logging disabled");
+        _store = nullptr;
+        return false;
     }
+    _fileMutex = fileMutex.value();
 
-    _dataMutex = xSemaphoreCreateMutex();
-    _fileMutex = xSemaphoreCreateMutex();
-    if (!_dataMutex || !_fileMutex)
-    {
-        LOG_ERR("Failed to create flash telemetry mutexes");
-        // Roll back any mutexes that were created so the object stays in a
-        // fully uninitialised state. Without this, a second begin() call would
-        // see _dataMutex != nullptr, hit the idempotency guard, and silently
-        // return — permanently blocking recovery without an error message.
-        if (_dataMutex) { vSemaphoreDelete(_dataMutex); _dataMutex = nullptr; }
-        if (_fileMutex) { vSemaphoreDelete(_fileMutex); _fileMutex = nullptr; }
-        return;
-    }
-
-    size_t total = LittleFS.totalBytes();
-    size_t used  = LittleFS.usedBytes();
-    LOG_INF("LittleFS TotalBytes: %u", (unsigned)total);
-    LOG_INF("LittleFS UsedBytes:  %u\n\n", (unsigned)used);
-
-    // Start background task — store handle so the destructor can stop it cleanly.
-    if (xTaskCreate(
-        telemetryTask,
-        "FlashTelTask",
-        8192,
-        this,
-        1,
-        &_taskHandle
-    ) != pdPASS)
-    {
-        LOG_ERR("FlashTelemetry: failed to create telemetry task");
-        vSemaphoreDelete(_dataMutex); _dataMutex = nullptr;
-        vSemaphoreDelete(_fileMutex); _fileMutex = nullptr;
-    }
+    uint32_t used = 0, total = 0;
+    (void)_store->usage(used, total);
+    LOG_INF("Log store: %u bytes used of %u", (unsigned)used, (unsigned)total);
+    return true;
 }
 
-void ArduFliteFlashTelemetry::publish(const TelemetryData& telemData)
-{
-    if (!_dataMutex) return;
 
-    SemaphoreLock lock(_dataMutex);
-    if (!lock.acquired()) return;
-    _pendingData = telemData;
+/**
+ * @brief Collect the log indices present on the filesystem.
+ *
+ * Split from the allocation rule so the rule itself — monotonic growth, then
+ * lowest-gap reuse — is testable without a filesystem. See
+ * drivers::LogRotationPolicy and test_log_rotation.cpp.
+ *
+ * @return how many were written to `out`, capped at maxEntries.
+ */
+size_t ArduFliteFlashTelemetry::collectLogIndices(int* out, size_t maxEntries)
+{
+    if (!_store) { return 0; }
+
+    uint16_t indices[kMaxTrackedLogs];
+    const size_t capped = (maxEntries < kMaxTrackedLogs) ? maxEntries : kMaxTrackedLogs;
+    const size_t count  = _store->listSessions(indices, capped);
+
+    for (size_t i = 0; i < count; ++i) { out[i] = indices[i]; }
+
+    if (count >= capped)
+    {
+        LOG_WARN("collectLogIndices: at least %u logs present - scan capped; "
+                 "any older ones are not considered for purge", (unsigned)capped);
+    }
+    return count;
+}
+
+/// Free space. The store already guards used > total.
+static uint32_t freeBytesOf(arduflite::device::LogStore* store)
+{
+    if (!store) { return 0; }
+    uint32_t used = 0, total = 0;
+    if (store->usage(used, total) != arduflite::Status::Ok) { return 0; }
+    return (used <= total) ? (total - used) : 0u;
 }
 
 int ArduFliteFlashTelemetry::findNextFlightLogIndex()
 {
-    // Policy: indices grow monotonically as (max_index + 1) until log_999.csv exists;
-    // only then do we reuse the lowest free gap. Deleting a mid-range log does NOT
-    // reclaim its index until the space is full, which keeps log ordering intuitive.
-    // -1 sentinel → returns 0 (first log index) when the directory is empty.
-    static constexpr int MAX_LOG_INDEX = 999;
+    int indices[kMaxTrackedLogs];
+    const size_t count = collectLogIndices(indices, kMaxTrackedLogs);
 
-    // First pass: track only the highest index in use (no large stack buffer).
-    int maxIdx = -1;
+    const int idx = arduflite::drivers::LogRotationPolicy::nextIndex(indices, count);
+    if (idx < 0)
     {
-        File root = LittleFS.open("/");
-        File file = root.openNextFile();
-        while (file)
-        {
-            // Avoid String heap allocation — use LittleFS filename pointer directly.
-            const char* p = file.name();
-            if (*p == '/') ++p;
-            int idx;
-            if (sscanf(p, "log_%03d.csv", &idx) == 1 && idx >= 0 && idx <= MAX_LOG_INDEX)
-            {
-                maxIdx = max(maxIdx, idx);
-            }
-            file = root.openNextFile();
-        }
-        root.close();
+        LOG_ERR("findNextFlightLogIndex: log index space exhausted; delete old logs first");
     }
-
-    // Common case: room remains above the highest index — done, no occupancy scan.
-    if (maxIdx < MAX_LOG_INDEX)
-    {
-        return maxIdx + 1;
-    }
-
-    // Rare case: log_999.csv exists. Scan once more, this time recording occupancy,
-    // to reuse the lowest free index. The 1 KB array lives only on this path so the
-    // common case never pays its stack cost.
-    bool used[MAX_LOG_INDEX + 1] = {};
-    {
-        File root = LittleFS.open("/");
-        File file = root.openNextFile();
-        while (file)
-        {
-            const char* p = file.name();
-            if (*p == '/') ++p;
-            int idx;
-            if (sscanf(p, "log_%03d.csv", &idx) == 1 && idx >= 0 && idx <= MAX_LOG_INDEX)
-            {
-                used[idx] = true;
-            }
-            file = root.openNextFile();
-        }
-        root.close();
-    }
-
-    for (int idx = 0; idx <= MAX_LOG_INDEX; ++idx)
-    {
-        if (!used[idx]) return idx;
-    }
-
-    LOG_ERR("findNextFlightLogIndex: log index space exhausted; delete old logs first");
-    return -1;
+    return idx;
 }
 
 bool ArduFliteFlashTelemetry::startLogging()
@@ -206,9 +133,8 @@ bool ArduFliteFlashTelemetry::startLogging()
     // Bounded timeout — portMAX_DELAY would block a CLI task (priority 0) indefinitely
     // if the telemetry task (priority 1) holds _fileMutex. LittleFS writes complete
     // in well under 500 ms under normal conditions.
-    constexpr TickType_t LOCK_TIMEOUT_MS = 500;
-    SemaphoreLock lock(_fileMutex, LOCK_TIMEOUT_MS);
-    if (!lock.acquired())
+    std::unique_lock lock(*_fileMutex, kControlLockTimeout);
+    if (!lock.owns_lock())
     {
         LOG_ERR("startLogging: could not acquire _fileMutex within 500 ms — log not started");
         return false;
@@ -222,80 +148,52 @@ bool ArduFliteFlashTelemetry::startLogging()
         return true;
     }
 
-    // Auto-purge oldest log(s) if flash storage is critically low.
-    // Both find and delete run under _fileMutex to prevent concurrent directory
-    // traversal from listLogs() or dumpLog() from racing with the purge loop.
-    // At 10 Hz each log row is ~175 bytes; 300 KB provides ~3 minutes of headroom.
-    constexpr size_t MIN_FREE_BYTES     = 300UL * 1024UL;
-    constexpr int    MAX_LOG_INDICES    = 50;   ///< Stack cap on tracked log entries
-    constexpr int    MAX_PURGE_ATTEMPTS = 20;   ///< Safety cap against filesystem errors
-
-    // Safe subtraction: guard against corrupt filesystem where usedBytes > totalBytes.
-    size_t freeBytes = (LittleFS.usedBytes() <= LittleFS.totalBytes())
-                       ? (LittleFS.totalBytes() - LittleFS.usedBytes()) : 0;
-
-    if (freeBytes < MIN_FREE_BYTES)
+    // Auto-purge the oldest logs if flash is critically low. Both the scan and
+    // the deletes run under _fileMutex so a concurrent listLogs() or dumpLog()
+    // cannot traverse the directory while it is changing underneath them.
+    //
+    // The RULE lives in drivers::LogRotationPolicy and is tested on the host;
+    // what remains here is the filesystem work it decides on.
     {
-        // Single directory scan to collect all log indices — avoids calling
-        // findOldestFlightLogIndex() (a full O(N) scan) on every purge iteration,
-        // which would make the total purge O(N²). Instead, sort once and iterate.
-        int logIndices[MAX_LOG_INDICES];
-        int logCount = 0;
+        arduflite::drivers::LogRotationPolicy policy;
+        uint32_t freeBytes = freeBytesOf(_store);
+
+        if (freeBytes < policy.minFreeBytes)
         {
-            File root = LittleFS.open("/");
-            File f    = root.openNextFile();
-            while (f && logCount < MAX_LOG_INDICES)
+            int indices[kMaxTrackedLogs];
+            const size_t count = collectLogIndices(indices, kMaxTrackedLogs);
+            arduflite::drivers::LogRotationPolicy::sortAscending(indices, count);
+
+            // Re-measure after every delete rather than trusting an estimate:
+            // the policy decides HOW MANY based on an average, but the actual
+            // reclaim varies with log length, and stopping as soon as the real
+            // figure clears the threshold deletes the fewest flights.
+            for (size_t i = 0; i < count && freeBytes < policy.minFreeBytes; ++i)
             {
-                const char* p = f.name();
-                if (*p == '/') ++p;
-                int idx;
-                if (sscanf(p, "log_%03d.csv", &idx) == 1)
+                if (i >= (size_t)policy.maxPurgeAttempts)
                 {
-                    logIndices[logCount++] = idx;
+                    LOG_ERR("Auto-purge aborted after %d attempts - filesystem may be corrupt.",
+                            policy.maxPurgeAttempts);
+                    return false;
                 }
-                f = root.openNextFile();
-            }
-            if (logCount >= MAX_LOG_INDICES && f)
-            {
-                // More log files exist beyond the scan cap — the oldest ones
-                // outside this range will not be considered for purge this cycle.
-                LOG_WARN("startLogging: >%d logs on filesystem — scan capped; some old logs may not be auto-purged", MAX_LOG_INDICES);
-            }
-            root.close();
-        }
 
-        // Insertion sort ascending (oldest = smallest index first).
-        // logCount ≤ MAX_LOG_INDICES, so O(N²) is negligible here.
-        for (int i = 1; i < logCount; ++i)
-        {
-            int key = logIndices[i], j = i - 1;
-            while (j >= 0 && logIndices[j] > key) { logIndices[j + 1] = logIndices[j]; --j; }
-            logIndices[j + 1] = key;
-        }
+                if (_store->removeSession((uint16_t)indices[i]) != arduflite::Status::Ok)
+                {
+                    LOG_ERR("Auto-purge failed to delete log_%03d.csv - aborting.", indices[i]);
+                    return false;
+                }
+                char purgeFn[32];
+                snprintf(purgeFn, sizeof(purgeFn), "/log_%03d.csv", indices[i]);
 
-        for (int pi = 0; pi < logCount && freeBytes < MIN_FREE_BYTES; ++pi)
-        {
-            if (pi >= MAX_PURGE_ATTEMPTS)
+                freeBytes = freeBytesOf(_store);
+                LOG_WARN("Auto-purged %s - %.1f KB free", purgeFn, freeBytes / 1024.0f);
+            }
+
+            if (freeBytes < policy.minFreeBytes)
             {
-                LOG_ERR("Auto-purge aborted after %d attempts — filesystem may be corrupt.", MAX_PURGE_ATTEMPTS);
+                LOG_ERR("Flash full and no purgeable logs - cannot start logging.");
                 return false;
             }
-            char purgeFn[32];
-            snprintf(purgeFn, sizeof(purgeFn), "/log_%03d.csv", logIndices[pi]);
-            if (!LittleFS.remove(purgeFn))
-            {
-                LOG_ERR("Auto-purge failed to delete %s — aborting.", purgeFn);
-                return false;
-            }
-            freeBytes = (LittleFS.usedBytes() <= LittleFS.totalBytes())
-                        ? (LittleFS.totalBytes() - LittleFS.usedBytes()) : 0;
-            LOG_WARN("Auto-purged %s — %.1f KB free", purgeFn, freeBytes / 1024.0f);
-        }
-
-        if (freeBytes < MIN_FREE_BYTES)
-        {
-            LOG_ERR("Flash full and no purgeable logs — cannot start logging.");
-            return false;
         }
     }
 
@@ -306,15 +204,23 @@ bool ArduFliteFlashTelemetry::startLogging()
     }
     snprintf(_currentFilename, sizeof(_currentFilename), "/log_%03d.csv", idx);
 
-    _logFile = LittleFS.open(_currentFilename, FILE_WRITE);
-    if (_logFile)
+    if (_store->openSession((uint16_t)idx) == arduflite::Status::Ok)
     {
         char header[MAX_ROW_BUFFER];
         formatCSVHeader(header, sizeof(header));
-        _logFile.write((const uint8_t*)header, strlen(header));
-        _logFile.flush();
-        _lastFlushMs = millis();
-        _isLogging = true;
+        (void)_store->append(header, strlen(header));
+        (void)_store->flush();
+        // Reset the flush deadline so a session that starts just after a flush
+        // does not immediately flush again.
+        _lastFlushUs = static_cast<std::uint64_t>(
+            arduflite::board::Board::instance().clock().now().time_since_epoch().count());
+        _isLogging   = true;
+
+        // Clear the latch: a medium that was full when the LAST log ran may
+        // have been purged since, and leaving it set would silence the failure
+        // report for every remaining flight of this boot.
+        _writeFailed = false;
+
         LOG_INF("Logging started: %s", _currentFilename);
         return true;
     }
@@ -330,9 +236,8 @@ bool ArduFliteFlashTelemetry::stopLogging()
     // Bounded timeout — stopLogging() is called from CLI (priority 0) or landing
     // callbacks. The telemetry task (priority 1) only holds _fileMutex briefly
     // during LittleFS writes; 500 ms provides ample margin.
-    constexpr TickType_t LOCK_TIMEOUT_MS = 500;
-    SemaphoreLock lock(_fileMutex, LOCK_TIMEOUT_MS);
-    if (!lock.acquired())
+    std::unique_lock lock(*_fileMutex, kControlLockTimeout);
+    if (!lock.owns_lock())
     {
         LOG_ERR("stopLogging: could not acquire _fileMutex within 500 ms — log may not be flushed");
         return false;
@@ -340,8 +245,8 @@ bool ArduFliteFlashTelemetry::stopLogging()
 
     if (_isLogging)
     {
-        _logFile.flush();
-        _logFile.close();
+        (void)_store->flush();
+        (void)_store->closeSession();
         _isLogging = false;
         LOG_INF("Logging stopped: %s", _currentFilename);
     }
@@ -352,36 +257,40 @@ bool ArduFliteFlashTelemetry::stopLogging()
 void ArduFliteFlashTelemetry::listLogs()
 {
     if (!_fileMutex) return;
+    if (!_store) { LOG_ERR("listLogs: log store unavailable"); return; }
 
     if (_isLogging)
     {
-        LOG_WARN("listLogs() called while logging is active — write gaps will occur during enumeration");
+        LOG_WARN("listLogs() called while logging is active - write gaps will occur during enumeration");
     }
 
-    // Diagnostic commands use a generous bounded timeout — these run from CLI
-    // (priority 0); the telemetry task (priority 1) only holds _fileMutex briefly.
-    constexpr TickType_t DIAG_LOCK_TIMEOUT_MS = 2000;
-    SemaphoreLock lock(_fileMutex, DIAG_LOCK_TIMEOUT_MS);
-    if (!lock.acquired())
+    // Diagnostic commands use a generous bounded timeout - these run from the
+    // CLI (priority 1); the telemetry task only holds _fileMutex briefly.
+    std::unique_lock lock(*_fileMutex, kDiagLockTimeout);
+    if (!lock.owns_lock())
     {
         LOG_ERR("listLogs: could not acquire _fileMutex within 2000 ms");
         return;
     }
 
-    LOG("Available logs:");
-    File root = LittleFS.open("/");
-    File file = root.openNextFile();
-    while (file)
+    uint16_t indices[kMaxTrackedLogs];
+    const size_t count = _store->listSessions(indices, kMaxTrackedLogs);
+
+    // Oldest first, matching how the purge walks them and how anyone reading a
+    // directory listing expects log numbers to run.
+    int ordered[kMaxTrackedLogs];
+    for (size_t i = 0; i < count; ++i) { ordered[i] = indices[i]; }
+    arduflite::drivers::LogRotationPolicy::sortAscending(ordered, count);
+
+    LOG_N("Flight logs (%u):\n", (unsigned)count);
+    for (size_t i = 0; i < count; ++i)
     {
-        // Avoid String heap allocation — match log_NNN.csv via sscanf.
-        const char* name = file.name();
-        const char* p    = (*name == '/') ? name + 1 : name;
-        int idx;
-        if (sscanf(p, "log_%03d.csv", &idx) == 1)
-            LOG("  log_%03d.csv", idx);
-        file = root.openNextFile();
+        LOG_N("  log_%03d.csv\n", ordered[i]);
     }
-    root.close();
+
+    uint32_t used = 0, total = 0;
+    (void)_store->usage(used, total);
+    LOG_N("Storage: %u / %u bytes used\n", (unsigned)used, (unsigned)total);
 }
 
 void ArduFliteFlashTelemetry::dumpLog(int index)
@@ -407,40 +316,44 @@ void ArduFliteFlashTelemetry::dumpLog(int index)
     // Open the file under the mutex, then release it before the Serial dump.
     // Holding _fileMutex across blocking Serial I/O would starve the telemetry
     // task's 5 ms write window for the entire dump duration.
-    File f;
     {
-        constexpr TickType_t DIAG_LOCK_TIMEOUT_MS = 2000;
-        SemaphoreLock lock(_fileMutex, DIAG_LOCK_TIMEOUT_MS);
-        if (!lock.acquired())
+        std::unique_lock lock(*_fileMutex, kDiagLockTimeout);
+        if (!lock.owns_lock())
         {
             LOG_ERR("dumpLog: could not acquire _fileMutex within 2000 ms");
             return;
         }
-        f = LittleFS.open(fn, FILE_READ);
-    }  // _fileMutex released here — Serial I/O proceeds without holding the lock
+        if (!_store)
+        {
+            LOG_ERR("dumpLog: log store unavailable");
+            return;
+        }
+    }  // _fileMutex released here — console I/O proceeds without holding the lock
 
-    if (!f)
-    {
-        LOG_ERR("Failed to open %s", fn);
-        return;
-    }
-
-    // BEGIN marker + blank line
     LOG_N("\n--- BEGIN %s ---\n\n", fn);
 
-    // Read and print line by line using a fixed stack buffer to avoid
-    // repeated heap alloc/free from Arduino String on every row.
-    char lineBuf[FlashTelemetryConfig::MAX_ROW_BUFFER];
-    while (f.available())
+    // Streamed in chunks, not read whole: a flight log runs to hundreds of
+    // kilobytes and there is no buffer that size. A fixed stack buffer also
+    // avoids the per-row heap churn Arduino String would cause.
+    char     chunk[FlashTelemetryConfig::MAX_ROW_BUFFER];
+    size_t   offset = 0;
+    for (;;)
     {
-        int n = f.readBytesUntil('\n', lineBuf, sizeof(lineBuf) - 1);
-        lineBuf[n] = '\0';
-        LOG("%s", lineBuf);
+        size_t length = 0;
+        if (_store->readSession((uint16_t)index, chunk, sizeof(chunk) - 1, offset, length)
+                != arduflite::Status::Ok)
+        {
+            LOG_ERR("Failed to read %s", fn);
+            break;
+        }
+        if (length == 0) { break; }   // end of data
+
+        chunk[length] = '\0';
+        LOG("%s", chunk);
+        offset += length;
     }
 
-    // END marker
     LOG_N("\n--- END %s ---\n", fn);
-    f.close();
 }
 
 void ArduFliteFlashTelemetry::deleteLog(int index)
@@ -455,9 +368,8 @@ void ArduFliteFlashTelemetry::deleteLog(int index)
         return;
     }
 
-    constexpr TickType_t DIAG_LOCK_TIMEOUT_MS = 2000;
-    SemaphoreLock lock(_fileMutex, DIAG_LOCK_TIMEOUT_MS);
-    if (!lock.acquired())
+    std::unique_lock lock(*_fileMutex, kDiagLockTimeout);
+    if (!lock.owns_lock())
     {
         LOG_ERR("deleteLog: could not acquire _fileMutex within 2000 ms");
         return;
@@ -475,7 +387,7 @@ void ArduFliteFlashTelemetry::deleteLog(int index)
         return;
     }
 
-    if (LittleFS.remove(fn))
+    if (_store && _store->removeSession((uint16_t)index) == arduflite::Status::Ok)
     {
         LOG_INF("Deleted %s", fn);
     }
@@ -485,35 +397,40 @@ void ArduFliteFlashTelemetry::deleteLog(int index)
     }
 }
 
-void ArduFliteFlashTelemetry::telemetryTask(void* pvParameters)
+void ArduFliteFlashTelemetry::runLoop()
 {
     using namespace FlashTelemetryConfig;
-    auto* self = static_cast<ArduFliteFlashTelemetry*>(pvParameters);
     char rowBuf[MAX_ROW_BUFFER];
 
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(self->_intervalMs);
+    auto& board     = arduflite::board::Board::instance();
+    auto& scheduler = board.scheduler();
+    // Named `boardClock`, not `clock`: <ctime> declares a ::clock() that an
+    // unqualified `clock` binds to happily, and the error it eventually gives
+    // points at the member access rather than the name.
+    const auto& boardClock = board.clock();
 
-    for (;;)
+    // sleepUntil, not sleepFor: fixed cadence measured from the start of each
+    // iteration, so flash-write time does not accumulate into drift.
+    std::uint64_t lastWake = 0;
+    const auto period =
+        std::chrono::milliseconds{ static_cast<std::int64_t>(intervalMs()) };
+
+    while (shouldRun())
     {
-        unsigned long ts = millis();
+        const std::uint64_t nowUs = static_cast<std::uint64_t>(
+            boardClock.now().time_since_epoch().count());
+        const unsigned long ts = static_cast<unsigned long>(nowUs / 1000);
 
-        // 1) FAST: Copy pending data under data mutex (sub-millisecond)
-        if (self->_dataMutex)
-        {
-            SemaphoreLock lock(self->_dataMutex);
-            if (lock.acquired())
-            {
-                self->_writeBuffer = self->_pendingData;
-            }
-            // If lock failed, use previous _writeBuffer (stale but safe)
-        }
+        // 1) FAST: take a copy of the published sample. On a timeout the
+        //    previous _writeBuffer is reused — the log wants an unbroken row
+        //    cadence, and the timestamp makes a repeat visible.
+        (void)snapshot(_writeBuffer);
 
         // 2) Format CSV row outside any mutex.
         // If snprintf truncates (len >= bufSize), the row is missing its trailing '\n',
         // which would concatenate subsequent rows onto the same CSV line and corrupt
         // the log. Skip the row and emit an error rather than writing a partial record.
-        size_t len = formatCSVRow(rowBuf, sizeof(rowBuf), ts, self->_writeBuffer);
+        size_t len = formatCSVRow(rowBuf, sizeof(rowBuf), ts, _writeBuffer);
         const bool rowTruncated = (len >= sizeof(rowBuf));
         if (rowTruncated)
         {
@@ -522,34 +439,45 @@ void ArduFliteFlashTelemetry::telemetryTask(void* pvParameters)
         }
 
         // 3) SLOW: Write to flash under file mutex (doesn't block publish)
-        if (!rowTruncated && self->_fileMutex)
+        if (!rowTruncated && _fileMutex)
         {
             // Intentional short timeout: if startLogging/reset/dumpLog holds _fileMutex,
             // silently drop this write cycle rather than blocking the task.
-            SemaphoreLock lock(self->_fileMutex, MUTEX_TIMEOUT_MS);
-            if (lock.acquired() && self->_isLogging && self->_logFile)
+            std::unique_lock lock(*_fileMutex, kTelemetryLockTimeout);
+            if (lock.owns_lock() && _isLogging && _store && _store->isOpen())
             {
-                size_t written = self->_logFile.write((const uint8_t*)rowBuf, len);
-                if (written < len)
+                const arduflite::Status status = _store->append(rowBuf, len);
+                if (status != arduflite::Status::Ok)
                 {
-                    LOG_ERR("Flash write failed: %u/%u bytes", (unsigned)written, (unsigned)len);
+                    // NoSpace means the medium filled mid-flight. Every row from
+                    // here is lost, so say it once rather than per row at 50 Hz.
+                    if (!_writeFailed)
+                    {
+                        LOG_ERR("Flash write failed (%s) - log is now truncated",
+                                arduflite::toString(status));
+                        _writeFailed = true;
+                    }
                 }
-                if (ts - self->_lastFlushMs >= FLUSH_INTERVAL_MS)
+                else if (nowUs - _lastFlushUs >= FLUSH_INTERVAL_US)
                 {
-                    self->_logFile.flush();
-                    self->_lastFlushMs = ts;
+                    (void)_store->flush();
+                    _lastFlushUs = nowUs;
                 }
             }
         }
 
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        scheduler.sleepUntil(lastWake, period);
     }
 }
 
 void ArduFliteFlashTelemetry::formatCSVHeader(char* buf, size_t bufSize)
 {
     using namespace FlashTelemetryConfig;
-    // 33 columns are logged (1 timestamp + 27 sensor/control floats + 5 ints).
+    // 38 columns are logged (1 timestamp + 31 sensor/control floats + 6 ints).
+    // New columns are APPENDED, never inserted: the log is CSV with a named
+    // header, so appending is backward compatible for anything that reads by
+    // column name (tools/data_analysis reads with pandas; tools/csv_viewer
+    // reads the header). Inserting would silently shift every older parser.
     // The following TelemetryData fields are intentionally deferred and NOT included:
     //   battery_voltage, battery_current, battery_percent  — hardware not yet wired
     //   gps_lat, gps_lon, gps_alt, gps_speed, gps_hdop     — GPS module optional
@@ -567,7 +495,8 @@ void ArduFliteFlashTelemetry::formatCSVHeader(char* buf, size_t bufSize)
         "att_cmd_roll,att_cmd_pitch,att_cmd_yaw,"
         "rate_cmd_roll,rate_cmd_pitch,rate_cmd_yaw,"
         "altitude,climb_rate,flight_state,flight_mode,"
-        "imu_snapshot_retries,imu_snapshot_max_retries,imu_snapshot_retry_limit_hits\n";
+        "imu_snapshot_retries,imu_snapshot_max_retries,imu_snapshot_retry_limit_hits,"
+        "mag_x,mag_y,mag_z,mag_heading,mag_field,mag_valid\n";
     // bufSize should be at least MAX_ROW_BUFFER (600)
     int hdrRet = snprintf(buf, bufSize, "%s", hdr);
     if (hdrRet < 0 || (size_t)hdrRet >= bufSize)
@@ -583,7 +512,7 @@ size_t ArduFliteFlashTelemetry::formatCSVRow(
     const TelemetryData& d
 )
 {
-    // Logs the same 33 columns defined in formatCSVHeader(). Fields intentionally
+    // Logs the same 38 columns defined in formatCSVHeader(). Fields intentionally
     // omitted (battery_*, gps_*, armed, in_failsafe, link_*) are documented there.
     // snprintf returns -1 on encoding error; casting negative int to size_t yields
     // SIZE_MAX which the caller treats as truncation (correct skip), but is
@@ -602,7 +531,8 @@ size_t ArduFliteFlashTelemetry::formatCSVRow(
         "%.2f,"
         "%d,"
         "%d,"
-        "%lu,%lu,%lu\n",
+        "%lu,%lu,%lu,"
+        "%.2f,%.2f,%.2f,%.1f,%.2f,%d\n",
         ts,
         // accel
         d.accel.x, d.accel.y, d.accel.z,
@@ -627,7 +557,12 @@ size_t ArduFliteFlashTelemetry::formatCSVRow(
         d.flight_mode,
         (unsigned long)d.imu_snapshot_retries,
         (unsigned long)d.imu_snapshot_max_retries,
-        (unsigned long)d.imu_snapshot_retry_limit_hits
+        (unsigned long)d.imu_snapshot_retry_limit_hits,
+        // magnetometer — instrumentation, see TelemetryData
+        d.mag.x, d.mag.y, d.mag.z,
+        d.mag_heading,
+        d.mag_field,
+        d.mag_valid ? 1 : 0
     );
     return (snprintfRet < 0) ? bufSize : (size_t)snprintfRet;
 }

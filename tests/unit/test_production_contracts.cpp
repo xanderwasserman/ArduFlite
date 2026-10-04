@@ -129,7 +129,13 @@ TEST(ProductionContracts, WebSecretsFlashAndCaptiveDnsStayProtected)
         "void ArduFliteWebServer::handleFlashGet()");
     expectContains(flashList, "_controller->isArmed()");
     expectContains(flashList, "_flashTelemetry->isLogging()");
-    expectContains(flashList, "isLogFilename(name)");
+    // Filtering lives INSIDE the store: listSessions() returns only indices it
+    // parsed from `log_%03u.csv` with a range check, and the name shown to the
+    // user is SYNTHESISED from that integer rather than echoed back from the
+    // filesystem. A non-log filename therefore cannot reach the response at
+    // all — which is stronger than filtering names on the way out.
+    expectContains(flashList, "store.listSessions(");
+    expectContains(flashList, "snprintf(name, sizeof(name), \"log_%03u.csv\"");
 
     const std::string flashGet = sliceBetween(
         web,
@@ -139,7 +145,10 @@ TEST(ProductionContracts, WebSecretsFlashAndCaptiveDnsStayProtected)
     expectContains(flashGet, "_flashTelemetry->isLogging()");
     expectContains(flashGet, "!isLogFilename(name)");
     expectContains(flashGet, "_server->client().connected()");
-    expectContains(flashGet, "vTaskDelay(pdMS_TO_TICKS(1))");
+    // The yield between chunks. Spelled through hal::Scheduler since ADR-058;
+    // what matters is that streaming a multi-megabyte log still gives other
+    // tasks a turn, not which API expresses it.
+    expectContains(flashGet, "scheduler().sleepFor(");
 
     expectContains(wifiH, "void processDns()");
     expectContains(wifiCpp, "_dnsServer.processNextRequest()");
@@ -202,7 +211,7 @@ TEST(ProductionContracts, FlashTelemetryResetAndDeleteAreSafe)
     expectContains(cpp, "return true;");
     expectContains(cpp, "_isLogging && strcmp(fn, _currentFilename) == 0");
     expectContains(cpp, "rowTruncated");
-    expectContains(cpp, "!rowTruncated && self->_fileMutex");
+    expectContains(cpp, "!rowTruncated && _fileMutex");
     expectContains(cpp, "log index space exhausted");
 }
 
@@ -222,7 +231,7 @@ TEST(ProductionContracts, CliInputParsingAndDiagnosticsStayFailSafe)
     expectContains(cliUtils, "parseFloatStrict");
     expectContains(cliUtils, "parseBoolStrict");
     expectContains(cliContext, "cliController->isArmed()");
-    expectContains(cliContext, "cliIMU->getFlightState() == INFLIGHT");
+    expectContains(cliContext, "getFlightState() == INFLIGHT");
     expectContains(cliSystem, "rejectUnsafeGroundCommand(\"reset\")");
     expectContains(cliSystem, "rejectUnsafeGroundCommand(\"calibrate\")");
     expectContains(cliConfig, "rejectUnsafeGroundCommand(\"change configuration\")");
@@ -250,42 +259,61 @@ TEST(ProductionContracts, AircraftTypeLoggingContractsAreExplicit)
     expectContains(commands, "!cmd.x_value && controller->isArmed()");
 }
 
-TEST(ProductionContracts, ImuSnapshotAndBarometerStayRealtimeSafe)
+
+/**
+ * Ties test_dt.cpp's mirrored clamp to the real one.
+ *
+ * That file reproduces three lines of arithmetic from inside a FreeRTOS task
+ * body, which a host test cannot call. A mirror is only worth having if it
+ * cannot silently diverge from its subject, so this asserts the subject still
+ * says what the mirror assumes — in BOTH loops, since each clamps separately.
+ */
+TEST(ProductionContracts, ControlLoopDtClampIsUnchanged)
 {
-    const std::string imuH = readRepoFile("src/orientation/ArduFliteIMU.h");
-    const std::string imuCpp = readRepoFile("src/orientation/ArduFliteIMU.cpp");
+    const std::string controller = readRepoFile("src/controller/ArduFliteController.cpp");
+    ASSERT_FALSE(controller.empty());
 
-    // Lock-free seqlock writer/reader retained, including the retry-limit fallback.
-    expectContains(imuH, "snapshotCurrent");
-    expectContains(imuH, "snapshotVersion");
-    expectContains(imuCpp, "snapshotVersion.store(version + 1");
-    expectContains(imuCpp, "snapshotVersion.store(version + 2");
-    expectContains(imuCpp, "if (before == after) return snap;");
-    expectContains(imuCpp, "getLastCompleteSnapshot()");
-    expectContains(imuCpp, "snapshotRetryLimitHits");
+    const std::string floorGuard   = "if (dt < 1e-3f) dt = 1e-3f;";
+    const std::string ceilingValue = "const float maxDt = 0.02f;";
+    const std::string ceilingGuard = "if (dt > maxDt) dt = maxDt;";
 
-    // The separate Baro Task is GONE — the IMU task is the sole I2C-bus owner.
-    // Reintroducing it reintroduces the priority-inversion "sensor mutex busy" skips.
-    expectNotContains(imuH, "static void baroTask");
-    expectNotContains(imuCpp, "xTaskCreate(baroTask");
-    expectNotContains(imuCpp, "void ArduFliteIMU::baroTask");
+    for (const auto& needle : { floorGuard, ceilingValue, ceilingGuard })
+    {
+        const size_t first = controller.find(needle);
+        ASSERT_NE(first, std::string::npos) << "Missing: " << needle;
+        EXPECT_NE(controller.find(needle, first + 1), std::string::npos)
+            << "Only one loop clamps dt with: " << needle
+            << " - both the outer and inner loop must.";
+    }
+}
 
-    // Baro is read INLINE in update(), decimated, with the climb rate gated on baro
-    // ticks, and the coherent snapshot still published from the IMU task.
-    expectContains(imuH, "BARO_DECIMATION_FACTOR");
-    expectContains(imuH, "_baroTickCounter");
 
-    const std::string updateBody = sliceBetween(
-        imuCpp,
-        "void ArduFliteIMU::update(float dt)",
-        "void ArduFliteIMU::applyOrientation()");
-    expectContains(updateBody, "_baroTickCounter >= BARO_DECIMATION_FACTOR");
-    expectContains(updateBody, "readBaroAltitude()");
-    expectContains(updateBody, "_baroFilterInitialized");
-    expectContains(updateBody, "climbRate");
-    expectContains(updateBody, "publishSnapshot();");
+/**
+ * The two safety gates must stay lock-free.
+ *
+ * Under a bounded-wait mutex, cutThrottle() silently did nothing when the wait
+ * expired — the pilot flips the switch and the motor keeps running — and the
+ * control loop cached a stale copy for any tick that missed the lock, so a
+ * disarm did not take effect until contention cleared. Atomic removes both.
+ *
+ * Pinned here because ArduFliteController cannot be instantiated on a host, and
+ * because "move this back under the mutex for consistency" is a plausible and
+ * entirely wrong-looking-right refactor.
+ */
+TEST(ProductionContracts, ArmAndThrottleCutStayAtomic)
+{
+    const std::string header = readRepoFile("src/controller/ArduFliteController.h");
+    ASSERT_FALSE(header.empty());
+    expectContains(header, "std::atomic<bool> armed");
+    expectContains(header, "std::atomic<bool> throttleCut");
 
-    // update() must guard the mutex acquire — never drive the I2C bus / publish the
-    // snapshot without holding imuMutex.
-    expectContains(updateBody, "if (!lock.acquired())");
+    const std::string source = readRepoFile("src/controller/ArduFliteController.cpp");
+    ASSERT_FALSE(source.empty());
+
+    // The inner loop must read them directly, not from a shadow refreshed
+    // inside the setpoint lock.
+    expectContains(source, "controller->armed.load(std::memory_order_acquire)");
+    expectContains(source, "controller->throttleCut.load(std::memory_order_acquire)");
+    expectNotContains(source, "localArmed          = controller->armed;");
+    expectNotContains(source, "localThrottleCut    = controller->throttleCut;");
 }

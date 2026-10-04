@@ -7,7 +7,7 @@
  *
  * The point of these tests is the NEGATIVE cases: a static_assert cannot be
  * unit-tested, so the constexpr predicates behind it are tested directly, using
- * the four real defects that exist in the legacy PinConfiguration.h today
+ * four classes of pin defect that are otherwise found only at boot
  * (specs/hal/00-current-state.md 2.4).
  */
 #include <gtest/gtest.h>
@@ -106,7 +106,7 @@ TEST(BoardDescriptor, BaseTestBoardIsValid)
 
 TEST(BoardValidation, CatchesGpioOutsideTheMcuRange)
 {
-    // Legacy: PwmInputConfig::PITCH_INPUT_PIN = 32 on an ESP32-C3 (GPIO 0..21).
+    // GPIO 32 does not exist on an ESP32-C3 (GPIO 0..21).
     auto b = makeGoodBoard();
     b.actuatorBanks[0].outputs[0].pin = 32;
 
@@ -124,7 +124,7 @@ TEST(BoardValidation, CatchesReservedFlashPins)
 
 TEST(BoardValidation, CatchesDuplicatePins)
 {
-    // Legacy: throttle input and throttle output were both GPIO 10;
+    // Throttle input and throttle output on the same pin:
     // roll input and CRSF RX were both GPIO 6; yaw input and CRSF TX both GPIO 8.
     auto b = makeGoodBoard();
     b.actuatorBanks[0].outputs[1].pin = b.rcUart.rx;   // collide an output with CRSF RX
@@ -231,7 +231,7 @@ TEST(BoardValidation, SupportedBoardMustHaveItsRcLinkWired)
 TEST(BoardValidation, UntestedBoardMayHaveUnknownPins)
 {
     // This is what lets the FireBeetle port compile before anyone meters it,
-    // instead of carrying forward the legacy //TODO guess.
+    // rather than carrying an unverified guess.
     auto b = makeGoodBoard();
     b.maturity  = BoardMaturity::Untested;
     b.rcLink    = RcPart::Unknown;

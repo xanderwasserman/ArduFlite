@@ -10,14 +10,31 @@
 #include "src/utils/Logging.h"
 
 #ifdef ARDUFLITE_UNIT_TEST
-  #include <cstdio>    // for printf in tests/simulation
+  #include <cstdio>
+#include <cstring>    // for printf in tests/simulation
 #endif
 
-#include <Arduino.h>  // for Serial.printf on-device
+#include <cstdio>
+#include <cstring>
+
+#ifndef ARDUFLITE_UNIT_TEST
+#include "src/hal/board/Board.h"
+#endif
 
 // Default handler: sends to Serial.printf()
-class SerialLogHandler : public LogHandler {
+/**
+ * @brief Writes log lines to a device::Console.
+ *
+ * The console is INJECTED rather than fetched from Board inside each call. It
+ * was written the other way first, which made this class untestable on a host
+ * and hid a dependency that the type never mentioned — the same reach-for-a-
+ * global pattern the HAL exists to remove (§01, the AP_HAL lesson).
+ */
+#ifndef ARDUFLITE_UNIT_TEST
+class ConsoleLogHandler : public LogHandler {
 public:
+    explicit ConsoleLogHandler(arduflite::device::Console& console) : _console(console) {}
+
     void log(LogLevel level, const char* fmt, va_list args) override {
         // Prepend a level tag
         const char* tag = "";
@@ -29,15 +46,45 @@ public:
             case LogLevel::Clear: tag = ""; break;
             default: break;
         }
-        Serial.printf("%s", tag);
-        Serial.vprintf(fmt, args);
+        // Formatted into a stack buffer, then handed to the console as bytes.
+        // vsnprintf rather than the port's own vprintf so this handler depends
+        // on device::Console alone — the same reason the buffer is bounded
+        // rather than relying on the port to truncate.
+        _console.write(tag, std::strlen(tag));
+
+        char buffer[kMaxLine];
+        const int written = vsnprintf(buffer, sizeof(buffer), fmt, args);
+        if (written > 0)
+        {
+            const std::size_t length =
+                (static_cast<std::size_t>(written) < sizeof(buffer))
+                    ? static_cast<std::size_t>(written)
+                    : sizeof(buffer) - 1;
+            _console.write(buffer, length);
+        }
     }
 
     void log_nl(LogLevel level, const char* fmt, va_list args) override {
         log(level, fmt, args);
-        Serial.printf("\r\n");
+
+        _console.write("\r\n", 2);
+
+        // Errors are flushed immediately. The port is USB CDC on the C3, so a
+        // watchdog reset or panic can discard buffered output — and the line
+        // most worth keeping is the one written just before the reset.
+        // Non-error levels are left buffered: flushing at 500 Hz would stall
+        // the writing task on USB.
+        if (level == LogLevel::Error) { _console.flushOutput(); }
     }
+
+    /// Longest single log line. Anything beyond this is truncated rather than
+    /// overflowing; log lines are diagnostics, not a transport.
+    static constexpr std::size_t kMaxLine = 256;
+
+private:
+    arduflite::device::Console& _console;
 };
+#endif // !ARDUFLITE_UNIT_TEST
 
 // Optional stdout handler (for unit tests / simulation)
 #ifdef ARDUFLITE_UNIT_TEST
@@ -74,8 +121,17 @@ Logger::Logger()
   : _level(LogLevel::Info)
 {
     // default handler is Serial
-    static SerialLogHandler serialHandler;
-    _handler = &serialHandler;
+#ifdef ARDUFLITE_UNIT_TEST
+    // Host builds have no Board and no console. StdoutLogHandler existed for
+    // this but was never selected — instance() reached for Board regardless,
+    // which is why Logging.cpp could not be linked into the unit tests.
+    static StdoutLogHandler stdoutHandler;
+    _handler = &stdoutHandler;
+#else
+    // Constructed on first use, after Board::begin() has opened the console.
+    static ConsoleLogHandler consoleHandler{ arduflite::board::Board::instance().console() };
+    _handler = &consoleHandler;
+#endif
 }
 
 Logger::~Logger() {

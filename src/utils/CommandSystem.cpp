@@ -6,6 +6,7 @@
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
+#include "src/hal/board/Board.h"
 #include "src/utils/CommandSystem.h"
 #include "src/mission_planner/MissionPlanner.h"
 #include "src/utils/Logging.h"
@@ -31,7 +32,7 @@ CommandSystem::CommandSystem()
     if (!commandQueue_)
     {
         LOG_ERR("FATAL: Failed to create CommandSystem queue — system will restart.");
-        ESP.restart();
+        arduflite::board::Board::instance().system().reboot();
     }
 }
 
@@ -54,7 +55,9 @@ bool CommandSystem::pushCommand(const SystemCommand& cmd)
     if (xQueueSend(commandQueue_, &cmd, 0) != pdPASS)
     {
         static unsigned long lastWarnMs = 0;
-        unsigned long nowMs = millis();
+        const unsigned long nowMs = static_cast<unsigned long>(
+            arduflite::board::Board::instance().clock().now()
+                .time_since_epoch().count() / 1000);
         if (nowMs - lastWarnMs > 1000)
         {
             LOG_WARN("CommandSystem: queue full — command dropped");
@@ -65,8 +68,8 @@ bool CommandSystem::pushCommand(const SystemCommand& cmd)
     return true;
 }
 
-void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIMU* imu,
-                                     ArdufliteCRSFReceiver* receiver, ArdufliteCRSFTelemetry* crsfTelemetry)
+void CommandSystem::processCommands(ArduFliteController* controller, arduflite::estimation::InertialSubsystem* imu,
+                                     arduflite::device::RcLink* rcLink)
 {
     if (!commandQueue_) return;
     SystemCommand cmd;
@@ -86,37 +89,36 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
             case CMD_RESET:
             {
                 LOG_DBG("Processing RESET command...");
-                ESP.restart();
+                arduflite::board::Board::instance().system().reboot();
                 break;
             }
 
             case CMD_CALIBRATE:
             {
                 LOG_DBG("Processing CALIBRATE command...");
-                if (imu != nullptr && controller != nullptr && crsfTelemetry != nullptr)
+                if (imu != nullptr && controller != nullptr)
                 {
-                    // Pause controller tasks during calibration to avoid servo glitches
+                    // The controller is still paused, deliberately: calibration
+                    // requires the airframe to be still, and live control
+                    // surfaces responding to stick input during it is both
+                    // confusing and a finger hazard. This is a usability and
+                    // safety choice, and deliberate.
                     controller->pauseTasks();
 
-                    // Pause CRSF telemetry to prevent WDT timeout during long calibration
-                    crsfTelemetry->pauseTask();
-
-                    // selfCalibrate() internally handles IMU task pause/resume
-                    // and resets filter state after new offsets are applied
-                    if (!imu->selfCalibrate())
+                    // Telemetry is deliberately NOT paused: calibration runs
+                    // inside the sampling task, which keeps ticking and feeding
+                    // the watchdog, so the operator can watch the aircraft stay
+                    // still rather than stare at a frozen display.
+                    if (!imu->calibrate(arduflite::estimation::CalibrationService::Kind::Inertial))
                     {
                         LOG_ERR("IMU calibration failed!");
                     }
 
-                    // Resume CRSF telemetry
-                    crsfTelemetry->resumeTask();
-
-                    // Resume controller tasks
                     controller->resumeTasks();
                 }
                 else
                 {
-                    LOG_ERR("CMD_CALIBRATE: requires non-null IMU, Controller, and CRSF telemetry pointers — one is missing.");
+                    LOG_ERR("CMD_CALIBRATE: requires non-null IMU and Controller pointers - one is missing.");
                 }
                 break;
             }
@@ -138,17 +140,28 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
             case CMD_SET_SETPOINT:
             {
                 LOG_DBG("Processing CMD_SET_SETPOINT: roll=%.3f, pitch=%.3f, yaw=%.3f",
-                        cmd.setpoint.roll, cmd.setpoint.pitch, cmd.setpoint.yaw);
+                        cmd.setpointRoll, cmd.setpointPitch, cmd.setpointYaw);
 
                 if (controller != nullptr)
                 {
-                    if (controller->getMode() == ATTITUDE_MODE)
+                    // Dispatch on what the value IS, not on what the mode is
+                    // now. The mixer already scaled it for one interpretation;
+                    // delivering it as a different one is how a deg/s value ends
+                    // up on a servo.
+                    switch (cmd.setpointKind)
                     {
-                        controller->setAttitudeSetpoint(cmd.setpoint);
-                    }
-                    else
-                    {
-                        controller->setRateSetpoint(cmd.setpoint);
+                        case SystemCommand::SetpointKind::Attitude:
+                            controller->setAttitudeSetpoint(
+                                AttitudeDeg{ cmd.setpointRoll, cmd.setpointPitch, cmd.setpointYaw });
+                            break;
+                        case SystemCommand::SetpointKind::Rate:
+                            controller->setRateSetpoint(
+                                AngularRateDps{ cmd.setpointRoll, cmd.setpointPitch, cmd.setpointYaw });
+                            break;
+                        case SystemCommand::SetpointKind::Manual:
+                            controller->setManualCommand(
+                                toAxisCommand(cmd.setpointRoll, cmd.setpointPitch, cmd.setpointYaw));
+                            break;
                     }
                 }
                 else
@@ -181,7 +194,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
                     if (cmd.x_value)
                     {
                         // Run preflight checks and arm if passed
-                        bool armed = controller->arm(receiver);
+                        bool armed = controller->arm(rcLink);
                         if (!armed)
                         {
                             LOG_ERR("ARM REJECTED - preflight checks failed!");
@@ -217,7 +230,7 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
                     {
                         controller->disarm();
                         if (flashTelemetry.isLogging() &&
-                            (imu == nullptr || imu->getFlightState() != INFLIGHT))
+                            (imu == nullptr || getFlightState() != INFLIGHT))
                         {
                             flashTelemetry.stopLogging();
                         }
@@ -257,10 +270,10 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
 
             case CMD_SET_SETPOINT_ROLL:
             {
-                LOG_DBG("Processing CMD_SET_SETPOINT_ROLL: roll=%.3f", cmd.setpoint.roll);
+                LOG_DBG("Processing CMD_SET_SETPOINT_ROLL: roll=%.3f", cmd.setpointRoll);
                 if (controller != nullptr)
                 {
-                    controller->setAttitudeSetpointAxis(0, cmd.setpoint.roll);
+                    controller->setAttitudeSetpointAxis(0, cmd.setpointRoll);
                 }
                 else
                 {
@@ -271,10 +284,10 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
 
             case CMD_SET_SETPOINT_PITCH:
             {
-                LOG_DBG("Processing CMD_SET_SETPOINT_PITCH: pitch=%.3f", cmd.setpoint.pitch);
+                LOG_DBG("Processing CMD_SET_SETPOINT_PITCH: pitch=%.3f", cmd.setpointPitch);
                 if (controller != nullptr)
                 {
-                    controller->setAttitudeSetpointAxis(1, cmd.setpoint.pitch);
+                    controller->setAttitudeSetpointAxis(1, cmd.setpointPitch);
                 }
                 else
                 {
@@ -285,10 +298,10 @@ void CommandSystem::processCommands(ArduFliteController* controller, ArduFliteIM
 
             case CMD_SET_SETPOINT_YAW:
             {
-                LOG_DBG("Processing CMD_SET_SETPOINT_YAW: yaw=%.3f", cmd.setpoint.yaw);
+                LOG_DBG("Processing CMD_SET_SETPOINT_YAW: yaw=%.3f", cmd.setpointYaw);
                 if (controller != nullptr)
                 {
-                    controller->setAttitudeSetpointAxis(2, cmd.setpoint.yaw);
+                    controller->setAttitudeSetpointAxis(2, cmd.setpointYaw);
                 }
                 else
                 {

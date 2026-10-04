@@ -12,6 +12,8 @@
 #ifndef CONFIG_TASK_H
 #define CONFIG_TASK_H
 
+#include "src/hal/platform/Scheduler.h"
+
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -63,9 +65,9 @@ public:
 private:
     static void taskLoop(void* pvParameters);
 
-    static TaskHandle_t  _taskHandle;
+    static arduflite::hal::Task* _task;
     static QueueHandle_t _importQueue;
-    static SemaphoreHandle_t _taskExitedSem;  ///< Signals task has exited
+
     static std::atomic<bool> _running;
 };
 

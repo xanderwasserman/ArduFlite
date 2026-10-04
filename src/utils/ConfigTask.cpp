@@ -7,14 +7,17 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "src/utils/ConfigTask.h"
+
+#include <chrono>
+
+#include "src/hal/board/Board.h"
 #include "src/utils/ConfigRegistry.h"
 #include "src/utils/ConfigPersistence.h"
 #include "src/utils/Logging.h"
 
 // Static member initialization
-TaskHandle_t  ConfigTask::_taskHandle  = nullptr;
+arduflite::hal::Task* ConfigTask::_task = nullptr;
 QueueHandle_t ConfigTask::_importQueue = nullptr;
-SemaphoreHandle_t ConfigTask::_taskExitedSem = nullptr;
 std::atomic<bool> ConfigTask::_running{false};
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -35,37 +38,24 @@ void ConfigTask::start() {
         return;
     }
 
-    // Create exit semaphore (binary semaphore, starts empty)
-    _taskExitedSem = xSemaphoreCreateBinary();
-    if (!_taskExitedSem) {
-        LOG_ERR("Failed to create config task exit semaphore");
-        vQueueDelete(_importQueue);
-        _importQueue = nullptr;
-        return;
-    }
-
-    // Set running BEFORE creating task to prevent immediate exit
+    // Set running BEFORE creating the task, or it exits on its first check.
     _running = true;
 
-    // Create task
-    BaseType_t result = xTaskCreate(
-        taskLoop,
-        "ConfigTask",
-        ConfigTaskConfig::TASK_STACK_SIZE,
-        nullptr,
-        ConfigTaskConfig::TASK_PRIORITY,
-        &_taskHandle
-    );
+    arduflite::hal::TaskConfig config;
+    config.name       = "ConfigTask";
+    config.stackBytes = ConfigTaskConfig::TASK_STACK_SIZE;
+    config.priority   = arduflite::hal::Priority::Config;
 
-    if (result != pdPASS) {
+    auto task = arduflite::board::Board::instance().scheduler().spawn(
+        config, &taskLoop, nullptr);
+    if (!task) {
         LOG_ERR("Failed to create ConfigTask");
         _running = false;
-        vSemaphoreDelete(_taskExitedSem);
-        _taskExitedSem = nullptr;
         vQueueDelete(_importQueue);
         _importQueue = nullptr;
         return;
     }
+    _task = task.value();
 
     LOG_INF("ConfigTask started");
 }
@@ -76,15 +66,21 @@ void ConfigTask::stop() {
     // Signal the task to stop
     _running = false;
 
-    // Wait for task to signal exit via semaphore (with timeout)
-    if (_taskExitedSem) {
-        if (xSemaphoreTake(_taskExitedSem, pdMS_TO_TICKS(1000)) != pdTRUE) {
+    // Join by polling isRunning(), which the scheduler clears once the body
+    // returns. The task blocks up to 100 ms in xQueueReceive, so it can take
+    // that long to notice _running went false; 1 s of headroom covers it.
+    if (_task != nullptr) {
+        auto& board = arduflite::board::Board::instance();
+        const auto deadline = board.clock().now() + std::chrono::seconds{ 1 };
+
+        while (_task->isRunning() && board.clock().now() < deadline) {
+            board.scheduler().sleepFor(std::chrono::milliseconds{ 10 });
+        }
+        if (_task->isRunning()) {
             LOG_WARN("ConfigTask did not exit gracefully within 1s");
         }
-        vSemaphoreDelete(_taskExitedSem);
-        _taskExitedSem = nullptr;
+        _task = nullptr;
     }
-    _taskHandle = nullptr;
 
     if (_importQueue) {
         // Clean up any pending imports
@@ -145,8 +141,11 @@ bool ConfigTask::queueImport(const String& json) {
 void ConfigTask::taskLoop(void* pvParameters) {
     (void)pvParameters;
 
-    TickType_t lastSaveCheck = xTaskGetTickCount();
-    const TickType_t saveInterval = pdMS_TO_TICKS(ConfigTaskConfig::SAVE_CHECK_INTERVAL_MS);
+    const auto& clock = arduflite::board::Board::instance().clock();
+
+    auto lastSaveCheck = clock.now();
+    const auto saveInterval =
+        std::chrono::milliseconds{ ConfigTaskConfig::SAVE_CHECK_INTERVAL_MS };
     const TickType_t queueTimeout = pdMS_TO_TICKS(100);
 
     while (_running) {
@@ -170,7 +169,7 @@ void ConfigTask::taskLoop(void* pvParameters) {
         }
 
         // Periodic dirty-save check
-        TickType_t now = xTaskGetTickCount();
+        const auto now = clock.now();
         if ((now - lastSaveCheck) >= saveInterval) {
             lastSaveCheck = now;
 
@@ -181,9 +180,6 @@ void ConfigTask::taskLoop(void* pvParameters) {
         // No additional vTaskDelay needed - xQueueReceive already provides the yield
     }
     
-    // Signal that task is exiting, then delete ourselves
-    if (_taskExitedSem) {
-        xSemaphoreGive(_taskExitedSem);
-    }
-    vTaskDelete(nullptr);  // Delete current task
+    // Just return. The scheduler's trampoline is what ends the FreeRTOS task
+    // and clears isRunning(), which is how stop() observes the exit (ADR-058).
 }

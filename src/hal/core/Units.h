@@ -33,8 +33,12 @@ constexpr float radToDeg(float rad) noexcept { return rad * kRadToDeg; }
  * @brief Barometric altitude above a reference pressure.
  *
  * Single precision deliberately: the ESP32-C3 has no FPU (see
- * specs/hal/00-current-state.md 2.9b), so double is emulated at roughly twice the
- * cost of float. powf over pow is worth ~2x here.
+ * specs/hal/00-current-state.md 2.9b), so double is emulated at roughly twice
+ * the cost of float.
+ *
+ * @return NAN if either pressure is non-positive — the caller has no reading
+ *         yet, and 0 metres would be indistinguishable from being at the
+ *         reference.
  *
  * @param pressure_hpa   Measured pressure, hPa.
  * @param reference_hpa  Ground reference pressure, hPa.
@@ -42,7 +46,8 @@ constexpr float radToDeg(float rad) noexcept { return rad * kRadToDeg; }
  */
 inline float altitudeFromPressure_m(float pressure_hpa, float reference_hpa) noexcept
 {
-    return 44330.0f * (1.0f - std::pow(pressure_hpa / reference_hpa, 0.1903f));
+    if (!(pressure_hpa > 0.0f) || !(reference_hpa > 0.0f)) { return NAN; }
+    return 44330.0f * (1.0f - powf(pressure_hpa / reference_hpa, 0.1903f));
 }
 
 } // namespace arduflite::units

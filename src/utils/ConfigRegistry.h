@@ -13,7 +13,11 @@
 #ifndef CONFIG_REGISTRY_H
 #define CONFIG_REGISTRY_H
 
-#include <Arduino.h>
+#include <cstdint>
+#include <cstring>
+#include <string>
+
+#include "src/hal/platform/Mutex.h"
 #include <functional>
 #include <vector>
 #include <unordered_map>
@@ -83,10 +87,10 @@ struct ConfigParam {
 
 /**
  * @brief Change notification passed to observers.
- *        Key is stored as String to prevent dangling pointers after lock release.
+ *        Key is stored by value to prevent dangling pointers after lock release.
  */
 struct ConfigChange {
-    String      key;   ///< Owned copy of key string
+    std::string key;   ///< Owned copy of key string
     ConfigType  type;
     ConfigValue oldValue;
     ConfigValue newValue;
@@ -123,6 +127,17 @@ public:
      * @brief Get singleton instance.
      */
     static ConfigRegistry& instance();
+
+    /**
+     * @brief Supply the lock guarding the registry.
+     *
+     * Call once, after Board::begin(). Until it is called the registry runs
+     * unlocked, which is correct: the only thing running before then is
+     * static-initialisation registration, which is single-threaded.
+     *
+     * Injected rather than created here — see ADR-048.
+     */
+    void setMutex(arduflite::hal::Mutex* mutex);
 
     /**
      * @brief Initialize the registry (call after FreeRTOS is ready).
@@ -202,7 +217,7 @@ public:
      * @brief Get list of dirty parameter keys (safe copies).
      * @return Vector of key strings (copies, not references)
      */
-    std::vector<String> getDirtyKeys() const;
+    std::vector<std::string> getDirtyKeys() const;
 
     /**
      * @brief Clear dirty flag for a parameter.
@@ -273,8 +288,11 @@ private:
     );
 
     std::unordered_map<std::string, ConfigParam> _params;
-    std::vector<std::pair<String, ConfigObserver>> _observers;
-    mutable std::atomic<SemaphoreHandle_t> _mutex{nullptr};
+    std::vector<std::pair<std::string, ConfigObserver>> _observers;
+    /// Guards _params and _observers. Injected via setMutex() once Board's
+    /// pool exists — NOT created here. Null before that, which is safe: the
+    /// only code running that early is static-init registration, on one thread.
+    mutable std::atomic<arduflite::hal::Mutex*> _mutex{nullptr};
     
     // Pending registration queue for params registered before FreeRTOS
     struct PendingRegistration {
@@ -300,13 +318,13 @@ template<> float    ConfigRegistry::get<float>(const char* key) const;
 template<> int32_t  ConfigRegistry::get<int32_t>(const char* key) const;
 template<> uint8_t  ConfigRegistry::get<uint8_t>(const char* key) const;
 template<> bool     ConfigRegistry::get<bool>(const char* key) const;
-template<> String   ConfigRegistry::get<String>(const char* key) const;
+template<> std::string ConfigRegistry::get<std::string>(const char* key) const;
 
 template<> bool ConfigRegistry::set<float>(const char* key, float value);
 template<> bool ConfigRegistry::set<int32_t>(const char* key, int32_t value);
 template<> bool ConfigRegistry::set<uint8_t>(const char* key, uint8_t value);
 template<> bool ConfigRegistry::set<bool>(const char* key, bool value);
-template<> bool ConfigRegistry::set<String>(const char* key, String value);
+template<> bool ConfigRegistry::set<std::string>(const char* key, std::string value);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Convenience Macros for Static Registration

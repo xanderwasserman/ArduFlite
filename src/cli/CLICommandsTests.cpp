@@ -31,8 +31,8 @@ void cmdTest(const String &args)
         return;
     }
 
-    ArduFliteIMU* imu = getCliIMU();
-    if (imu && imu->getFlightState() == INFLIGHT)
+    arduflite::estimation::InertialSubsystem* imu = getCliIMU();
+    if (imu && getFlightState() == INFLIGHT)
     {
         LOG_ERR("test: disabled while INFLIGHT.");
         return;

@@ -218,7 +218,7 @@ static bool setConfigValueFromString(
             return reg.set<bool>(key.c_str(), value);
         }
         case ConfigType::STRING:
-            return reg.set<String>(key.c_str(), valueText);
+            return reg.set<std::string>(key.c_str(), std::string(valueText.c_str()));
     }
 
     return false;

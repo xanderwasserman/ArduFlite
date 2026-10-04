@@ -22,15 +22,21 @@
 
 #include "src/controller/ArduFliteController.h"
 #include "src/utils/Logging.h"
+#include "src/utils/ConfigRegistry.h"
+#include "include/ConfigKeys.h"
 #include "src/utils/PreflightCheck.h"
-#include "src/receiver/crsf/ArdufliteCRSFReceiver.h"
+#include "src/hal/device/RcLink.h"
 
-#include <Arduino.h>
-#include <esp_task_wdt.h>  // ESP32 hardware watchdog
+#include <cmath>
+#include <chrono>
+#include <mutex>
 
 namespace
 {
-constexpr TickType_t HOT_PATH_LOCK_TIMEOUT_MS = 0;
+/// Non-blocking. The 500 Hz inner loop must never stall on a lock; a missed
+/// acquire skips the tick and reuses the last good value. Zero maps to a plain
+/// try_lock() in Esp32Mutex.
+constexpr std::chrono::milliseconds kHotPathLockTimeout{ 0 };
 }
 
 /**
@@ -40,44 +46,79 @@ constexpr TickType_t HOT_PATH_LOCK_TIMEOUT_MS = 0;
  * attitude controller, rate controller, and ServoManager. Also initializes the
  * operating mode to ATTITUDE_MODE and creates a mutex to protect shared state.
  *
- * @param imu Pointer to the ArduFliteIMU instance.
+ * @param imu Pointer to the arduflite::estimation::InertialSubsystem instance.
  * @param attitudeCtrl Pointer to the ArduFliteAttitudeController instance.
  * @param rateCtrl Pointer to the ArduFliteRateController instance.
- * @param servoMgr Pointer to the ServoManager instance.
  */
-ArduFliteController::ArduFliteController(ArduFliteIMU* imu, ArduFliteAttitudeController* attitudeCtrl, ArduFliteRateController* rateCtrl, ServoManager* servoMgr)
+void ArduFliteController::fatal(const char* what)
+{
+    LOG_ERR("FATAL: %s - system will restart.", what);
+    if (plat.system != nullptr) { plat.system->reboot(); }
+    // No System injected yet: the only remaining option is to stop, so the
+    // hardware watchdog resets us rather than flying on a broken controller.
+    for (;;) { }
+}
+
+void ArduFliteController::setPlatform(const Platform& platform)
+{
+    plat = platform;
+
+    // Resolve actuators by role ONCE. Per tick the controller then holds named
+    // pointers — no index lookup, no index/role mismatch possible.
+    if (plat.outputs != nullptr)
+    {
+        surfaces = arduflite::actuators::ControlOutputs::resolve(*plat.outputs);
+        if (!surfaces.hasRequiredSurfaces())
+        {
+            fatal("board descriptor has no aileron_left/elevator role.");
+        }
+    }
+}
+
+void ArduFliteController::stageTestDeflection(float normalised)
+{
+    if (plat.outputs == nullptr) { return; }
+
+    const auto mixed = arduflite::actuators::AirframeMixer::mix(
+        wingDesign, normalised, normalised, normalised);
+    surfaces.stageSurfaces(mixed);
+    surfaces.stageThrottle(0.0f);   // never spin the motor during a surface test
+    (void)plat.outputs->commit();
+}
+
+void ArduFliteController::initFromConfig()
+{
+    const int32_t wd = ConfigRegistry::instance().get<int32_t>(CONFIG_KEY_SERVO_WING_DESIGN);
+    const auto requested = static_cast<arduflite::actuators::WingDesign>(wd);
+
+    if (!arduflite::actuators::isImplemented(requested))
+    {
+        // Falling back is safer than mixing to nothing: an aircraft whose
+        // surfaces never move is worse than one flying the wrong geometry,
+        // because the pilot gets no feedback that anything is wrong.
+        LOG_ERR("Wing design %d is NOT IMPLEMENTED - falling back to Conventional. "
+                "Do not fly this airframe until it is.", static_cast<int>(wd));
+        wingDesign = arduflite::actuators::WingDesign::Conventional;
+    }
+    else
+    {
+        wingDesign = requested;
+    }
+    LOG_INF("ArduFliteController: wing design %d", static_cast<int>(wingDesign));
+}
+
+ArduFliteController::ArduFliteController(arduflite::estimation::InertialSubsystem* imu, ArduFliteAttitudeController* attitudeCtrl, ArduFliteRateController* rateCtrl)
     : imu(imu)
     , attitudeCtrl(attitudeCtrl)
     , rateCtrl(rateCtrl)
-    , servoMgr(servoMgr)
-    , outerTaskHandle(NULL)
-    , innerTaskHandle(NULL)
     , mode(ATTITUDE_MODE)
     , pilotRateSetpoint{ 0.0f, 0.0f, 0.0f }
 {
-    // Create the mutex for protecting shared state.
-    ctrlMutex = xSemaphoreCreateMutex();
-    if (ctrlMutex == NULL)
-    {
-        LOG_ERR("FATAL: Failed to create ArduFliteController mutex — system will restart.");
-        ESP.restart();
-    }
+    // Mutexes are injected from the Board's pool — flight code cannot construct
+    // an Esp32Mutex without breaking the layering rule, and the pool lives in
+    // static storage (ADR-011: no heap after boot). Allocation failure is caught
+    // at composition time in arduflite_init(), not here.
 
-    // Create the mutex for protecting innerLoop stats.
-    innerStatsMutex = xSemaphoreCreateMutex();
-    if (innerStatsMutex == NULL)
-    {
-        LOG_ERR("FATAL: Failed to create innerLoop Stats mutex — system will restart.");
-        ESP.restart();
-    }
-
-    // Create the mutex for protecting outerLoop stats.
-    outerStatsMutex = xSemaphoreCreateMutex();
-    if (outerStatsMutex == NULL)
-    {
-        LOG_ERR("FATAL: Failed to create outerLoop Stats mutex — system will restart.");
-        ESP.restart();
-    }
 }
 
 /**
@@ -92,8 +133,8 @@ ArduFliteController::ArduFliteController(ArduFliteIMU* imu, ArduFliteAttitudeCon
 void ArduFliteController::setMode(ArduFliteMode newMode)
 {
     {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return;
+        std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return;
         mode = newMode;
     }
 }
@@ -108,8 +149,8 @@ ArduFliteMode ArduFliteController::getMode() const
     ArduFliteMode m = UNKNOWN_MODE;
 
     {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return m;
+        std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return m;
         m = mode;
     }
 
@@ -122,13 +163,13 @@ ArduFliteMode ArduFliteController::getMode() const
  * In Assist mode, the attitude controller will use these values to compute the
  * desired angular rates.
  *
- * @param setpoint EulerAngles attitude setpoint in degrees.
+ * @param setpoint AttitudeDeg attitude setpoint, in degrees.
  */
-void ArduFliteController::setAttitudeSetpoint(EulerAngles setpointDeg)
+void ArduFliteController::setAttitudeSetpoint(AttitudeDeg setpointDeg)
 {
     {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return;
+        std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return;
         pilotAttitudeSetpoint   = setpointDeg;
     }
 
@@ -147,11 +188,11 @@ void ArduFliteController::setAttitudeSetpoint(EulerAngles setpointDeg)
  */
 void ArduFliteController::setAttitudeSetpointAxis(uint8_t axis, float value)
 {
-    EulerAngles localCopy;
+    AttitudeDeg localCopy;
 
     {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return;
+        std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return;
         switch(axis) {
             case 0: pilotAttitudeSetpoint.roll  = value; break;
             case 1: pilotAttitudeSetpoint.pitch = value; break;
@@ -169,13 +210,28 @@ void ArduFliteController::setAttitudeSetpointAxis(uint8_t axis, float value)
  * When operating in Stabilized mode, these values are used directly as the desired
  * angular rates.
  *
- * @param setpoint EulerAngles rate setpoint in degrees/s.
+ * @param setpoint AngularRateDps rate setpoint, in degrees/s.
  */
-void ArduFliteController::setRateSetpoint(EulerAngles rateSetpoint)
+void ArduFliteController::setManualCommand(AxisCommand command)
+{
+    std::unique_lock lock(*plat.ctrlMutex, kHotPathLockTimeout);
+    if (!static_cast<bool>(lock)) { return; }
+    pilotManualCommand = command;
+
+    // Clear the rate setpoint while flying manually. Before the split these
+    // shared one slot, so telemetry's rate_sp_* columns showed the manual stick
+    // positions; with separate slots that column would instead hold whatever
+    // rate was commanded before MANUAL_MODE was entered — stale, and more
+    // misleading in a log than a zero. The pilot's actual manual input is still
+    // recorded, through rate_cmd_*, which carries the resulting AxisCommand.
+    pilotRateSetpoint = {};
+}
+
+void ArduFliteController::setRateSetpoint(AngularRateDps rateSetpoint)
 {
     {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return;
+        std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return;
         pilotRateSetpoint  = rateSetpoint;
     }
 }
@@ -190,8 +246,8 @@ void ArduFliteController::setRateSetpoint(EulerAngles rateSetpoint)
 void ArduFliteController::setRateSetpoint_roll(float rollRateSetpoint)
 {
     {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return;
+        std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return;
         pilotRateSetpoint.roll  = rollRateSetpoint;
     }
 }
@@ -206,8 +262,8 @@ void ArduFliteController::setRateSetpoint_roll(float rollRateSetpoint)
 void ArduFliteController::setRateSetpoint_pitch(float pitchRateSetpoint)
 {
     {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return;
+        std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return;
         pilotRateSetpoint.pitch  = pitchRateSetpoint;
     }
 }
@@ -222,8 +278,8 @@ void ArduFliteController::setRateSetpoint_pitch(float pitchRateSetpoint)
 void ArduFliteController::setRateSetpoint_yaw(float yawRateSetpoint)
 {
     {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return;
+        std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return;
         pilotRateSetpoint.yaw  = yawRateSetpoint;
     }
 }
@@ -236,8 +292,8 @@ void ArduFliteController::setRateSetpoint_yaw(float yawRateSetpoint)
 void ArduFliteController::setThrottleSetpoint(float throttleSetpoint)
 {
     {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return;
+        std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return;
         pilotThrottleSetpoint  = throttleSetpoint;
     }
 }
@@ -251,61 +307,66 @@ void ArduFliteController::setThrottleSetpoint(float throttleSetpoint)
  */
 void ArduFliteController::startTasks()
 {
-    if (xTaskCreate(OuterLoopTask, "OuterLoop", 4096, this, 2, &outerTaskHandle) != pdPASS)
+    if (!plat.valid())
     {
-        LOG_ERR("FATAL: OuterLoopTask creation failed — system will restart.");
-        ESP.restart();
+        fatal("startTasks() before setPlatform()");
     }
 
-    if (xTaskCreate(InnerLoopTask, "InnerLoop", 4096, this, 3, &innerTaskHandle) != pdPASS)
+    using arduflite::hal::Priority;
+    using arduflite::hal::TaskConfig;
+
+    // Priorities come from the ladder enum rather than the magic 2 and 3 that
+    // Stack sizes and priorities come from the header.
+    const TaskConfig outerCfg{ "OuterLoop", kOuterStackBytes, Priority::OuterLoop, -1 };
+    const TaskConfig innerCfg{ "InnerLoop", kInnerStackBytes, Priority::InnerLoop, -1 };
+
+    auto outer = plat.scheduler->spawn(outerCfg, OuterLoopTask, this);
+    if (!outer)
     {
-        LOG_ERR("FATAL: InnerLoopTask creation failed — system will restart.");
-        ESP.restart();
+        LOG_ERR("FATAL: OuterLoopTask creation failed (%s) — system will restart.",
+                arduflite::toString(outer.status()));
+        fatal("unrecoverable controller state");
     }
+
+    auto inner = plat.scheduler->spawn(innerCfg, InnerLoopTask, this);
+    if (!inner)
+    {
+        LOG_ERR("FATAL: InnerLoopTask creation failed (%s) — system will restart.",
+                arduflite::toString(inner.status()));
+        fatal("unrecoverable controller state");
+    }
+
 }
 
 /**
- * @brief Suspends the control tasks (outer and inner loop).
+ * @brief Stops the control loops acting, without stopping the tasks.
  *
- * This function suspends the FreeRTOS tasks responsible for the control loops,
- * effectively pausing the attitude and rate controllers. This is useful during
- * operations such as calibration when you want a consistent sensor reading without
- * interference from the control loops.
+ * Used during calibration: the airframe must be still, and live surfaces
+ * responding to stick input while someone holds the aircraft is a finger
+ * hazard. The loops keep running and keep feeding the watchdog; they just do
+ * no work and drive no outputs.
  */
 void ArduFliteController::pauseTasks()
 {
-    // Unsubscribe from watchdog BEFORE suspending to prevent false triggers
-    if (outerTaskHandle != NULL) {
-        esp_task_wdt_delete(outerTaskHandle);
-        vTaskSuspend(outerTaskHandle);
-    }
-    if (innerTaskHandle != NULL) {
-        esp_task_wdt_delete(innerTaskHandle);
-        vTaskSuspend(innerTaskHandle);
-    }
-    LOG_INF("Control tasks paused (WDT unsubscribed).");
+    // A flag, not a task suspend. The loops keep running and skip their body,
+    // which is what lets them stay watchdog-registered and keep feeding through
+    // a multi-second calibration. `dt` never grows, and the PID integrators are
+    // not advanced, so the pause cannot wind them up. Surfaces hold their last
+    // commanded position because the skipped body is what calls commit().
+    tasksPaused.store(true, std::memory_order_release);
+    LOG_INF("Control tasks paused (loops idling, watchdog still fed).");
 }
 
 /**
  * @brief Resumes the control tasks (outer and inner loop).
  *
- * This function resumes the previously suspended control tasks so that the
+ * Lets the control loops act again, so that the
  * attitude and rate controllers continue their normal operation.
  */
 void ArduFliteController::resumeTasks()
 {
-    if (outerTaskHandle != NULL) {
-        // Signal the task to self-register with the WDT on its next tick.
-        // esp_task_wdt_add(NULL) must be called from within the task itself;
-        // calling it with a foreign handle is not portable across IDF versions.
-        outerWdtReregister.store(true, std::memory_order_release);
-        vTaskResume(outerTaskHandle);
-    }
-    if (innerTaskHandle != NULL) {
-        innerWdtReregister.store(true, std::memory_order_release);
-        vTaskResume(innerTaskHandle);
-    }
-    LOG_INF("Control tasks resumed (WDT re-registration pending in each task).");
+    tasksPaused.store(false, std::memory_order_release);
+    LOG_INF("Control tasks resumed.");
 }
 
 /**
@@ -317,12 +378,12 @@ void ArduFliteController::resumeTasks()
  * @param receiver Pointer to CRSF receiver for link quality check (may be nullptr)
  * @return true if arm succeeded, false if preflight check failed
  */
-bool ArduFliteController::arm(ArdufliteCRSFReceiver* receiver)
+bool ArduFliteController::arm(arduflite::device::RcLink* rcLink)
 {
     // Detect whether the aircraft is already in flight so we can skip the
     // ground-specific preflight checks (gyro bias, 1g accel, throttle cut)
     // that will always fail on a moving, airborne airframe.
-    const bool isInflight = (imu != nullptr) && (imu->getFlightState() == INFLIGHT);
+    const bool isInflight = (getFlightState() == INFLIGHT);
     const ArmContext context = isInflight
                                ? ArmContext::INFLIGHT_REARM
                                : ArmContext::GROUND_ARM;
@@ -337,7 +398,7 @@ bool ArduFliteController::arm(ArdufliteCRSFReceiver* receiver)
     }
 
     // Run appropriate preflight checks for this context
-    PreflightResult preflight = PreflightCheck::runAllChecks(imu, this, receiver, context);
+    PreflightResult preflight = PreflightCheck::runAllChecks(imu, this, rcLink, context);
 
     if (!preflight.allPassed())
     {
@@ -351,15 +412,7 @@ bool ArduFliteController::arm(ArdufliteCRSFReceiver* receiver)
     rateCtrl->reset();
     attitudeCtrl->reset();
 
-    {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired())
-        {
-            LOG_ERR("ARM REJECTED - controller state lock unavailable");
-            return false;
-        }
-        armed = true;
-    }
+    armed.store(true, std::memory_order_release);
 
     LOG_INF("ARMED - System ready for flight");
     return true;
@@ -367,53 +420,28 @@ bool ArduFliteController::arm(ArdufliteCRSFReceiver* receiver)
 
 void ArduFliteController::disarm()
 {
-    {
-        SemaphoreLock lock(ctrlMutex, portMAX_DELAY);
-        if (lock.acquired())
-        {
-            armed = false;
-        }
-        else
-        {
-            LOG_ERR("DISARM: controller state lock unavailable; forcing neutral outputs");
-        }
-    }
-    // Write neutral servos OUTSIDE the lock — I/O must not be performed
-    // while holding ctrlMutex (see AGENTS.md §Common Pitfalls).
-    if (servoMgr) servoMgr->writeCommands(0, 0, 0);
+    // Cannot fail and cannot be delayed by contention.
+    armed.store(false, std::memory_order_release);
+
+    // disable() applies each channel's FailsafeAction and latches the bank, so
+    // a control loop cannot re-drive surfaces afterwards. Held no lock while
+    // doing it: I/O under ctrlMutex is forbidden (AGENTS.md, Common Pitfalls).
+    if (plat.outputs) { (void)plat.outputs->disable(); }
 }
 
 bool ArduFliteController::isArmed() const
 {
-    bool a = true;
-    {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return a;
-        a = armed;
-    }
-
-    return a;
+    return armed.load(std::memory_order_acquire);
 }
 
 void ArduFliteController::cutThrottle(bool value)
 {
-    {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return;
-        throttleCut = value;
-    }
+    throttleCut.store(value, std::memory_order_release);
 }
 
 bool ArduFliteController::isThrottleCut() const
 {
-    bool c = true;
-    {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return c;
-        c = throttleCut;
-    }
-
-    return c;
+    return throttleCut.load(std::memory_order_acquire);
 }
 
 
@@ -431,46 +459,47 @@ bool ArduFliteController::isThrottleCut() const
 void ArduFliteController::OuterLoopTask(void* parameters)
 {
     ArduFliteController* controller = static_cast<ArduFliteController*>(parameters);
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(outerLoopMs); // 10 ms period (100Hz)
-    unsigned long lastMicros = micros();
+    std::uint64_t lastWake = 0;   // opaque Scheduler state
+    const std::chrono::milliseconds period{ outerLoopMs };   // 10 ms period (100Hz)
+    auto lastTick = controller->plat.clock->now();
 
-    // Register this task with hardware watchdog (must be done from within the task)
-    esp_task_wdt_add(NULL);  // NULL = current task
+    // Registered for the task's whole lifetime; unregistered however it exits.
+    arduflite::hal::WatchdogGuard wdt(*controller->plat.watchdog);
 
     // Desired period in microseconds for the outer loop (10 ms = 10,000 µs)
     const unsigned long desiredPeriodOuter = outerLoopMs *1000UL;
 
-    EulerAngles rateCommand     {0.0f};
+    AngularRateDps rateCommand{};   // attitude loop output = a RATE setpoint
 
     // Shadow copies - persist across iterations for fallback on mutex timeout
-    EulerAngles rateSetpoint    {0.0f};
+    AngularRateDps rateSetpoint{};
     ArduFliteMode currentMode   = ATTITUDE_MODE;
 
     while(1)
     {
-        // Self-register with WDT if signalled by resumeTasks() (must run from within the task).
-        if (controller->outerWdtReregister.exchange(false, std::memory_order_acq_rel)) {
-            esp_task_wdt_add(NULL);
-            // Re-prime timing after the suspend. Without this, xLastWakeTime is stale
-            // by the (multi-second) pause duration, so vTaskDelayUntil() returns
-            // immediately every iteration and the task busy-spins to catch up — starving
-            // lower-priority tasks and tripping the WDT. lastMicros is re-seeded too so
-            // the first dt isn't a clamped giant step.
-            xLastWakeTime = xTaskGetTickCount();
-            lastMicros    = micros();
+        // BEFORE the pause check: a paused loop must still feed the watchdog,
+        // or a long calibration trips it.
+        wdt.feed();
+
+        if (controller->tasksPaused.load(std::memory_order_acquire))
+        {
+            // Re-seeded so the first dt after resuming measures one period
+            // rather than the whole pause.
+            lastTick = controller->plat.clock->now();
+            controller->plat.scheduler->sleepUntil(lastWake, period);
+            continue;
         }
 
-        // Reset hardware watchdog - proves this task is alive
-        esp_task_wdt_reset();
-
-        unsigned long currentMicros = micros();
-        unsigned long dtMicro = currentMicros - lastMicros;
-        lastMicros = currentMicros;
+        const auto    nowTick     = controller->plat.clock->now();
+        // 64-bit chrono: no 71-minute wrap. LoopStats stays in microseconds so
+        // the `stats` CLI output and the Phase 2 A/B comparison are unchanged.
+        const auto    elapsed     = nowTick - lastTick;
+        unsigned long dtMicro     = static_cast<unsigned long>(elapsed.count());
+        lastTick = nowTick;
 
         {
-            SemaphoreLock lock(controller->outerStatsMutex, HOT_PATH_LOCK_TIMEOUT_MS);
-            if (lock.acquired()) {
+            std::unique_lock lock(*controller->plat.outerStatsMutex, kHotPathLockTimeout);
+            if (static_cast<bool>(lock)) {
                 updateLoopStats(controller->outerLoopStats, dtMicro, desiredPeriodOuter);
             }
             // Stats update is non-critical, skip on timeout
@@ -485,8 +514,8 @@ void ArduFliteController::OuterLoopTask(void* parameters)
         // Protect reading of the mode and pilot setpoints.
         // On timeout, use shadow copies from previous iteration (fail soft)
         {
-            SemaphoreLock lock(controller->ctrlMutex, HOT_PATH_LOCK_TIMEOUT_MS);
-            if (lock.acquired()) {
+            std::unique_lock lock(*controller->plat.ctrlMutex, kHotPathLockTimeout);
+            if (static_cast<bool>(lock)) {
                 currentMode = controller->mode;
                 rateSetpoint = controller->pilotRateSetpoint;
             }
@@ -497,7 +526,7 @@ void ArduFliteController::OuterLoopTask(void* parameters)
         // I-term windup while the aircraft is idle on the ground before launch.
         // The instant flight state transitions to INFLIGHT, integrals start from 0.
         // Cache the state once to avoid a TOCTOU race between the two getFlightState() reads.
-        const FlightState fs = controller->imu->getFlightState();
+        const FlightState fs = getFlightState();
         if (fs == PREFLIGHT || fs == LANDED)
         {
             controller->attitudeCtrl->resetIntegrals();
@@ -507,13 +536,17 @@ void ArduFliteController::OuterLoopTask(void* parameters)
         if (currentMode == ATTITUDE_MODE)
         {
             // In Assist mode, use the attitude controller to compute desired rates.
-            FliteQuaternion currentQ = controller->imu->getQuaternion();
+            // One lock-free read. Two separate ones could straddle a tick and
+            // pair an attitude with a rate from a different sample.
+            const arduflite::estimation::ImuState imuState = controller->imu->state();
+            const FliteQuaternion currentQ(imuState.orientation_quat.w, imuState.orientation_quat.x,
+                                           imuState.orientation_quat.y, imuState.orientation_quat.z);
             controller->attitudeCtrl->update(currentQ, dt, rateCommand);
 
             // Write back for telemetry (non-critical if missed)
             {
-                SemaphoreLock lock(controller->ctrlMutex, HOT_PATH_LOCK_TIMEOUT_MS);
-                if (lock.acquired()) {
+                std::unique_lock lock(*controller->plat.ctrlMutex, kHotPathLockTimeout);
+                if (static_cast<bool>(lock)) {
                     controller->lastAttitudeCmd = rateCommand;
                 }
             }
@@ -528,8 +561,8 @@ void ArduFliteController::OuterLoopTask(void* parameters)
 
             // Write back for telemetry (non-critical if missed)
             {
-                SemaphoreLock lock(controller->ctrlMutex, HOT_PATH_LOCK_TIMEOUT_MS);
-                if (lock.acquired()) {
+                std::unique_lock lock(*controller->plat.ctrlMutex, kHotPathLockTimeout);
+                if (static_cast<bool>(lock)) {
                     controller->lastAttitudeCmd = rateCommand;
                 }
             }
@@ -539,7 +572,7 @@ void ArduFliteController::OuterLoopTask(void* parameters)
         }
         // else if MANUAL_MODE: do nothing here (we bypass both loops)
 
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        controller->plat.scheduler->sleepUntil(lastWake, period);
     }
 }
 
@@ -555,49 +588,46 @@ void ArduFliteController::OuterLoopTask(void* parameters)
 void ArduFliteController::InnerLoopTask(void* parameters)
 {
     ArduFliteController* controller = static_cast<ArduFliteController*>(parameters);
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(innerLoopMs); // 2 ms period (500Hz)
-    unsigned long lastMicros = micros();
+    std::uint64_t lastWake = 0;   // opaque Scheduler state
+    const std::chrono::milliseconds period{ innerLoopMs };   // 2 ms period (500Hz)
+    auto lastTick = controller->plat.clock->now();
 
-    // Register this task with hardware watchdog (must be done from within the task)
-    esp_task_wdt_add(NULL);  // NULL = current task
+    // Registered for the task's whole lifetime; unregistered however it exits.
+    arduflite::hal::WatchdogGuard wdt(*controller->plat.watchdog);
 
     // Desired period in microseconds for the inner loop (2 ms = 2,000 µs)
     const unsigned long desiredPeriodInner = innerLoopMs * 1000UL;
 
     // Shadow copies - persist across iterations for fallback on mutex timeout
     ArduFliteMode   localMode           = ATTITUDE_MODE;
-    EulerAngles     localRateSetpoint   = {0, 0, 0};
+    AngularRateDps  localRateSetpoint{};
+    AxisCommand     localManualCommand{};
     float           localThrottle       = 0.0f;
-    bool            localArmed          = false;
-    bool            localThrottleCut    = true;
-    EulerAngles     actuatorCmd         = {0.0f};
+    AxisCommand     actuatorCmd{};   // normalised -1..+1, straight to the mixer
 
     while(1)
     {
-        // Self-register with WDT if signalled by resumeTasks() (must run from within the task).
-        if (controller->innerWdtReregister.exchange(false, std::memory_order_acq_rel)) {
-            esp_task_wdt_add(NULL);
-            // Re-prime timing after the suspend. Without this, xLastWakeTime is stale
-            // by the (multi-second) pause duration, so vTaskDelayUntil() returns
-            // immediately every iteration and the task busy-spins to catch up — starving
-            // lower-priority tasks and tripping the WDT. lastMicros is re-seeded too so
-            // the first dt isn't a clamped giant step.
-            xLastWakeTime = xTaskGetTickCount();
-            lastMicros    = micros();
+        // BEFORE the pause check — see the outer loop.
+        wdt.feed();
+
+        if (controller->tasksPaused.load(std::memory_order_acquire))
+        {
+            lastTick = controller->plat.clock->now();
+            controller->plat.scheduler->sleepUntil(lastWake, period);
+            continue;
         }
 
-        // Reset hardware watchdog - proves this task is alive
-        esp_task_wdt_reset();
-
-        unsigned long currentMicros = micros();
-        unsigned long dtMicro = currentMicros - lastMicros;
-        lastMicros = currentMicros;
+        const auto    nowTick     = controller->plat.clock->now();
+        // 64-bit chrono: no 71-minute wrap. LoopStats stays in microseconds so
+        // the `stats` CLI output and the Phase 2 A/B comparison are unchanged.
+        const auto    elapsed     = nowTick - lastTick;
+        unsigned long dtMicro     = static_cast<unsigned long>(elapsed.count());
+        lastTick = nowTick;
 
         // Update inner loop statistics (separate mutex, low contention)
         {
-            SemaphoreLock lock(controller->innerStatsMutex, HOT_PATH_LOCK_TIMEOUT_MS);
-            if (lock.acquired()) {
+            std::unique_lock lock(*controller->plat.innerStatsMutex, kHotPathLockTimeout);
+            if (static_cast<bool>(lock)) {
                 updateLoopStats(controller->innerLoopStats, dtMicro, desiredPeriodInner);
             }
             // Stats update is non-critical, skip on timeout
@@ -616,19 +646,24 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         // the health state machine runs inside — prevents a second acquisition.
         // On timeout, shadow copies retain values from the previous iteration.
         // ─────────────────────────────────────────────────────────────────
-        bool imuHealthy = controller->imu->isHealthy();  // lock-free read
+        bool imuHealthy = controller->imu->healthy();  // lock-free read
         bool shouldEnterFailure = false;
         bool shouldExitFailure  = false;
         ArduFliteMode modeToRestore = MANUAL_MODE;
 
+        // Read OUTSIDE the lock, and deliberately not shadowed: these are the
+        // two safety gates, and a tick that cannot take the lock must still
+        // observe a disarm or a throttle cut the moment it happens.
+        const bool localArmed       = controller->armed.load(std::memory_order_acquire);
+        const bool localThrottleCut = controller->throttleCut.load(std::memory_order_acquire);
+
         {
-            SemaphoreLock lock(controller->ctrlMutex, HOT_PATH_LOCK_TIMEOUT_MS);
-            if (lock.acquired()) {
+            std::unique_lock lock(*controller->plat.ctrlMutex, kHotPathLockTimeout);
+            if (static_cast<bool>(lock)) {
                 localMode           = controller->mode;
                 localRateSetpoint   = controller->pilotRateSetpoint;
+                localManualCommand  = controller->pilotManualCommand;
                 localThrottle       = controller->pilotThrottleSetpoint;
-                localArmed          = controller->armed;
-                localThrottleCut    = controller->throttleCut;
                 // IMU health state machine — inline with state read to avoid second lock
                 if (!imuHealthy && !controller->imuFailureActive)
                 {
@@ -638,6 +673,14 @@ void ArduFliteController::InnerLoopTask(void* parameters)
                     controller->imuFailureActive = true;
                     controller->mode = MANUAL_MODE;
                     localMode = MANUAL_MODE;
+
+                    // Retained as defence in depth. The type split (ADR-037)
+                    // means MANUAL_MODE now reads its own AxisCommand slot, so a
+                    // deg/s value can no longer reach the mixer at all. But that
+                    // slot still holds whatever manual command was last sent,
+                    // which may be stale from before RATE_MODE was entered.
+                    // Centre for one tick; the next ControlMixer tick refreshes.
+                    localManualCommand = {};
                     shouldEnterFailure = true;
                 }
                 else if (imuHealthy && controller->imuFailureActive)
@@ -646,6 +689,10 @@ void ArduFliteController::InnerLoopTask(void* parameters)
                     controller->imuFailureActive = false;
                     controller->mode = modeToRestore;
                     localMode = modeToRestore;
+
+                    // Mirror of the demotion above: the rate slot may hold a
+                    // setpoint from before the failure. Centre for one tick.
+                    localRateSetpoint = {};
                     shouldExitFailure = true;
                 }
             }
@@ -663,22 +710,24 @@ void ArduFliteController::InnerLoopTask(void* parameters)
 
         // Retrieve measured angular rates from the IMU (lock-free versioned snapshot)
         // Skip IMU read in MANUAL_MODE to avoid blocking on failed I2C bus
-        Vector3 gyro = {0, 0, 0};
+        AngularRateDps gyro{};
         if (localMode != MANUAL_MODE)
         {
-            gyro = controller->imu->getGyro();
+            gyro = toAngularRateDps(controller->imu->state().gyro_dps);
         }
 
         if (localMode == MANUAL_MODE)
         {
-            actuatorCmd = localRateSetpoint;
+            // Its own slot, already the right quantity. No conversion, and no
+            // possibility of a rate arriving here (ADR-037).
+            actuatorCmd = localManualCommand;
         }
         else
         {
             // Guard against NaN/Inf gyro — a failed I2C read can produce NaN which
             // would permanently corrupt the PID integrators (NaN + x = NaN forever).
             // ServoManager catches NaN at output, but integrators must stay clean.
-            if (!isfinite(gyro.x) || !isfinite(gyro.y) || !isfinite(gyro.z))
+            if (!isfinite(gyro.roll) || !isfinite(gyro.pitch) || !isfinite(gyro.yaw))
             {
                 LOG_ERR("InnerLoop: NaN/Inf in gyro data — skipping rate controller update.");
             }
@@ -691,86 +740,109 @@ void ArduFliteController::InnerLoopTask(void* parameters)
         // Only actually drive servos if we’re armed:
         if (localArmed)
         {
-            controller->servoMgr->writeCommands(actuatorCmd.roll, actuatorCmd.pitch, actuatorCmd.yaw);
+            const auto mixed = arduflite::actuators::AirframeMixer::mix(
+                controller->wingDesign,
+                actuatorCmd.roll, actuatorCmd.pitch, actuatorCmd.yaw);
+            controller->surfaces.stageSurfaces(mixed);
 
             // Only drive ESC's if the throttle cut is disabled as well
             if (!localThrottleCut)
             {
-                controller->servoMgr->writeThrottle(localThrottle);
+                controller->surfaces.stageThrottle(localThrottle);
             }
             else
             {
-                controller->servoMgr->writeThrottle(0);
+                controller->surfaces.stageThrottle(0.0f);
             }
         }
         else
         {
             // hold neutral
-            controller->servoMgr->writeCommands(0, 0, 0);
+            controller->surfaces.stageSurfaces({});
 
             // hold throttle off
-            controller->servoMgr->writeThrottle(0);
+            controller->surfaces.stageThrottle(0.0f);
+        }
+
+        // Push every staged command to hardware in ONE batched operation.
+        // stage() is purely local; this is what reaches the actuators, and for a
+        // CAN bank it would be the PDO group plus SYNC. Reporting is per-channel
+        // via staleMask so a stale elevator and a stale flap can be told apart.
+        {
+            const auto result = controller->plat.outputs->commit();
+            if (!result.allOk() && localArmed)
+            {
+                static arduflite::hal::Clock::time_point lastWarn{};
+                const auto nowT = controller->plat.clock->now();
+                if (nowT - lastWarn > std::chrono::seconds{ 1 })
+                {
+                    LOG_ERR("Actuator commit incomplete: status=%s staleMask=0x%08lX",
+                            arduflite::toString(result.status),
+                            static_cast<unsigned long>(result.staleMask));
+                    lastWarn = nowT;
+                }
+            }
         }
 
         // Write back actuator command (for telemetry) — non-blocking tryLock
         {
-            SemaphoreLock lock(controller->ctrlMutex, HOT_PATH_LOCK_TIMEOUT_MS);
-            if (lock.acquired()) {
+            std::unique_lock lock(*controller->plat.ctrlMutex, kHotPathLockTimeout);
+            if (static_cast<bool>(lock)) {
                 controller->lastRateCmd = actuatorCmd;
             }
             // Non-critical if missed — telemetry will show slightly stale data
         }
 
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        controller->plat.scheduler->sleepUntil(lastWake, period);
     }
 }
 
-EulerAngles ArduFliteController::getAttitudeSetpoint() const
+AttitudeDeg ArduFliteController::getAttitudeSetpoint() const
 {
-    EulerAngles value{0.0f, 0.0f, 0.0f};
+    AttitudeDeg value{};
 
     {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return value;
+        std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return value;
         value  = pilotAttitudeSetpoint;
     }
 
     return value;
 }
 
-EulerAngles ArduFliteController::getRateSetpoint() const
+AngularRateDps ArduFliteController::getRateSetpoint() const
 {
-    EulerAngles value{0.0f, 0.0f, 0.0f};
+    AngularRateDps value{};
 
     {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return value;
+        std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return value;
         value  = pilotRateSetpoint;
     }
 
     return value;
 }
 
-EulerAngles ArduFliteController::getRateCmd() const
+AxisCommand ArduFliteController::getRateCmd() const
 {
-    EulerAngles value{0.0f, 0.0f, 0.0f};
+    AxisCommand value{};
 
     {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return value;
+        std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return value;
         value = lastRateCmd;
     }
 
     return value;
 }
 
-EulerAngles ArduFliteController::getAttitudeCmd() const
+AngularRateDps ArduFliteController::getAttitudeCmd() const
 {
-    EulerAngles value{0.0f, 0.0f, 0.0f};
+    AngularRateDps value{};
 
     {
-        SemaphoreLock lock(ctrlMutex);
-        if (!lock.acquired()) return value;
+        std::unique_lock lock(*plat.ctrlMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return value;
         value = lastAttitudeCmd;
     }
 
@@ -814,8 +886,8 @@ LoopStats ArduFliteController::getOuterLoopStats()
     LoopStats statsCopy{0, 0, 0, 0};
 
     {
-        SemaphoreLock lock(outerStatsMutex);
-        if (!lock.acquired()) return statsCopy;
+        std::unique_lock lock(*plat.outerStatsMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return statsCopy;
         statsCopy = outerLoopStats;
     }
 
@@ -827,8 +899,8 @@ LoopStats ArduFliteController::getInnerLoopStats()
     LoopStats statsCopy{0, 0, 0, 0};
 
     {
-        SemaphoreLock lock(innerStatsMutex);
-        if (!lock.acquired()) return statsCopy;
+        std::unique_lock lock(*plat.innerStatsMutex, kLockTimeout);
+        if (!static_cast<bool>(lock)) return statsCopy;
         statsCopy = innerLoopStats;
     }
 

@@ -10,6 +10,9 @@ __pycache__/
 .Python
 build/
 tests/unit/build/
+tests/unit/build-m32/
+tests/unit/build-san/
+tests/host_sim/build/
 develop-eggs/
 dist/
 downloads/

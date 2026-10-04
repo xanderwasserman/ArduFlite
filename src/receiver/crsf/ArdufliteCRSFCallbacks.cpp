@@ -10,7 +10,6 @@
 #include "src/utils/Logging.h"
 #include "src/utils/ConfigRegistry.h"
 #include "include/ConfigKeys.h"
-#include "include/ReceiverConfiguration.h"
 
 namespace CRSFCallbacks
 {
@@ -42,13 +41,13 @@ namespace CRSFCallbacks
         SystemCommand throttleCmd{};
         throttleCmd.type = CMD_SET_THROTTLE_CUT;
         throttleCmd.x_value = true;
-        CommandSystem::instance().pushCommand(throttleCmd);
+        bool allQueued = CommandSystem::instance().pushCommand(throttleCmd);
 
         // 2) Force ATTITUDE mode so our setpoints are interpreted as angles
         SystemCommand modeCmd{};
         modeCmd.type = CMD_SET_MODE;
         modeCmd.mode = ATTITUDE_MODE;
-        CommandSystem::instance().pushCommand(modeCmd);
+        allQueued = CommandSystem::instance().pushCommand(modeCmd) && allQueued;
 
         // 3) Command a gentle spiral descent using configured failsafe angles
         // NOTE: yaw=0 holds heading in ATTITUDE_MODE. Combined with constant bank,
@@ -59,19 +58,29 @@ namespace CRSFCallbacks
         float fsBankDeg  = cfg.get<float>(CONFIG_KEY_FS_BANK_DEG);
         float fsPitchDeg = cfg.get<float>(CONFIG_KEY_FS_PITCH_DEG);
         
-        EulerAngles fsAttitude;
-        fsAttitude.roll  = fsBankDeg;   // Gentle bank for contained spiral
-        fsAttitude.pitch = fsPitchDeg;  // Slight nose-down for glide
-        fsAttitude.yaw   = 0.0f;        // Hold heading (intentional spiral)
-        
+        // Tagged Attitude explicitly. This and the mode command are two
+        // separate queue entries, so before the kind travelled with the value
+        // the setpoint could be dispatched under the PREVIOUS mode — delivering
+        // a bank angle in degrees to the rate setter.
         SystemCommand attCmd{};
-        attCmd.type     = CMD_SET_SETPOINT;
-        attCmd.setpoint = fsAttitude;
-        CommandSystem::instance().pushCommand(attCmd);
+        attCmd.type          = CMD_SET_SETPOINT;
+        attCmd.setpointKind  = SystemCommand::SetpointKind::Attitude;
+        attCmd.setpointRoll  = fsBankDeg;    // gentle bank for a contained spiral
+        attCmd.setpointPitch = fsPitchDeg;   // slight nose-down for glide
+        attCmd.setpointYaw   = 0.0f;         // hold heading (the spiral is intentional)
+        allQueued = CommandSystem::instance().pushCommand(attCmd) && allQueued;
 
-        LOG_WARN("Failsafe: Bank=%.1f° Pitch=%.1f° Throttle=CUT",
-                 fsBankDeg,
-                 fsPitchDeg);
+        if (allQueued)
+        {
+            LOG_WARN("Failsafe: Bank=%.1f° Pitch=%.1f° Throttle=CUT",
+                     fsBankDeg, fsPitchDeg);
+        }
+        else
+        {
+            // The three commands are one action. Report a partial one as a
+            // failure rather than logging the failsafe as complete.
+            LOG_ERR("Failsafe INCOMPLETE - command queue rejected part of it");
+        }
     }
 
     /**
@@ -92,15 +101,12 @@ namespace CRSFCallbacks
         modeCmd.mode = savedModeBeforeFailsafe;
         CommandSystem::instance().pushCommand(modeCmd);
 
-        // Zero out the failsafe attitude setpoints so pilot has clean control
-        EulerAngles zeroAttitude;
-        zeroAttitude.roll  = 0.0f;
-        zeroAttitude.pitch = 0.0f;
-        zeroAttitude.yaw   = 0.0f;
-        
+        // Clear the failsafe ATTITUDE setpoint specifically, so the pilot gets
+        // clean control. The next ControlMixer tick sends whichever kind the
+        // restored mode actually needs.
         SystemCommand attCmd{};
-        attCmd.type     = CMD_SET_SETPOINT;
-        attCmd.setpoint = zeroAttitude;
+        attCmd.type         = CMD_SET_SETPOINT;
+        attCmd.setpointKind = SystemCommand::SetpointKind::Attitude;
         CommandSystem::instance().pushCommand(attCmd);
 
         LOG_INF("Mode restored to %d. Pilot must disengage throttle cut to resume.",

@@ -143,6 +143,7 @@
 #define CONFIG_KEY_IMU_MAG_ALPHA        "imu.mag_alpha"
 #define CONFIG_KEY_IMU_ALTI_ALPHA       "imu.alti_alpha"
 #define CONFIG_KEY_IMU_MADGWICK_BETA    "imu.madgwick_beta"
+#define CONFIG_KEY_IMU_FUSE_MAG         "imu.fuse_mag"
 #define CONFIG_KEY_IMU_MAX_ACCEL_G      "imu.max_accel_g"
 #define CONFIG_KEY_IMU_MAX_GYRO_DPS     "imu.max_gyro_dps"
 #define CONFIG_KEY_IMU_FAIL_THRESHOLD   "imu.fail_threshold"

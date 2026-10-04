@@ -10,15 +10,17 @@
 #define CLI_COMMAND_CONTEXT_H
 
 #include "src/controller/ArduFliteController.h"
-#include "src/orientation/ArduFliteIMU.h"
+#include "src/core/FlightTypes.h"
+#include "src/estimation/InertialSubsystem.h"
+#include "src/state/StateManagement.h"
 #include "src/telemetry/flash/ArduFliteFlashTelemetry.h"
 
 void setCliController(ArduFliteController* controller);
-void setCliIMU(ArduFliteIMU* imu);
+void setCliIMU(arduflite::estimation::InertialSubsystem* imu);
 void setFlashTelemetry(ArduFliteFlashTelemetry* telem);
 
 ArduFliteController* getCliController();
-ArduFliteIMU* getCliIMU();
+arduflite::estimation::InertialSubsystem* getCliIMU();
 ArduFliteFlashTelemetry* getCliFlashTelemetry();
 
 bool rejectUnsafeGroundCommand(const char* action);

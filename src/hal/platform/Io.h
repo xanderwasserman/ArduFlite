@@ -33,7 +33,7 @@ public:
 /**
  * @brief PWM output in MICROSECONDS, the hardware's real unit.
  *
- * The legacy Servo::write(int degrees) path quantised to ~11 us before the slew
+ * A degrees-based servo API quantises to ~11 us before the slew
  * limiter ever saw the value.
  */
 class PwmOut : private NonCopyable

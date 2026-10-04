@@ -34,12 +34,35 @@ struct RcFrame
     hal::Clock::time_point time{};
 };
 
+/**
+ * @brief RF link health.
+ *
+ * Covers both directions because a downlink problem and an uplink problem are
+ * different failures, and the flash log records both. Fields a given protocol
+ * does not report stay zero — check `valid` before trusting any of it.
+ *
+ * @note Deliberately wider than the failsafe check needs: the flash log and
+ *       the analysis tools in tools/ consume every field here.
+ */
 struct RcLinkStats
 {
-    std::uint8_t linkQuality_pct = 0;
-    std::int8_t  rssi_dbm        = 0;
-    std::int8_t  snr_db          = 0;
-    bool         valid           = false;   ///< false until the first stats frame
+    // Uplink — transmitter to aircraft. This is what arming gates on.
+    std::uint8_t uplinkQuality_pct = 0;
+    std::int8_t  uplinkRssi1_dbm   = 0;
+    std::int8_t  uplinkRssi2_dbm   = 0;   ///< second antenna, 0 if no diversity
+    std::int8_t  uplinkSnr_db      = 0;
+
+    // Downlink — aircraft to transmitter. Telemetry health, not control health.
+    std::uint8_t downlinkQuality_pct = 0;
+    std::int8_t  downlinkRssi_dbm    = 0;
+    std::int8_t  downlinkSnr_db      = 0;
+
+    // Radio state. Opaque indices, logged for post-flight diagnosis.
+    std::uint8_t activeAntenna = 0;
+    std::uint8_t rfMode        = 0;
+    std::uint8_t txPower       = 0;
+
+    bool valid = false;   ///< false until the first stats frame arrives
 };
 
 class RcLink : private NonCopyable

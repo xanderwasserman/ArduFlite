@@ -8,7 +8,7 @@
  *
  * @brief THE ONE #if IN THE CODEBASE.
  *
- * Replaces five #if BOARD_TYPE blocks in PinConfiguration.h. Adding a board is:
+ * Adding a board is:
  *   1. create boards/<name>.h with an McuProfile and a BoardDescriptor
  *   2. add one #elif here
  *   3. add the board to build.sh and the CI matrix

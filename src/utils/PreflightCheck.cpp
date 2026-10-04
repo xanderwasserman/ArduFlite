@@ -11,13 +11,14 @@
  */
 
 #include "src/utils/PreflightCheck.h"
-#include "src/orientation/ArduFliteIMU.h"
+#include "src/core/FlightTypes.h"
+#include "src/estimation/InertialSubsystem.h"
+#include "src/state/StateManagement.h"
 #include "src/controller/ArduFliteController.h"
-#include "src/receiver/crsf/ArdufliteCRSFReceiver.h"
+#include "src/hal/device/RcLink.h"
 #include "src/utils/Logging.h"
 #include "src/utils/ConfigRegistry.h"
 #include "include/ConfigKeys.h"
-#include "include/ReceiverConfiguration.h"
 
 #include <math.h>
 
@@ -25,9 +26,9 @@ namespace PreflightCheck
 {
 
 PreflightResult runAllChecks(
-    ArduFliteIMU* imu,
+    arduflite::estimation::InertialSubsystem* imu,
     ArduFliteController* controller,
-    ArdufliteCRSFReceiver* receiver,
+    arduflite::device::RcLink* rcLink,
     ArmContext context)
 {
     PreflightResult result;
@@ -39,7 +40,7 @@ PreflightResult runAllChecks(
 
         // Only checks safe to run on a moving, airborne aircraft.
         result.imuHealthy      = checkIMUHealth(imu);
-        result.receiverLinked  = checkReceiverLink(receiver);
+        result.receiverLinked  = checkReceiverLink(rcLink);
 
         // Bypass motion-dependent checks — aircraft is already flying.
         result.gyroStable     = true;   // SKIP: gyro rotating in flight
@@ -54,7 +55,7 @@ PreflightResult runAllChecks(
         result.imuHealthy      = checkIMUHealth(imu);
         result.gyroStable      = checkGyroStability(imu);
         result.accelValid      = checkAccelerometer(imu);
-        result.receiverLinked  = checkReceiverLink(receiver);
+        result.receiverLinked  = checkReceiverLink(rcLink);
         result.throttleMinimum = checkThrottleMinimum(controller);
     }
 
@@ -63,7 +64,7 @@ PreflightResult runAllChecks(
     return result;
 }
 
-bool checkIMUHealth(ArduFliteIMU* imu)
+bool checkIMUHealth(arduflite::estimation::InertialSubsystem* imu)
 {
     if (imu == nullptr)
     {
@@ -71,7 +72,7 @@ bool checkIMUHealth(ArduFliteIMU* imu)
         return false;
     }
 
-    bool healthy = imu->isHealthy();
+    bool healthy = imu->healthy();
     if (!healthy)
     {
         LOG_ERR("Preflight: IMU is reporting unhealthy status");
@@ -80,7 +81,7 @@ bool checkIMUHealth(ArduFliteIMU* imu)
     return healthy;
 }
 
-bool checkGyroStability(ArduFliteIMU* imu)
+bool checkGyroStability(arduflite::estimation::InertialSubsystem* imu)
 {
     if (imu == nullptr)
     {
@@ -96,7 +97,9 @@ bool checkGyroStability(ArduFliteIMU* imu)
 
     for (int i = 0; i < NUM_SAMPLES; i++)
     {
-        Vector3 gyro = imu->getGyro();
+        // Vec3f directly: the unit is visible at the read (gyro_dps), so a
+        // conversion into a second generic vector type bought nothing.
+        const arduflite::Vec3f gyro = imu->state().gyro_dps;
         sumX += gyro.x;
         sumY += gyro.y;
         sumZ += gyro.z;
@@ -131,14 +134,14 @@ bool checkGyroStability(ArduFliteIMU* imu)
     return stable;
 }
 
-bool checkAccelerometer(ArduFliteIMU* imu)
+bool checkAccelerometer(arduflite::estimation::InertialSubsystem* imu)
 {
     if (imu == nullptr)
     {
         return false;
     }
 
-    Vector3 accel = imu->getAcceleration();
+    const arduflite::Vec3f accel = imu->state().accel_g;
 
     // Calculate total acceleration magnitude
     float magnitude = sqrtf(accel.x * accel.x +
@@ -162,32 +165,32 @@ bool checkAccelerometer(ArduFliteIMU* imu)
     return valid;
 }
 
-bool checkReceiverLink(ArdufliteCRSFReceiver* receiver)
+bool checkReceiverLink(arduflite::device::RcLink* rcLink)
 {
-    // If no CRSF receiver is configured, pass this check
-    // (might be using PWM receiver or testing without receiver)
-    if (receiver == nullptr)
+    // If no CRSF rcLink is configured, pass this check
+    // (might be using PWM rcLink or testing without rcLink)
+    if (rcLink == nullptr)
     {
-        LOG_WARN("Preflight: No CRSF receiver configured, skipping link check");
+        LOG_WARN("Preflight: No CRSF rcLink configured, skipping link check");
         return true;
     }
 
-    crsfLinkStatistics_t stats;
-    bool hasStats = receiver->getLinkStats(stats);
+    const arduflite::device::RcLinkStats stats = rcLink->stats();
+    const bool hasStats = stats.valid;
 
     if (!hasStats)
     {
-        LOG_ERR("Preflight: No receiver link statistics available");
+        LOG_ERR("Preflight: No rcLink link statistics available");
         return false;
     }
 
     uint8_t minLQ = ConfigRegistry::instance().get<uint8_t>(CONFIG_KEY_FS_MIN_LQ_ARM_PCT);
-    bool linkOk = (stats.uplink_Link_quality >= minLQ);
+    bool linkOk = (stats.uplinkQuality_pct >= minLQ);
 
     if (!linkOk)
     {
         LOG_ERR("Preflight: Link quality too low! LQ=%u%% (min=%u%%)",
-                stats.uplink_Link_quality, minLQ);
+                stats.uplinkQuality_pct, minLQ);
     }
 
     return linkOk;

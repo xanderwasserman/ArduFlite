@@ -8,7 +8,8 @@
  *
  * @brief Satisfies the standard Lockable / TimedLockable requirements, so
  *        std::lock_guard, std::unique_lock and std::scoped_lock work directly.
- *        There is no bespoke lock wrapper — SemaphoreLock is retired.
+ *        Lock it with std::unique_lock / std::scoped_lock; there is no
+ *        bespoke wrapper.
  */
 #ifndef ARDUFLITE_HAL_PLATFORM_MUTEX_H
 #define ARDUFLITE_HAL_PLATFORM_MUTEX_H

@@ -8,13 +8,14 @@
  */
 #include "src/utils/MultiTapButton.h"
 
-MultiTapButton::MultiTapButton(int pin,
+MultiTapButton::MultiTapButton(arduflite::hal::GpioPin& pin,
+                               const arduflite::hal::Clock& clock,
                                unsigned long maxTapIntervalMs,
                                int requiredTaps,
                                MultiTapCallback callback,
                                bool usePullup,
                                unsigned long debounceMs)
-    : ButtonBase(pin, usePullup, debounceMs)
+    : ButtonBase(pin, clock, usePullup, debounceMs)
     , _maxTapInterval(maxTapIntervalMs)
     , _requiredTaps(requiredTaps)
     , _callback(callback)
@@ -25,7 +26,7 @@ void MultiTapButton::update() {
     // 1) Debounce using the base class
     ButtonBase::update();
 
-    unsigned long now = millis();
+    unsigned long now = nowMs();
     bool currentlyPressed = isPressed();
 
     // 2) Detect a transition from not pressed -> pressed

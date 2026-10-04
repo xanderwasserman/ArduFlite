@@ -9,8 +9,12 @@
 #ifndef ARDU_FLITE_ATTITUDE_CONTROLLER_H
 #define ARDU_FLITE_ATTITUDE_CONTROLLER_H
 
+#include <mutex>
+
+#include "src/hal/platform/Mutex.h"
+
 #include "src/orientation/FliteQuaternion.h"
-#include "src/orientation/ArduFliteIMU.h"
+#include "src/core/FlightTypes.h"
 #include "src/controller/pid.h"
 #include "include/ControllerTypes.h"
 
@@ -28,6 +32,10 @@
 class ArduFliteAttitudeController
 {
 public:
+    /// Supply the lock guarding this controller's state. Must be called before
+    /// any other method; every one of them becomes a no-op until it is.
+    void setMutex(arduflite::hal::Mutex* mutex) { attitudeMutex = mutex; }
+
     /**
      * @brief Default constructor.
      *
@@ -51,15 +59,6 @@ public:
      */
     void setAttitudeControlSetpointQuaternion(const FliteQuaternion &qd);
 
-    /**
-     * @brief Sets the desired orientation using Euler angles in radians.
-     *
-     * Converts the provided Euler angles (roll, pitch, yaw) to a quaternion and updates
-     * the desired orientation.
-     *
-     * @param setpointRads Attitude setpoint in radians.
-     */
-    void setAttitudeControlSetpointRads(EulerAngles setpointRads);
 
     /**
      * @brief Sets the desired orientation using Euler angles in degrees.
@@ -69,7 +68,7 @@ public:
      *
      * @param setpointDegs  Attitude Setpoint in degrees.
      */
-    void setAttitudeControlSetpoint(EulerAngles setpointDegs);
+    void setAttitudeControlSetpoint(AttitudeDeg setpointDegs);
 
     /**
      * @brief Updates the attitude controller.
@@ -79,13 +78,15 @@ public:
      * quaternions. The remaining roll and pitch errors are converted to a rotation vector using
      * a logarithmic map. These errors are then fed into PID controllers to compute control outputs.
      *
-     * @param measuredQ The measured orientation as a quaternion.
-     * @param dt The time step in seconds.
-     * @param rollOut Output control signal for roll (normalized to [-1, 1]).
-     * @param pitchOut Output control signal for pitch (normalized to [-1, 1]).
-     * @param yawOut Output control signal for yaw (normalized to [-1, 1]).
+     * @param measuredQ the measured orientation, as a quaternion.
+     * @param dt         the time step, in seconds.
+     * @param rateOut    the rate setpoint for the inner loop, in deg/s.
+     *
+     * @note The OUTPUT of the attitude loop is a RATE, not an attitude — hence
+     *       AngularRateDps. The telemetry column fed from it (att_cmd_*) is
+     *       therefore one stage off from what its name suggests.
      */
-    void update(const FliteQuaternion &measuredQ, float dt, EulerAngles &rateOut);
+    void update(const FliteQuaternion &measuredQ, float dt, AngularRateDps &rateOut);
 
     /**
      * @brief Resets the PID controllers.
@@ -121,14 +122,17 @@ public:
 
 private:
     FliteQuaternion desiredQ;               //< The desired orientation.
-    EulerAngles     attitudeSetpointDegs;   //< The desired orientation in degrees.
+    AttitudeDeg     attitudeSetpointDegs;   //< The desired orientation in degrees.
     float           deadbandRads;           //< Error deadband in radians.
     PID             pidRoll;                //< PID controller for roll.
     PID             pidPitch;               //< PID controller for pitch.
     PID             pidYaw;                 //< PID controller for yaw.
 
     /// Mutex to protect access to the desired orientation.
-    SemaphoreHandle_t attitudeMutex;
+    /// Injected via setMutex(), not created here. Owning a raw FreeRTOS handle
+    /// was the one thing keeping this class on the target: it is otherwise pure
+    /// arithmetic, and now runs in host_sim.
+    arduflite::hal::Mutex* attitudeMutex = nullptr;
 };
 
 #endif // ARDU_FLITE_ATTITUDE_CONTROLLER_H

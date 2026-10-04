@@ -4,11 +4,16 @@ This document describes all runtime-tunable parameters available in ArduFlite. U
 
 ```bash
 config list              # Show all parameters
-config get <key>         # Get current value
-config set <key> <value> # Set new value (persists across reboots)
-config export            # Export all config as JSON
-config reset             # Reset to defaults
+config get <key|pattern> # Get current value; pattern accepts a trailing *
+config set <key> <value> # Set new value
+config save              # Write changed parameters to NVS
+config load              # Reload from NVS
+config defaults          # Restore schema defaults
 ```
+
+`config set` is refused while armed or in flight, as are `load` and `defaults`.
+JSON export and import are available over the web API (`/api/config/export`,
+`/api/config/import`), not from the CLI.
 
 ---
 
@@ -79,7 +84,7 @@ The rate controller runs at ~500 Hz and converts angular rate errors (deg/s) int
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
 | `rate.yaw.kp` | 0.05 | 0.0 - 1.0 | Proportional gain |
-| `rate.yaw.ti_s` | 0.00 | 0.0 - 10.0 | Integral time constant (seconds) - 0 disables, prevents drift without magnetometer |
+| `rate.yaw.ti_s` | 8.00 | 0.0 - 10.0 | Integral time constant (seconds). Deliberately slower than roll and pitch — the rudder is a weak, laggy control. 0 disables |
 | `rate.yaw.td_s` | 0.30 | 0.0 - 1.0 | Derivative time constant (seconds) |
 | `rate.yaw.outlimit` | 1.00 | 0.1 - 1.0 | Output limit (normalized) |
 | `rate.yaw.headroom` | 0.80 | 0.5 - 1.0 | Anti-windup headroom factor |
@@ -127,10 +132,10 @@ The attitude controller runs at ~100 Hz and converts attitude errors (degrees) i
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `att.pitch.kp` | 200.0 | 0.0 - 1000.0 | Proportional gain (deg/s per deg error) |
+| `att.pitch.kp` | 150.0 | 0.0 - 1000.0 | Proportional gain (deg/s per deg error) |
 | `att.pitch.ti_s` | 0.00 | 0.0 - 10.0 | Integral time constant (seconds) |
 | `att.pitch.td_s` | 0.00 | 0.0 - 1.0 | Derivative time constant (seconds) |
-| `att.pitch.outlimit_dps` | 60.0 | 10.0 - 180.0 | Max rate setpoint output (deg/s) |
+| `att.pitch.outlimit_dps` | 45.0 | 10.0 - 180.0 | Max rate setpoint output (deg/s) |
 | `att.pitch.headroom` | 0.80 | 0.5 - 1.0 | Anti-windup headroom factor |
 | `att.pitch.alpha` | 0.10 | 0.01 - 1.0 | Derivative low-pass filter coefficient |
 
@@ -170,9 +175,9 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `mix.max.att.roll` | 55.0 | 10.0 - 90.0 | Max roll angle (degrees) |
-| `mix.max.att.pitch` | 50.0 | 10.0 - 90.0 | Max pitch angle (degrees) |
-| `mix.max.att.yaw` | 180.0 | 45.0 - 360.0 | Max yaw heading offset (degrees) |
+| `mix.max_att_roll_deg` | 55.0 | 10.0 - 90.0 | Max roll angle (degrees) |
+| `mix.max_att_pitch_deg` | 50.0 | 10.0 - 90.0 | Max pitch angle (degrees) |
+| `mix.max_att_yaw_deg` | 180.0 | 45.0 - 360.0 | Max yaw heading offset (degrees) |
 
 **Tuning Notes:**
 - **max.att.roll/pitch**: Full stick deflection commands this angle
@@ -183,9 +188,9 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `mix.max.rate.roll` | 90.0 | 30.0 - 360.0 | Max roll rate (deg/s) |
-| `mix.max.rate.pitch` | 60.0 | 30.0 - 360.0 | Max pitch rate (deg/s) |
-| `mix.max.rate.yaw` | 60.0 | 30.0 - 360.0 | Max yaw rate (deg/s) |
+| `mix.max_rate_roll_dps` | 90.0 | 30.0 - 360.0 | Max roll rate (deg/s) |
+| `mix.max_rate_pitch_dps` | 60.0 | 30.0 - 360.0 | Max pitch rate (deg/s) |
+| `mix.max_rate_yaw_dps` | 60.0 | 30.0 - 360.0 | Max yaw rate (deg/s) |
 
 **Tuning Notes:**
 - Full stick deflection commands this rate
@@ -196,9 +201,9 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `mix.roll.from.yaw` | 0.00 | 0.0 - 0.5 | Yaw input adds roll |
-| `mix.pitch.from.roll` | 0.08 | 0.0 - 0.5 | Roll input adds pitch (prevents nose drop in turns) |
-| `mix.yaw.from.roll` | 0.10 | 0.0 - 0.5 | Roll input adds yaw (coordinated turn) |
+| `mix.roll_from_yaw` | 0.00 | 0.0 - 0.5 | Yaw input adds roll |
+| `mix.pitch_from_roll` | 0.08 | 0.0 - 0.5 | Roll input adds pitch (prevents nose drop in turns) |
+| `mix.yaw_from_roll` | 0.10 | 0.0 - 0.5 | Roll input adds yaw (coordinated turn) |
 
 **Tuning Notes:**
 - **yaw.from.roll**: Adds rudder when banking for coordinated turns. 0.1 = 10% of roll command added to yaw
@@ -213,20 +218,22 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `servo.wing_design` | 0 | 0 - 2 | Wing type: 0=Conventional, 1=Delta Wing, 2=V-Tail |
+| `servo.wing_design` | 0 | 0 - 2 | Wing type: 0=Conventional, 1=Delta Wing, 2=V-Tail (see below) |
 | `servo.dual_ailerons` | true | true/false | Use two aileron servos (vs single) |
 
 **Wing Design Values:**
 - **0 (CONVENTIONAL)**: Separate ailerons, elevator, rudder
 - **1 (DELTA_WING)**: Elevons only (roll+pitch mixed)
-- **2 (V_TAIL)**: Ruddervators (pitch+yaw mixed)
+- **2 (V_TAIL)**: Reserved, and **not implemented** — the mixer produces no
+  deflection for this geometry, so a V-tail airframe has no control surfaces.
+  Do not select it.
 
 ### Slew Rate Limits
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `servo.max.deg.sec` | 500.0 | 100.0 - 1000.0 | Max servo movement rate (deg/s) |
-| `servo.max.thr.sec` | 1.0 | 0.1 - 5.0 | Max throttle change rate (range/s) |
+| `servo.max_slew_dps` | 500.0 | 100.0 - 1000.0 | Max servo movement rate (deg/s) |
+| `servo.max_thr_slew_per_s` | 1.0 | 0.1 - 5.0 | Max throttle change rate (range/s) |
 
 **Tuning Notes:**
 - **max.deg.sec ↓**: Smoother servo movements, protects gears, but limits responsiveness
@@ -236,8 +243,8 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `servo.pitch.min` | 500 | 500 - 1000 | Min pulse width (µs) |
-| `servo.pitch.max` | 2500 | 2000 - 2500 | Max pulse width (µs) |
+| `servo.pitch.min_pulse_us` | 500 | 500 - 1000 | Min pulse width (µs) |
+| `servo.pitch.max_pulse_us` | 2500 | 2000 - 2500 | Max pulse width (µs) |
 | `servo.pitch.neutral_deg` | 90 | 0 - 180 | Neutral position (degrees) |
 | `servo.pitch.deflection_deg` | 80 | 10 - 90 | Max deflection from neutral (degrees) |
 | `servo.pitch.invert` | true | true/false | Invert servo direction |
@@ -246,8 +253,8 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `servo.yaw.min` | 500 | 500 - 1000 | Min pulse width (µs) |
-| `servo.yaw.max` | 2500 | 2000 - 2500 | Max pulse width (µs) |
+| `servo.yaw.min_pulse_us` | 500 | 500 - 1000 | Min pulse width (µs) |
+| `servo.yaw.max_pulse_us` | 2500 | 2000 - 2500 | Max pulse width (µs) |
 | `servo.yaw.neutral_deg` | 90 | 0 - 180 | Neutral position (degrees) |
 | `servo.yaw.deflection_deg` | 80 | 10 - 90 | Max deflection from neutral (degrees) |
 | `servo.yaw.invert` | false | true/false | Invert servo direction |
@@ -256,8 +263,8 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `servo.lail.min` | 500 | 500 - 1000 | Min pulse width (µs) |
-| `servo.lail.max` | 2500 | 2000 - 2500 | Max pulse width (µs) |
+| `servo.lail.min_pulse_us` | 500 | 500 - 1000 | Min pulse width (µs) |
+| `servo.lail.max_pulse_us` | 2500 | 2000 - 2500 | Max pulse width (µs) |
 | `servo.lail.neutral_deg` | 90 | 0 - 180 | Neutral position (degrees) |
 | `servo.lail.deflection_deg` | 80 | 10 - 90 | Max deflection from neutral (degrees) |
 | `servo.lail.invert` | true | true/false | Invert servo direction |
@@ -266,8 +273,8 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `servo.rail.min` | 500 | 500 - 1000 | Min pulse width (µs) |
-| `servo.rail.max` | 2500 | 2000 - 2500 | Max pulse width (µs) |
+| `servo.rail.min_pulse_us` | 500 | 500 - 1000 | Min pulse width (µs) |
+| `servo.rail.max_pulse_us` | 2500 | 2000 - 2500 | Max pulse width (µs) |
 | `servo.rail.neutral_deg` | 90 | 0 - 180 | Neutral position (degrees) |
 | `servo.rail.deflection_deg` | 80 | 10 - 90 | Max deflection from neutral (degrees) |
 | `servo.rail.invert` | false | true/false | Invert servo direction |
@@ -276,8 +283,8 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `servo.thr.min` | 1000 | 500 - 1500 | Min throttle pulse (µs) |
-| `servo.thr.max` | 2000 | 1500 - 2500 | Max throttle pulse (µs) |
+| `servo.thr.min_pulse_us` | 1000 | 500 - 1500 | Min throttle pulse (µs) |
+| `servo.thr.max_pulse_us` | 2000 | 1500 - 2500 | Max throttle pulse (µs) |
 
 **Tuning Notes:**
 - **invert**: If servo moves wrong direction, toggle this instead of rewiring
@@ -295,7 +302,7 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 | `imu.accel_alpha` | 0.02 | 0.001 - 1.0 | Accelerometer low-pass filter |
 | `imu.gyro_alpha` | 0.4 | 0.001 - 1.0 | Gyroscope low-pass filter |
 | `imu.mag_alpha` | 0.04 | 0.001 - 1.0 | Magnetometer low-pass filter |
-| `imu.alti_alpha` | 0.005 | 0.001 - 0.1 | Altimeter low-pass filter |
+| `imu.alti_alpha` | 0.10 | 0.001 - 0.50 | Altimeter low-pass filter. At the 50 Hz baro rate, 0.10 gives τ ≈ 200 ms |
 
 **Tuning Notes:**
 - **alpha ↓**: Heavier filtering, smoother readings, but more lag
@@ -308,6 +315,13 @@ The mixer scales pilot stick inputs to setpoints based on the current flight mod
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
 | `imu.madgwick_beta` | 0.1 | 0.01 - 1.0 | Madgwick filter beta (gyro/accel trust) |
+| `imu.fuse_mag` | false | true/false | Fuse a magnetometer into attitude (9-axis) |
+
+**`imu.fuse_mag` defaults to false even when a magnetometer is fitted.** The
+part is still probed, sampled and published to telemetry; it simply does not
+steer the estimate. Enabling it without hard-iron calibration lets an
+uncalibrated field take correction authority away from the accelerometer, which
+degrades roll and pitch — the axes the control loops fly on.
 
 **Tuning Notes:**
 - **beta ↑**: Trust accelerometer more, faster convergence, but more sensitive to vibration
@@ -347,17 +361,17 @@ These settings control aircraft behavior when RC link is lost.
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `fs.bank.deg` | 7.0 | 0.0 - 30.0 | Bank angle during failsafe (degrees) |
-| `fs.pitch.deg` | -3.0 | -20.0 - 0.0 | Pitch angle during failsafe (degrees) |
-| `fs.throttle` | 0.0 | 0.0 - 1.0 | Throttle setting during failsafe |
-| `fs.min.lq.arm` | 50 | 20 - 100 | Minimum link quality % to arm |
+| `failsafe.bank_deg` | 7.0 | 0.0 - 30.0 | Bank angle during failsafe (degrees) |
+| `failsafe.pitch_deg` | -3.0 | -20.0 - 0.0 | Pitch angle during failsafe (degrees) |
+| `failsafe.throttle` | 0.0 | 0.0 - 1.0 | Throttle setting during failsafe |
+| `failsafe.min_lq_arm_pct` | 50 | 20 - 100 | Minimum link quality % to arm |
 
 **Failsafe Behavior:**
 When RC link is lost, the aircraft:
 1. Switches to ATTITUDE_MODE
-2. Banks to `fs.bank.deg` (creates a gentle spiral)
-3. Pitches to `fs.pitch.deg` (slight nose-down for controlled descent)
-4. Cuts throttle to `fs.throttle` (default 0 = engine off)
+2. Banks to `failsafe.bank_deg` (creates a gentle spiral)
+3. Pitches to `failsafe.pitch_deg` (slight nose-down for controlled descent)
+4. Cuts throttle to `failsafe.throttle` (default 0 = engine off)
 
 **Tuning Notes:**
 - **bank.deg**: 5-10° creates a contained spiral; 0° = straight glide
@@ -371,22 +385,35 @@ When RC link is lost, the aircraft:
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `crsf.tri.low` | 0.33 | 0.1 - 0.4 | TriState switch low threshold |
-| `crsf.tri.high` | 0.66 | 0.6 - 0.9 | TriState switch high threshold |
+| `crsf.tri_low` | 0.33 | 0.1 - 0.4 | TriState switch low threshold |
+| `crsf.tri_high` | 0.66 | 0.6 - 0.9 | TriState switch high threshold |
 
 **Tuning Notes:**
 - These thresholds determine how 3-position switch values are interpreted
-- Input < `tri.low` = position 1 (e.g., ATTITUDE_MODE)
-- Input > `tri.high` = position 3 (e.g., MANUAL_MODE)
+- Input < `crsf.tri_low` = position 1 (e.g., ATTITUDE_MODE)
+- Input > `crsf.tri_high` = position 3 (e.g., MANUAL_MODE)
 - Otherwise = position 2 (e.g., RATE_MODE)
 
 ---
+
+## Web Interface
+
+| Key | Default | Range | Description |
+|-----|---------|-------|-------------|
+| `web.enabled` | false | true/false | Enable the WiFi AP and web server (reboot to apply) |
+| `web.ap_ssid` | ArduFlite | string | AP name. A per-device suffix is appended |
+| `web.ap_pass` | arduflite | string | WPA2 password, 8+ characters |
+
+Available only in the full build (`ENABLE_WEB_SERVER`); the lite build has no
+WiFi stack. Set `web.ap_pass` before field use — while it is left at the
+default, the firmware uses the unique AP SSID as a temporary password and warns
+at boot.
 
 ## System
 
 | Key | Default | Range | Description |
 |-----|---------|-------|-------------|
-| `sys.aircraft.name` | "ArduFlite" | string | Aircraft name for telemetry display |
+| `sys.aircraft_name` | "ArduFlite" | string | Aircraft name for telemetry display |
 
 **Tuning Notes:**
 - Displayed on your transmitter's telemetry screen

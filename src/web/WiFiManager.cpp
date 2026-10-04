@@ -6,6 +6,8 @@
  *
  * Licensed under the MIT License. See LICENSE file for details.
  */
+#include <chrono>
+#include "src/hal/board/Board.h"
 #include "include/WebConfiguration.h"
 
 #if ENABLE_WEB_SERVER
@@ -33,6 +35,17 @@ WiFiManager& WiFiManager::instance()
     return _instance;
 }
 
+namespace {
+/// @return 0-15, or -1 for anything that is not a hex digit (including NUL).
+int hexDigitValue(char c)
+{
+    if (c >= '0' && c <= '9') { return c - '0'; }
+    if (c >= 'A' && c <= 'F') { return c - 'A' + 10; }
+    if (c >= 'a' && c <= 'f') { return c - 'a' + 10; }
+    return -1;
+}
+} // namespace
+
 bool WiFiManager::begin()
 {
     if (_active)
@@ -44,24 +57,35 @@ bool WiFiManager::begin()
     auto& reg = ConfigRegistry::instance();
 
     // Get base SSID from config, append chip ID for uniqueness
-    String baseSsid = reg.get<String>(CONFIG_KEY_WEB_AP_SSID);
+    String baseSsid = String(reg.get<std::string>(CONFIG_KEY_WEB_AP_SSID).c_str());
     if (baseSsid.isEmpty())
     {
         baseSsid = "ArduFlite";
     }
 
-    // Get last 4 hex digits of chip ID for uniqueness
+    // Get last 4 hex digits of chip ID for uniqueness.
+    //
+    // uniqueId() is the eFuse MAC formatted as 12 hex digits ("%012llX"), so
+    // the bytes are parsed back out rather than summed as characters. That
+    // reproduces the previous eFuse-MAC arithmetic EXACTLY, which
+    // matters: this value ends up in the access point's SSID, and changing it
+    // would silently rename the network every existing client has saved.
+    const char* const uniqueId = arduflite::board::Board::instance().system().uniqueId();
+
     uint32_t chipId = 0;
     for (int i = 0; i < 6; i++)
     {
-        chipId += ((uint32_t)ESP.getEfuseMac() >> (i * 8)) & 0xFF;
+        const int high = hexDigitValue(uniqueId[i * 2]);
+        const int low  = hexDigitValue(uniqueId[i * 2 + 1]);
+        if (high < 0 || low < 0) { break; }   // short or malformed id
+        chipId += static_cast<uint32_t>((high << 4) | low);
     }
     char suffix[8];
     snprintf(suffix, sizeof(suffix), "-%04X", (uint16_t)(chipId & 0xFFFF));
     _ssid = baseSsid + String(suffix);
 
     // Get password. WPA2 requires 8+ characters; fall back for older/default configs.
-    _password = reg.get<String>(CONFIG_KEY_WEB_AP_PASS);
+    _password = String(reg.get<std::string>(CONFIG_KEY_WEB_AP_PASS).c_str());
     if (_password.length() < 8 || _password == "arduflite")
     {
         LOG_WARN("WiFi AP password is unset/default; using unique SSID as temporary password. Set web.ap_pass before field use.");
@@ -89,9 +113,20 @@ bool WiFiManager::begin()
         return false;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(100));
+    // Let the AP settle before touching power-save settings.
+    arduflite::board::Board::instance().scheduler().sleepFor(
+        std::chrono::milliseconds{ 100 });
 
     // Set power save mode off for better responsiveness
+    // The last raw platform call outside src/hal, and it stays deliberately.
+    //
+    // This whole file is Arduino-WiFi: WiFi.softAP(), softAPConfig(),
+    // DNSServer. None of those match the burn-down's pattern, so routing just
+    // this one through a HAL would move the counter without moving the
+    // coupling — the module would be exactly as portable as it is now. A WiFi
+    // HAL is the real fix, and it is not worth inventing for a captive portal
+    // that only exists on the ground (ADR-029: no interface without a second
+    // implementation asking for it).
     esp_wifi_set_ps(WIFI_PS_NONE);
 
     _dnsServer.setTTL(60);

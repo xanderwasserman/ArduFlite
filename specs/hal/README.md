@@ -67,7 +67,7 @@ pass found wrong, including four issues that would have caused real bugs.
 | Board pins = five `#if BOARD_TYPE` blocks with three live pin collisions and an invalid GPIO, all undetected | One `constexpr` descriptor; those five defects become `static_assert` failures |
 | CRSF and PWM receivers share no interface; the app names CRSF concretely in five places | One `RcLink` interface; protocol is a board-descriptor choice |
 | Unit tests compile two production files; three test files contain hand-maintained *copies* of the logic they claim to test | Host platform; tests call the real code; real flight logs replay as a regression oracle |
-| Fusion filter and PWM output are welded into `ArduFliteIMU` / `ServoManager` | `AttitudeEstimator` and `ActuatorBank` interfaces — swapping Adafruit_AHRS or moving off `ledc*()` is a one-line change in `Board.cpp` |
+| Fusion filter and PWM output are welded into `ArduFliteIMU` / `ServoManager` | `AttitudeEstimator` and `ActuatorBank` interfaces — swapping the fusion filter or moving off `ledc*()` is a one-line change in `Board.cpp` |
 | Accel and gyro are inseparable; no way to express discrete parts or a second sensor | One interface per *measurement*; a 6-DOF chip implements two. Redundancy is a second descriptor line |
 | No GNSS, airspeed, rangefinder or power-monitor abstraction at all | All specified; CRSF battery telemetry stops using placeholder values |
 | CI compiles the sketch and runs no tests | Host tests, static layering checks, 2×2 build matrix with size budgets |
@@ -87,7 +87,8 @@ Settled after inspecting the installed library sources and the call graph:
   out-of-range GPIO and three collisions. `SimRcLink` is the second `RcLink`
   implementation instead.
 * **ADR-017** — **Own Madgwick, but after the abstraction lands** (Phase 7, not
-  Phase 2). Driven by the GPL notice in `Adafruit_AHRS_Madgwick.cpp` inside an MIT
+  Phase 2). **Done — ADR-056.** Driven by the GPL notice in
+  `Adafruit_AHRS_Madgwick.cpp` inside an MIT
   project — not by overhead, which measures at ~0.3–0.8 % of the core. Phase 2 wraps
   it; the rewrite is validated by log replay against the wrapped version.
 * **ADR-018** — **Drop ESP32Servo for the core LEDC API** in Phase 1. ~40 lines

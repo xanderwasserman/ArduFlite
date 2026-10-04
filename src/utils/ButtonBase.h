@@ -9,17 +9,24 @@
 #ifndef BUTTON_BASE_H
 #define BUTTON_BASE_H
 
-#include <Arduino.h>
+#include "src/hal/platform/Clock.h"
+#include "src/hal/platform/Io.h"
+
 
 class ButtonBase {
 public:
     /**
-     * Constructor
-     * @param pin        Digital pin for this button
-     * @param usePullup  If true, configure as INPUT_PULLUP
-     * @param debounceMs Debounce time in milliseconds
+     * @param pin        the GPIO, owned by Board. Must outlive this button; it
+     *                   points into BoardStorage, a file-scope object.
+     * @param clock      time source for debounce and hold timing. Injected for
+     *                   the same reason as the pin: buttons are constructed at
+     *                   file scope, before Board::begin() has run.
+     * @param usePullup  selects the pin mode AND the active level: with a
+     *                   pull-up the button reads LOW when pressed.
+     * @param debounceMs debounce time, in milliseconds.
      */
-    ButtonBase(int pin, bool usePullup = true, unsigned long debounceMs = 30);
+    ButtonBase(arduflite::hal::GpioPin& pin, const arduflite::hal::Clock& clock,
+               bool usePullup = true, unsigned long debounceMs = 30);
 
     /**
      * Call in setup() to initialize pin mode.
@@ -49,7 +56,17 @@ protected:
      */
     void readAndDebounce();
 
-    int  _pin;
+    /// Milliseconds since boot, from the injected clock.
+    ///
+    /// The clock is INJECTED rather than read from the board singleton, for the
+    /// same reason the pin is: these objects are constructed at file scope,
+    /// before Board::begin() has run. Holding a reference is safe there;
+    /// calling into the singleton on every update() would not be testable and
+    /// would hide the dependency.
+    [[nodiscard]] unsigned long nowMs() const;
+
+    arduflite::hal::GpioPin& _pin;
+    const arduflite::hal::Clock& _clock;
     bool _usePullup;
     unsigned long _debounceMs;
 

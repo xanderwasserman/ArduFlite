@@ -67,6 +67,10 @@ ArduFlite logs are comma-separated with a header row. Expected columns:
 | `imu_snapshot_retries` | count | Cumulative versioned snapshot read retries |
 | `imu_snapshot_max_retries` | count | Highest retries needed for one snapshot read |
 | `imu_snapshot_retry_limit_hits` | count | Reads that used the stale coherent fallback |
+| `mag_x`, `mag_y`, `mag_z` | µT | Magnetometer, body frame, calibrated and filtered |
+| `mag_heading` | ° | Tilt-compensated magnetic heading, 0 = north, range 0–360. `yaw` is signed (−180…180) and relative to boot orientation, so the two differ by a constant plus drift and declination |
+| `mag_field` | µT | Field magnitude. Should be **flat**: movement with attitude means hard iron, movement with throttle means the motor |
+| `mag_valid` | 0/1 | A magnetometer reading was available |
 
 Missing or extra columns are handled gracefully — only columns present in the file are shown.
 

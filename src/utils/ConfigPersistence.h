@@ -13,12 +13,15 @@
 #define CONFIG_PERSISTENCE_H
 
 #include <Arduino.h>
-#include <Preferences.h>
+#include "src/hal/board/Board.h"
+#include "src/hal/platform/Storage.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <functional>
 #include <vector>
 #include <atomic>
+
+#include "src/hal/platform/Mutex.h"
 
 // Current schema version - increment when making breaking changes.
 //   v2: unit suffixes on every unit-bearing key (att.deadband -> att.deadband_rad,
@@ -115,9 +118,11 @@ public:
     static uint32_t getStoredVersion();
 
 private:
-    static Preferences _prefs;
+    /// Borrowed from Board; not owned. See ADR-027 — this class used to
+    /// include <Preferences.h>, which is Arduino-ESP32 only.
+    static arduflite::hal::KeyValueStore& store();
     static bool _initialized;
-    static std::atomic<SemaphoreHandle_t> _mutex;  ///< Protects _prefs access
+    static std::atomic<arduflite::hal::Mutex*> _mutex;  ///< Protects store access
     
     struct Migration {
         uint32_t fromVersion;

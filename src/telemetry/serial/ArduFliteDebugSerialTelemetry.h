@@ -9,9 +9,7 @@
 #ifndef ARDUFLITE_DEBUG_SERIAL_TELEMETRY_H
 #define ARDUFLITE_DEBUG_SERIAL_TELEMETRY_H
 
-#include <Arduino.h>
-#include "src/telemetry/ArduFliteTelemetry.h"
-#include "src/telemetry/TelemetryData.h"
+#include "src/telemetry/PeriodicTelemetryBackend.h"
 
 /**
  * @brief Full-data debug serial telemetry backend.
@@ -20,21 +18,12 @@
  * dedicated FreeRTOS task. Intended for ground-connected development sessions;
  * not for in-flight use where a Serial connection is unavailable.
  */
-class ArduFliteDebugSerialTelemetry : public ArduFliteTelemetry {
+class ArduFliteDebugSerialTelemetry final : public PeriodicTelemetryBackend {
     public:
-        ArduFliteDebugSerialTelemetry(float frequencyHz = 1.0f);
-        ~ArduFliteDebugSerialTelemetry();
-
-        void begin() override;
-        void publish(const TelemetryData& telemData) override;
+        explicit ArduFliteDebugSerialTelemetry(float frequencyHz = 1.0f);
 
     private:
-        static void telemetryTask(void* pvParameters);
-
-        float             _intervalMs;
-        TaskHandle_t      _taskHandle = nullptr;   ///< Handle for telemetryTask; stored to allow clean teardown
-        TelemetryData     _pendingData{};
-        SemaphoreHandle_t _mutex = nullptr;        ///< Protects _pendingData; nullptr until begin() succeeds
+        void runLoop() override;
     };
 
 #endif //ARDUFLITE_DEBUG_SERIAL_TELEMETRY_H

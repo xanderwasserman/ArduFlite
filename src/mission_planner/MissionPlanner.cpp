@@ -7,54 +7,74 @@
  * Licensed under the MIT License. See LICENSE file for details.
  */
 #include "src/mission_planner/MissionPlanner.h"
+
+#include <chrono>
+#include <mutex>
+
+#include "src/hal/board/Board.h"
 #include "include/MissionConfiguration.h" 
 #include "src/utils/Logging.h"
-#include "include/ArduFlite.h"
+
+namespace {
+/// Every public API takes this briefly; the loop takes it at 100 Hz.
+constexpr std::chrono::milliseconds kMissionLockTimeout{ 5 };
+} // namespace
 
 MissionPlanner::MissionPlanner(ArduFliteController &controller)
     : _ctrl(controller)
     , _currentIndex(0)
     , _stepStartMs(0)
     , _running(false)
-    , _taskHandle(nullptr)
 {
-    // Create a mutex to protect all public APIs
-    _mutex = xSemaphoreCreateMutex();
+    // No platform resource here: this is constructed before Board::begin() has
+    // run. The mutex is taken in begin() (ADR-030).
 }
 
 MissionPlanner::~MissionPlanner() 
 {
-    if (_taskHandle) 
-    {
-        vTaskDelete(_taskHandle);
-    }
-    if (_mutex) 
-    {
-        vSemaphoreDelete(_mutex);
-    }
+    // Cooperative: asks the loop to leave at its next check.
+    if (_task != nullptr) { _task->requestStop(); }
+    _mutex = nullptr;   // pool-owned; nothing reclaims entries (ADR-011)
 }
 
 void MissionPlanner::begin() 
 {
-    // Load the default mission from mission_config.h
-    loadMission(MissionConfig::MISSION_STEPS, sizeof(MissionConfig::MISSION_STEPS)/sizeof(MissionConfig::MISSION_STEPS[0]));
+    auto& board = arduflite::board::Board::instance();
 
-    // Launch the RTOS task
-    xTaskCreate(
-        taskEntry, 
-        "MissionPlanner", 
-        4096, 
-        this,
-        tskIDLE_PRIORITY + 1, 
-        &_taskHandle
-    );
+    auto mutex = board.allocMutex();
+    if (!mutex)
+    {
+        LOG_ERR("MissionPlanner: failed to create mutex — planner disabled");
+        return;
+    }
+    _mutex = mutex.value();
+
+    // Load the default mission from mission_config.h. AFTER the mutex, because
+    // loadMission() takes it and silently does nothing without one.
+    loadMission(MissionConfig::MISSION_STEPS,
+                sizeof(MissionConfig::MISSION_STEPS) / sizeof(MissionConfig::MISSION_STEPS[0]));
+
+    arduflite::hal::TaskConfig config;
+    config.name       = "MissionPlanner";
+    config.stackBytes = 4096;
+    config.priority   = arduflite::hal::Priority::Mission;
+
+    auto task = board.scheduler().spawn(config, &taskEntry, this);
+    if (!task)
+    {
+        LOG_ERR("MissionPlanner: failed to create task");
+        _mutex = nullptr;
+        return;
+    }
+    _task = task.value();
 }
 
 void MissionPlanner::loadMission(const Step *steps, size_t count) 
 {
     {
-        SemaphoreLock lock(_mutex);
-        if (!lock.acquired()) return;
+        if (_mutex == nullptr) { return; }
+        std::unique_lock lock(*_mutex, kMissionLockTimeout);
+        if (!lock.owns_lock()) { return; }
         _steps.clear();
         _steps.insert(_steps.end(), steps, steps + count);
         _running = false;
@@ -64,17 +84,20 @@ void MissionPlanner::loadMission(const Step *steps, size_t count)
 void MissionPlanner::start() 
 {
     {
-        SemaphoreLock lock(_mutex);
-        if (!lock.acquired()) return;
+        if (_mutex == nullptr) { return; }
+        std::unique_lock lock(*_mutex, kMissionLockTimeout);
+        if (!lock.owns_lock()) { return; }
         if (!_steps.empty() && !_running) 
         {
             _running      = true;
             _currentIndex = 0;
-            _stepStartMs  = millis();
+            _stepStartMs = static_cast<std::uint32_t>(
+                arduflite::board::Board::instance().clock().now()
+                    .time_since_epoch().count() / 1000);
 
             // grab a const‐ref to the first step
             const auto &first   = _steps[_currentIndex];
-            EulerAngles         stepSetpoint;
+            AttitudeDeg         stepSetpoint;
             stepSetpoint.roll   = first.rollDeg;
             stepSetpoint.pitch  = first.pitchDeg;
             stepSetpoint.yaw    = first.yawDeg;
@@ -91,8 +114,9 @@ void MissionPlanner::start()
 void MissionPlanner::stop() 
 {
     {
-        SemaphoreLock lock(_mutex);
-        if (!lock.acquired()) return;
+        if (_mutex == nullptr) { return; }
+        std::unique_lock lock(*_mutex, kMissionLockTimeout);
+        if (!lock.owns_lock()) { return; }
         _running = false;
     }
 }
@@ -102,8 +126,9 @@ bool MissionPlanner::isRunning()
     bool r = false;
 
     {
-        SemaphoreLock lock(_mutex);
-        if (!lock.acquired()) return r;
+        if (_mutex == nullptr) { return r; }
+        std::unique_lock lock(*_mutex, kMissionLockTimeout);
+        if (!lock.owns_lock()) { return r; }
         r = _running;
     }
 
@@ -117,18 +142,25 @@ void MissionPlanner::taskEntry(void *pv)
 
 void MissionPlanner::run() 
 {
-    while (true) 
+    auto&       board     = arduflite::board::Board::instance();
+    auto&       scheduler = board.scheduler();
+    const auto& clock     = board.clock();
+
+    // `_task` is assigned only after spawn() RETURNS and the body may already be
+    // running, so a null handle means "no stop possible yet" — not a crash.
+    while (_task == nullptr || !_task->stopRequested())
     {
         {
-            SemaphoreLock lock(_mutex);
-            if (!lock.acquired())
+            std::unique_lock lock(*_mutex, kMissionLockTimeout);
+            if (!lock.owns_lock())
             {
-                vTaskDelay(pdMS_TO_TICKS(10));
+                scheduler.sleepFor(std::chrono::milliseconds{ 10 });
                 continue;
             }
             if (_running && !_steps.empty()) 
             {
-                uint32_t now = millis();
+                const std::uint32_t now = static_cast<std::uint32_t>(
+                    clock.now().time_since_epoch().count() / 1000);
                 const auto &cur = _steps[_currentIndex];
 
                 // Have we held this step long enough?
@@ -147,7 +179,7 @@ void MissionPlanner::run()
                     {
                         // apply next step
                         const auto &next = _steps[_currentIndex];
-                        EulerAngles         stepSetpoint;
+                        AttitudeDeg         stepSetpoint;
                         stepSetpoint.roll   = next.rollDeg;
                         stepSetpoint.pitch  = next.pitchDeg;
                         stepSetpoint.yaw    = next.yawDeg;
@@ -162,6 +194,6 @@ void MissionPlanner::run()
         }
 
         // throttle to 100 Hz
-        vTaskDelay(pdMS_TO_TICKS(10));
+        scheduler.sleepFor(std::chrono::milliseconds{ 10 });
     }
 }

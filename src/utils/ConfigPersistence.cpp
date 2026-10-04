@@ -9,14 +9,106 @@
 #include "src/utils/ConfigPersistence.h"
 #include "src/utils/ConfigRegistry.h"
 #include "src/utils/Logging.h"
-#include "include/ArduFlite.h"  // For SemaphoreLock
+#include <mutex>
+
+#include "src/hal/board/Board.h"
 
 #include <ArduinoJson.h>  // For JSON export/import
 
+namespace {
+
+/**
+ * @brief Serialised size of a config value, by type.
+ *
+ * Strings are stored at their actual length including the terminator, not the
+ * full CONFIG_STRING_MAX_LEN buffer — writing 64 bytes for an 8-character SSID
+ * wastes NVS space and, more importantly, makes a short read indistinguishable
+ * from a correct one.
+ */
+std::size_t serialisedSize(ConfigType type, const ConfigValue& value)
+{
+    switch (type)
+    {
+        case ConfigType::FLOAT:  return sizeof(value.f);
+        case ConfigType::INT32:  return sizeof(value.i);
+        case ConfigType::UINT8:  return sizeof(value.u8);
+        case ConfigType::BOOL:   return sizeof(value.b);
+        case ConfigType::STRING: return strnlen(value.s, CONFIG_STRING_MAX_LEN - 1) + 1;
+    }
+    return 0;
+}
+
+/// Raw bytes of a value, for KeyValueStore::write().
+const void* valueBytes(ConfigType type, const ConfigValue& value)
+{
+    switch (type)
+    {
+        case ConfigType::FLOAT:  return &value.f;
+        case ConfigType::INT32:  return &value.i;
+        case ConfigType::UINT8:  return &value.u8;
+        case ConfigType::BOOL:   return &value.b;
+        case ConfigType::STRING: return value.s;
+    }
+    return nullptr;
+}
+
+/**
+ * @brief Read one value, leaving `out` untouched if the key is absent.
+ *
+ * @return false when the key is missing OR the stored length does not match
+ *         what the type expects. A length mismatch means the key was written
+ *         by a build where that key had a different type; silently
+ *         reinterpreting those bytes would produce a plausible wrong value
+ *         rather than a visible failure.
+ */
+bool readValue(arduflite::hal::KeyValueStore& store, const char* key,
+               ConfigType type, ConfigValue& out)
+{
+    std::size_t length = 0;
+
+    if (type == ConfigType::STRING)
+    {
+        char buffer[CONFIG_STRING_MAX_LEN]{};
+        if (store.read(key, buffer, sizeof(buffer), length) != arduflite::Status::Ok)
+        {
+            return false;
+        }
+        buffer[CONFIG_STRING_MAX_LEN - 1] = '\0';
+        strncpy(out.s, buffer, CONFIG_STRING_MAX_LEN - 1);
+        out.s[CONFIG_STRING_MAX_LEN - 1] = '\0';
+        return true;
+    }
+
+    ConfigValue scratch;
+    void* dst = nullptr;
+    std::size_t expected = 0;
+    switch (type)
+    {
+        case ConfigType::FLOAT: dst = &scratch.f;  expected = sizeof(scratch.f);  break;
+        case ConfigType::INT32: dst = &scratch.i;  expected = sizeof(scratch.i);  break;
+        case ConfigType::UINT8: dst = &scratch.u8; expected = sizeof(scratch.u8); break;
+        case ConfigType::BOOL:  dst = &scratch.b;  expected = sizeof(scratch.b);  break;
+        default: return false;
+    }
+
+    if (store.read(key, dst, expected, length) != arduflite::Status::Ok) { return false; }
+    if (length != expected) { return false; }
+
+    out = scratch;
+    return true;
+}
+
+} // namespace
+
 // Static member initialization
-Preferences ConfigPersistence::_prefs;
+/// The configuration store, borrowed from Board. Not owned: Board holds it in
+/// constinit storage that outlives everything here.
+arduflite::hal::KeyValueStore& ConfigPersistence::store()
+{
+    return arduflite::board::Board::instance().configStore();
+}
 bool ConfigPersistence::_initialized = false;
-std::atomic<SemaphoreHandle_t> ConfigPersistence::_mutex{nullptr};
+std::atomic<arduflite::hal::Mutex*> ConfigPersistence::_mutex{nullptr};
 std::vector<ConfigPersistence::Migration> ConfigPersistence::_migrations;
 
 // NVS key for schema version
@@ -42,22 +134,24 @@ static constexpr size_t MAX_EXPORT_PARAMS = 200;
 // ═══════════════════════════════════════════════════════════════════════════
 
 void ConfigPersistence::ensureMutex() {
-    // Thread-safe mutex initialization using atomic compare-exchange
-    SemaphoreHandle_t expected = nullptr;
-    if (_mutex.load(std::memory_order_acquire) == nullptr) {
-        SemaphoreHandle_t newMutex = xSemaphoreCreateMutex();
-        if (newMutex == nullptr) {
-            LOG_ERR("ConfigPersistence: Failed to create mutex - out of memory");
-            return;  // Will fail on lock acquisition
-        }
-        // Atomically set _mutex if it's still nullptr
-        if (!_mutex.compare_exchange_strong(expected, newMutex,
-                                             std::memory_order_release,
-                                             std::memory_order_relaxed)) {
-            // Another thread already created a mutex, delete ours
-            vSemaphoreDelete(newMutex);
-        }
+    // Thread-safe lazy initialisation via atomic compare-exchange.
+    //
+    // The loser of the race cannot return its surplus mutex: allocMutex() hands
+    // out entries from a fixed pool and nothing reclaims them (ADR-011). That
+    // leaks one pool slot, once, and only if two tasks reach a persistence API
+    // for the very first time simultaneously.
+    if (_mutex.load(std::memory_order_acquire) != nullptr) { return; }
+
+    auto allocated = arduflite::board::Board::instance().allocMutex();
+    if (!allocated) {
+        LOG_ERR("ConfigPersistence: no mutex available - persistence disabled");
+        return;  // Will fail on lock acquisition
     }
+
+    arduflite::hal::Mutex* expected = nullptr;
+    (void)_mutex.compare_exchange_strong(expected, allocated.value(),
+                                         std::memory_order_release,
+                                         std::memory_order_relaxed);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -66,12 +160,13 @@ void ConfigPersistence::ensureMutex() {
 
 void ConfigPersistence::begin() {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
-    if (!lock.acquired()) return;
+    auto* mutex = _mutex.load(std::memory_order_acquire);
+    if (mutex == nullptr) { return; }
+    std::unique_lock lock(*mutex);
     
     if (_initialized) return;
     
-    if (!_prefs.begin(CONFIG_NVS_NAMESPACE, false)) {
+    if (store().begin() != arduflite::Status::Ok) {
         LOG_ERR("Failed to open NVS namespace: %s", CONFIG_NVS_NAMESPACE);
         return;
     }
@@ -136,11 +231,20 @@ void ConfigPersistence::load() {
     // Read all NVS values under Persistence lock
     {
         ensureMutex();
-        SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
-        if (!lock.acquired()) return;
+        auto* mutex = _mutex.load(std::memory_order_acquire);
+        if (mutex == nullptr) { return; }
+        std::unique_lock lock(*mutex);
 
         // Check schema version
-        uint32_t storedVersion = _prefs.getUInt(SCHEMA_VERSION_KEY, 0);
+        uint32_t storedVersion = 0;
+        {
+            std::size_t length = 0;
+            if (store().read(SCHEMA_VERSION_KEY, &storedVersion, sizeof(storedVersion), length)
+                    != arduflite::Status::Ok || length != sizeof(storedVersion))
+            {
+                storedVersion = 0;
+            }
+        }
         if (storedVersion > 0 && storedVersion < CONFIG_SCHEMA_VERSION) {
             LOG_INF("Config schema migration: v%u -> v%u", storedVersion, CONFIG_SCHEMA_VERSION);
             runMigrations(storedVersion, CONFIG_SCHEMA_VERSION);
@@ -149,42 +253,27 @@ void ConfigPersistence::load() {
         for (const auto& [key, param] : params) {
             String shortKey = shortenKey(key.c_str());
             
-            // Check if key exists in NVS
-            if (!_prefs.isKey(shortKey.c_str())) {
-                // Not in NVS, keep default value
+            ConfigValue value = param.defaultVal;
+            
+            // Absent or unreadable keys keep the default that `value` already
+            // holds. One mechanism for that decision, not two: no separate
+            // isKey() probe, and no per-getter fallback argument.
+            if (!readValue(store(), shortKey.c_str(), param.type, value)) {
                 defaults++;
                 continue;
-            }
-
-            ConfigValue value;
-            
-            switch (param.type) {
-                case ConfigType::FLOAT:
-                    value.f = _prefs.getFloat(shortKey.c_str(), param.defaultVal.f);
-                    break;
-                case ConfigType::INT32:
-                    value.i = _prefs.getInt(shortKey.c_str(), param.defaultVal.i);
-                    break;
-                case ConfigType::UINT8:
-                    value.u8 = _prefs.getUChar(shortKey.c_str(), param.defaultVal.u8);
-                    break;
-                case ConfigType::BOOL:
-                    value.b = _prefs.getBool(shortKey.c_str(), param.defaultVal.b);
-                    break;
-                case ConfigType::STRING:
-                    {
-                        String strVal = _prefs.getString(shortKey.c_str(), param.defaultVal.s);
-                        strncpy(value.s, strVal.c_str(), CONFIG_STRING_MAX_LEN - 1);
-                        value.s[CONFIG_STRING_MAX_LEN - 1] = '\0';
-                    }
-                    break;
             }
 
             loadedValues.push_back({key, value});
         }
 
-        // Update schema version in NVS
-        _prefs.putUInt(SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION);
+        // Update schema version in NVS. If this fails the values are still
+        // loaded, but the NEXT boot sees a stale version and re-runs migrations
+        // that have already been applied — worth a loud line.
+        const uint32_t schemaVersion = CONFIG_SCHEMA_VERSION;
+        if (store().write(SCHEMA_VERSION_KEY, &schemaVersion, sizeof(schemaVersion))
+                != arduflite::Status::Ok) {
+            LOG_ERR("Config: schema version not written - migrations may re-run at next boot");
+        }
     }
     // Lock released here
     
@@ -217,32 +306,19 @@ bool ConfigPersistence::save(const char* key) {
     const ConfigParam param = *optParam;  // Local copy
 
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
-    if (!lock.acquired()) return false;
+    auto* mutex = _mutex.load(std::memory_order_acquire);
+    if (mutex == nullptr) { return false; }
+    std::unique_lock lock(*mutex);
     
     String shortKey = shortenKey(key);
-    size_t written = 0;
 
-    switch (param.type) {
-        case ConfigType::FLOAT:
-            written = _prefs.putFloat(shortKey.c_str(), param.currentVal.f);
-            break;
-        case ConfigType::INT32:
-            written = _prefs.putInt(shortKey.c_str(), param.currentVal.i);
-            break;
-        case ConfigType::UINT8:
-            written = _prefs.putUChar(shortKey.c_str(), param.currentVal.u8);
-            break;
-        case ConfigType::BOOL:
-            written = _prefs.putBool(shortKey.c_str(), param.currentVal.b);
-            break;
-        case ConfigType::STRING:
-            written = _prefs.putString(shortKey.c_str(), param.currentVal.s);
-            break;
-    }
+    const bool written =
+        store().write(shortKey.c_str(),
+                      valueBytes(param.type, param.currentVal),
+                      serialisedSize(param.type, param.currentVal)) == arduflite::Status::Ok;
 
-    // Only clear dirty flag if NVS write succeeded (written > 0)
-    if (written > 0) {
+    // Only clear the dirty flag if the write actually succeeded.
+    if (written) {
         ConfigRegistry::instance().clearDirty(key);
         return true;
     } else {
@@ -264,10 +340,10 @@ size_t ConfigPersistence::saveIfDirty() {
     }
 
     // Get dirty keys snapshot (thread-safe copies from Registry)
-    std::vector<String> dirtyKeys = ConfigRegistry::instance().getDirtyKeys();
+    std::vector<std::string> dirtyKeys = ConfigRegistry::instance().getDirtyKeys();
     size_t saved = 0;
 
-    for (const String& key : dirtyKeys) {
+    for (const std::string& key : dirtyKeys) {
         if (save(key.c_str())) {
             saved++;
         }
@@ -291,37 +367,38 @@ size_t ConfigPersistence::saveAll() {
     auto params = ConfigRegistry::instance().getAllParams();
     
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
-    if (!lock.acquired()) return 0;
+    auto* mutex = _mutex.load(std::memory_order_acquire);
+    if (mutex == nullptr) { return 0; }
+    std::unique_lock lock(*mutex);
     size_t saved = 0;
 
     for (const auto& [key, param] : params) {
         String shortKey = shortenKey(key.c_str());
 
-        switch (param.type) {
-            case ConfigType::FLOAT:
-                _prefs.putFloat(shortKey.c_str(), param.currentVal.f);
-                break;
-            case ConfigType::INT32:
-                _prefs.putInt(shortKey.c_str(), param.currentVal.i);
-                break;
-            case ConfigType::UINT8:
-                _prefs.putUChar(shortKey.c_str(), param.currentVal.u8);
-                break;
-            case ConfigType::BOOL:
-                _prefs.putBool(shortKey.c_str(), param.currentVal.b);
-                break;
-            case ConfigType::STRING:
-                _prefs.putString(shortKey.c_str(), param.currentVal.s);
-                break;
+        // Counted only on success. Counting unconditionally would report
+        // "saved all N" even when every write failed — exactly the situation
+        // where the operator most needs to know it did not work.
+        if (store().write(shortKey.c_str(),
+                          valueBytes(param.type, param.currentVal),
+                          serialisedSize(param.type, param.currentVal)) == arduflite::Status::Ok)
+        {
+            saved++;
         }
-        saved++;
     }
 
     ConfigRegistry::instance().clearAllDirty();
-    _prefs.putUInt(SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION);
 
-    LOG_INF("Config saved: all %u params to NVS", saved);
+    const uint32_t schemaVersion = CONFIG_SCHEMA_VERSION;
+    if (store().write(SCHEMA_VERSION_KEY, &schemaVersion, sizeof(schemaVersion))
+            != arduflite::Status::Ok) {
+        LOG_ERR("Config: schema version not written - migrations may re-run at next boot");
+    }
+
+    if (saved != params.size()) {
+        LOG_ERR("Config save incomplete: %u of %u params written", saved, params.size());
+    } else {
+        LOG_INF("Config saved: all %u params", saved);
+    }
     return saved;
 }
 
@@ -337,10 +414,19 @@ void ConfigPersistence::eraseAll() {
     }
     
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
-    if (!lock.acquired()) return;
+    auto* mutex = _mutex.load(std::memory_order_acquire);
+    if (mutex == nullptr) { return; }
+    std::unique_lock lock(*mutex);
 
-    _prefs.clear();
+    const arduflite::Status status = store().eraseAll();
+    if (status != arduflite::Status::Ok) {
+        // Never claim success here. Someone erasing config is usually trying to
+        // recover from a bad state, and a false confirmation sends them looking
+        // for the fault somewhere else entirely.
+        LOG_ERR("Config erase FAILED (%s) - stored values are unchanged",
+                arduflite::toString(status));
+        return;
+    }
     LOG_INF("Config erased from NVS");
 }
 
@@ -356,10 +442,18 @@ uint32_t ConfigPersistence::getStoredVersion() {
     }
     
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
-    if (!lock.acquired()) return 0;
+    auto* mutex = _mutex.load(std::memory_order_acquire);
+    if (mutex == nullptr) { return 0; }
+    std::unique_lock lock(*mutex);
     
-    return _prefs.getUInt(SCHEMA_VERSION_KEY, 0);
+    uint32_t version = 0;
+    std::size_t length = 0;
+    if (store().read(SCHEMA_VERSION_KEY, &version, sizeof(version), length) != arduflite::Status::Ok
+        || length != sizeof(version))
+    {
+        return 0;
+    }
+    return version;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -368,8 +462,9 @@ uint32_t ConfigPersistence::getStoredVersion() {
 
 void ConfigPersistence::registerMigration(uint32_t fromVersion, uint32_t toVersion, ConfigMigrationFn migration) {
     ensureMutex();
-    SemaphoreLock lock(_mutex.load(), portMAX_DELAY);
-    if (!lock.acquired()) return;
+    auto* mutex = _mutex.load(std::memory_order_acquire);
+    if (mutex == nullptr) { return; }
+    std::unique_lock lock(*mutex);
     
     _migrations.push_back({fromVersion, toVersion, migration});
 }
@@ -401,7 +496,9 @@ String ConfigPersistence::exportJson() {
     JsonDocument doc;
 
     doc["version"] = CONFIG_SCHEMA_VERSION;
-    doc["exported"] = millis();  // TODO: Add RTC timestamp if available
+    doc["exported"] = static_cast<std::uint32_t>(
+        arduflite::board::Board::instance().clock().now()
+            .time_since_epoch().count() / 1000);  // TODO: RTC timestamp if available
 
     JsonObject params = doc["params"].to<JsonObject>();
     
@@ -519,7 +616,7 @@ size_t ConfigPersistence::importJson(const String& json) {
                 break;
             case ConfigType::STRING:
                 if (value.is<const char*>()) {
-                    ok = ConfigRegistry::instance().set<String>(key, String(value.as<const char*>()));
+                    ok = ConfigRegistry::instance().set<std::string>(key, std::string(value.as<const char*>()));
                 }
                 break;
         }

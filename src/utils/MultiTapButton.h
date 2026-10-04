@@ -34,7 +34,8 @@ public:
      * @param usePullup          If true, configure pin as INPUT_PULLUP
      * @param debounceMs         Debounce period (ms) for the base ButtonBase class
      */
-    MultiTapButton(int pin,
+    MultiTapButton(arduflite::hal::GpioPin& pin,
+                   const arduflite::hal::Clock& clock,
                    unsigned long maxTapIntervalMs,
                    int requiredTaps,
                    MultiTapCallback callback,
